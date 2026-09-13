@@ -3990,6 +3990,46 @@ app.get('/api/wallet/agent-direct-payments', requireRole('admin'), (req, res) =>
 });
 
 // ══════════════════════════════════════════════════════════════════
+// 💳 ADMIN: AGENT WALLET TOP-UP — Admin Panel ke "Agent Wallet Top-up"
+//   page se call hote hain. Manually kisi agent ke approved_balance
+//   mein amount jodne ke liye (jaise cash/offline payment counter par
+//   mila ho). Dono routes sirf Admin JWT se accessible hain.
+// ══════════════════════════════════════════════════════════════════
+app.get('/api/admin/agent-wallet/:agentId', requireRole('admin'), (req, res) => {
+    db.query('SELECT * FROM agent_wallets WHERE agentId=?', [req.params.agentId], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+        const w = (rows && rows[0]) || { approved_balance: 0, pending_balance: 0, total_earned: 0 };
+        res.json({
+            agentId: req.params.agentId,
+            approvedBalance: Number(w.approved_balance) || 0,
+            pendingBalance: Number(w.pending_balance) || 0,
+            totalEarned: Number(w.total_earned) || 0
+        });
+    });
+});
+
+app.post('/api/admin/wallet/topup', requireRole('admin'), (req, res) => {
+    const { agentId, amount, note } = req.body || {};
+    const amt = Number(amount);
+    if (!agentId || !amt || amt <= 0) {
+        return res.status(400).json({ error: 'Agent ID aur amount (0 se zyada) zaroori hain.' });
+    }
+    db.query(
+        `INSERT INTO agent_wallets (agentId, approved_balance, total_earned) VALUES (?, ?, 0)
+         ON CONFLICT (agentId) DO UPDATE SET approved_balance = agent_wallets.approved_balance + EXCLUDED.approved_balance`,
+        [agentId, amt],
+        (err) => {
+            if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+            db.query('SELECT approved_balance FROM agent_wallets WHERE agentId=?', [agentId], (err2, rows) => {
+                if (err2) return res.status(500).json({ error: 'DB error: ' + err2.message });
+                const newBalance = rows && rows[0] ? Number(rows[0].approved_balance) : amt;
+                res.json({ success: true, agentId, toppedUp: amt, note: note || '', newBalance });
+            });
+        }
+    );
+});
+
+// ══════════════════════════════════════════════════════════════════
 // 🧾 MATERIAL BILLS/INVOICES (Anmol_material_entry_secure.html)
 // ══════════════════════════════════════════════════════════════════
 app.post('/api/material/bills', requireActiveMaterialUser, (req, res) => {
