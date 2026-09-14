@@ -1208,6 +1208,7 @@ app.post('/api/auth/login', (req, res) => {
                 return res.status(401).json({ error: 'Student ID ya Mobile number match nahi kar raha.' });
             }
             const token = jwt.sign({ role: 'student', username: String(username) }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent('student', username); // 🆕 real-time login count ke liye
             res.json({ token });
         });
         return;
@@ -1242,6 +1243,7 @@ app.post('/api/auth/login', (req, res) => {
                 return res.status(403).json({ error: 'Aapka Admin verification abhi pending hai. Verify hone ke baad hi login kar payenge.' });
             }
             const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent('employee', username); // 🆕 real-time login count ke liye
             res.json({ token });
         });
         return;
@@ -1258,6 +1260,7 @@ app.post('/api/auth/login', (req, res) => {
             if (u.status === 'inactive') return res.status(403).json({ error: 'Yeh account Admin dwara inactive kar diya gaya hai.' });
             if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: 'Galat username ya password!' });
             const token = jwt.sign({ role: 'pfms', username: u.username }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent('pfms', u.username); // 🆕 real-time login count ke liye
             res.json({ token });
         });
         return;
@@ -1294,8 +1297,31 @@ app.post('/api/auth/login', (req, res) => {
         }
         if (!ok) return res.status(401).json({ error: 'Galat username ya password!' });
         const token = jwt.sign({ role: roleKey, username: String(username) }, JWT_SECRET, { expiresIn: '7d' });
+        logLoginEvent(roleKey, username); // 🆕 real-time login count ke liye
         res.json({ token });
     });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 🆕 LOGOUT (naya, purely additive route — upar/neeche ka koi bhi
+//   purana route/logic isse touch nahi hua hai)
+//   ──────────────────────────────────────────────────────────────
+//   Yeh app JWT (stateless) auth use karta hai — server par koi
+//   session-store nahi hai jise "destroy" kiya ja sake, isliye asli
+//   session-clear hamesha FRONTEND hi karta hai (localStorage se
+//   token hata kar) — jaisa Admin/Agent/HRMS/Student/etc. saare 6
+//   login pages ke Logout button mein already kiya gaya hai.
+//   Yeh route sirf ek consistent, safe server-side confirmation deta
+//   hai jise wahi Logout buttons chahें to call kar sakte hain (ek
+//   audit-log jaisa signal). Invalid/expired/missing token par bhi
+//   yeh kabhi crash/error nahi karta — getAuthUser() khud hi
+//   try/catch ke andar hai — bas success response bhej deta hai
+//   taaki frontend hamesha safely token clear karke index.html par
+//   redirect kar sake.
+// ══════════════════════════════════════════════════════════════════
+app.post('/api/auth/logout', (req, res) => {
+    const auth = getAuthUser(req); // galat/expired token ho tab bhi null milega, error nahi
+    res.json({ success: true, message: 'Logout ho gaya.', role: auth ? auth.role : null });
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -1395,6 +1421,58 @@ app.post('/api/admin-entities/:key', (req, res) => {
     kvSet('kv_admin_entities', req.params.key, req.body, res);
 });
 
+// ══════════════════════════════════════════════════════════════════
+// 🆕 REAL-TIME LIVE STATS — Admin Dashboard ke "Active Agents",
+//   "Students" aur "Today's Logins" cards isi ek route se REAL,
+//   DB-connected numbers leke aate hain (koi dummy/random data nahi).
+//   Public-read hai (jaisa live_dashboard/index_gallery jaise baaki
+//   homepage-sync keys pehle se hain) kyunki yeh sirf aggregate
+//   counts hain, koi private/PII data return nahi hota.
+// ══════════════════════════════════════════════════════════════════
+app.get('/api/dashboard/live-stats', (req, res) => {
+    db.query('SELECT `key`, value FROM kv_admin_entities WHERE `key` IN (?, ?, ?, ?)', ['agents', 'students', 'staff', 'admins'], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+        const byKey = {};
+        (rows || []).forEach(r => { try { byKey[r.key] = JSON.parse(r.value) || []; } catch (e) { byKey[r.key] = []; } });
+        const agents = Array.isArray(byKey.agents) ? byKey.agents : [];
+        const students = Array.isArray(byKey.students) ? byKey.students : [];
+        const staff = Array.isArray(byKey.staff) ? byKey.staff : [];
+        const admins = Array.isArray(byKey.admins) ? byKey.admins : [];
+
+        const totalAgents = agents.length;
+        const activeAgents = agents.filter(a => a && a.status === 'active' && !a.blocked).length;
+        const totalStudents = students.length;
+        const activeStudents = students.filter(s => s && s.status === 'active').length;
+
+        // 🆕 Homepage "KYC Verification & Performance Report" (marketing)
+        //   section ke liye — pehle yeh 4 numbers (98.6%, 97.9%, 1.8s, 100%)
+        //   HTML mein hardcoded the. Ab jo bhi genuinely real DB se compute
+        //   ho sakta hai, wahi bhejte hain:
+        const kycCompleteAgents = agents.filter(a => a && a.aadharFront && a.aadharBack && a.upiScreenshot && a.qrCode).length;
+        const kycVerifiedPercent = totalAgents ? Math.round((kycCompleteAgents / totalAgents) * 1000) / 10 : 0;
+        const totalPeople = totalAgents + totalStudents;
+        const activePeople = activeAgents + activeStudents;
+        const activeVerificationPercent = totalPeople ? Math.round((activePeople / totalPeople) * 1000) / 10 : 0;
+        const totalSecureRecords = totalAgents + totalStudents + staff.length + admins.length;
+
+        hrGetBlob('login_log', (lErr, loginLog) => {
+            const list = lErr ? [] : (Array.isArray(loginLog) ? loginLog : []);
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            const todayEntries = list.filter(e => e && e.ts && new Date(e.ts).toLocaleDateString('en-CA') === todayStr);
+            const loginsByRole = {};
+            todayEntries.forEach(e => { const r = e.role || 'unknown'; loginsByRole[r] = (loginsByRole[r] || 0) + 1; });
+            res.json({
+                totalAgents, activeAgents,
+                totalStudents, activeStudents,
+                todayLogins: todayEntries.length,
+                loginsByRole,
+                kycVerifiedPercent, activeVerificationPercent, totalSecureRecords,
+                generatedAt: Date.now()
+            });
+        });
+    });
+});
+
 app.get('/api/blob/:key', (req, res) => {
     if (!BLOB_KEYS.includes(req.params.key)) return res.status(404).json({ error: 'Unknown blob key' });
     // 🔒 Secrets (Razorpay/SMS keys) aur internal HR/agent data sirf Admin
@@ -1468,6 +1546,31 @@ function hrSetBlob(key, list, cb) {
         [key, JSON.stringify(list)],
         cb
     );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 🆕 REAL-TIME LOGIN LOG (Admin Dashboard "Today's Logins" ke liye)
+//   Har successful login (student/employee/pfms/admin/staff/agent) par
+//   isi function se ek chhota record 'login_log' blob (kv_blob table)
+//   mein add ho jaata hai — {role, username, ts}. Yeh koi naya table
+//   nahi hai, wahi existing generic kv_blob store hai jo already
+//   settings/notices jaise keys ke liye use ho raha hai. Purane
+//   3000 se zyada records apne aap trim ho jaate hain taaki row
+//   bahut badi na ho jaaye. Yeh function kabhi login ko fail/block
+//   nahi karta — error aane par bhi chup-chaap ignore kar deta hai
+//   (best-effort logging, login ka main flow kabhi iski wajah se
+//   ruknа nahi chahiye).
+// ══════════════════════════════════════════════════════════════════
+function logLoginEvent(role, username) {
+    try {
+        hrGetBlob('login_log', (err, list) => {
+            if (err) return; // best-effort — login ka flow ruke nahi
+            list = Array.isArray(list) ? list : [];
+            list.push({ role: String(role || ''), username: String(username || ''), ts: Date.now() });
+            if (list.length > 3000) list = list.slice(list.length - 3000);
+            hrSetBlob('login_log', list, () => {});
+        });
+    } catch (e) { /* best-effort */ }
 }
 // ══════════════════════════════════════════════════════════════════
 // 🔒 SALARY PAYOUT — DUPLICATE PAYMENT & MONTH LOCK HELPERS
@@ -2610,8 +2713,16 @@ app.get('/api/site-content/file/:id', (req, res) => {
         if (err) return res.status(500).send('DB error');
         if (!rows || !rows.length) return res.status(404).send('File not found');
         const f = rows[0];
+        // 🔒 FIX: pehle hamesha 'inline' set hota tha — HTML login-pages ke
+        // liye theek hai, lekin APK/App Download Manager se upload ki gayi
+        // files (jinka koi slug nahi hota, isi route se serve hoti hain) ke
+        // liye 'inline' ka matlab browser unhe khud render/open karne ki
+        // koshish karta, jo APK jaise binary files ke liye fail ho jaata —
+        // asli "Download" kabhi trigger hi nahi hota tha. Ab sirf HTML/text
+        // files inline rahengi, baaki sab (APK sahit) turant download hongi.
+        const isHtml = /html|text\//i.test(f.mime || '');
         res.set('Content-Type', f.mime || 'application/octet-stream');
-        res.set('Content-Disposition', 'inline; filename="' + f.name + '"');
+        res.set('Content-Disposition', (isHtml ? 'inline' : 'attachment') + '; filename="' + f.name + '"');
         res.send(f.data);
     });
 });
