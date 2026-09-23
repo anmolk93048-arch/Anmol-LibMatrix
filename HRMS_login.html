@@ -1,0 +1,2460 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>HRMS Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+// ══════════════════════════════════════════════════════════════════
+// 🆕 GOOGLE CLOUD (Render) BACKEND — poori tarah migrated. Employees,
+// pending registrations, salary claims + slips, staff attendance, leave
+// requests, aur wallet/transactions — sab kuch ab Postgres REST API se
+// (Firebase real-time listeners hata diye gaye hain, sirf REST poll).
+// ══════════════════════════════════════════════════════════════════
+const API_BASE = window.SHDL_API_BASE || 'https://library-backend-4efk.onrender.com/api';
+// 🆕 This page can be served either statically on Netlify or dynamically
+// from Render via /api/pages/<slug> — a relative redirect would 404 in the
+// second case, so Logout always sends the browser to the real, absolute
+// Netlify homepage URL instead.
+// 🆕 CRITICAL FIX: an absolute 'https://digitallibraryanmollive.netlify.app/'
+// was hardcoded here, guessing at the live site's subdomain. If the real
+// Netlify site has a different name or a custom domain, that guess is wrong
+// and every logout hits Netlify's own "Site not found" 404 page. A plain
+// relative path always resolves against whatever domain is actually
+// serving this page (Netlify subdomain, custom domain, or deploy preview),
+// so it can never point at the wrong site.
+const SHDL_HOME_URL = window.SHDL_HOME_URL || 'index.html';
+let AUTH_TOKEN = null;
+try { AUTH_TOKEN = localStorage.getItem('shdl_auth_token') || null; } catch (e) {}
+
+async function apiFetch(path, options) {
+  options = options || {};
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+  if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+  var res = await fetch(API_BASE + path, Object.assign({}, options, { headers: headers }));
+  var data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((data && data.error) || ('Server error (' + res.status + ')'));
+  return data;
+}
+const API = {
+  get: function (path) { return apiFetch(path, { method: 'GET' }); },
+  post: function (path, body) { return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) }); },
+  put: function (path, body) { return apiFetch(path, { method: 'PUT', body: JSON.stringify(body || {}) }); }
+};
+
+// 🆕 FIREBASE → BACKEND MIGRATION: pehle yeh sab FBDB.ref(...).on('value', cb)
+// (Firebase real-time push listener) se live update hote the. Naya secure
+// Postgres backend real-time push support nahi karta (yeh ek plain REST
+// API hai) — isliye ab hum har POLL_MS second mein REST se dobara fetch
+// karte hain aur wahi purana merge-logic (jo bahut saari edge-case bugs
+// fix karta hai — duplicate records, basic salary overwrite, etc.) usi
+// tarah chalate hain, bas data-source Firebase snapshot ki jagah REST
+// response hai. Result end-user ko bilkul same lagta hai (kuch second
+// mein naya data aa jaata hai), bas ab "push" ki jagah "poll" hai.
+function pollRestData(fetchFn, intervalMs) {
+  fetchFn();
+  return setInterval(fetchFn, intervalMs || 12000);
+}
+
+// FIX: Admin Panel / Agent Login (Staff Members page) apna staff data isi Firebase
+// project ke 'shdl/staff' path par save karte hain — HRMS Portal ab tak sirf apne
+// khud ke 'hrms/employees' path se hi Employee ID check karta tha, isliye Admin Panel
+// mein banaya gaya EMP001/EMP002 yahan "Employee ID nahi mila" dikhta tha. Ab hum
+// 'shdl/staff' ko bhi (read-only) sun kar EMPLOYEES list mein merge karenge.
+// NOTE: 'shdl/staff' aur 'shdl/agents' (Admin Panel/Agent Login ka data)
+// ab REST se aata hai — /api/admin-entities/staff aur /api/admin-entities/agents
+// (dekhein SYNC_ADMIN_STAFF aur SYNC_COMPANY_BRANDING).
+
+// ══ RENDER BACKEND STATUS MONITOR ══
+// (backend ab Render par live hai — /api/health endpoint ko har 10 second
+// mein poll karte hain. Render free-tier cold-start ke liye timeout + debug
+// logging bhi add kiya gaya hai taaki DevTools console mein asli wajah dikhe.)
+function _pollCloudStatus(){
+  var dot = document.getElementById('fb-dot');
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timeoutId = ctrl ? setTimeout(function(){ ctrl.abort(); }, 15000) : null;
+  fetch(API_BASE + '/health', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+    .then(function(res){
+      if (timeoutId) clearTimeout(timeoutId);
+      if (!dot) return;
+      if (res.ok) {
+        dot.style.background = '#22c55e';
+        dot.title = '✅ Render Backend Connected';
+      } else {
+        dot.style.background = '#ef4444';
+        dot.title = '❌ Render Backend Disconnected (HTTP ' + res.status + ')';
+        console.warn('Render health check non-OK:', res.status, API_BASE + '/health');
+      }
+    })
+    .catch(function(err){
+      if (timeoutId) clearTimeout(timeoutId);
+      console.warn('Render health check failed:', err && err.message, '| URL:', API_BASE + '/health');
+      if (dot) { dot.style.background = '#ef4444'; dot.title = '❌ Render Backend Disconnected'; }
+    });
+}
+_pollCloudStatus();
+setInterval(_pollCloudStatus, 10000);
+
+// ══ BACKEND SYNC HELPER (localStorage = instant UI, Postgres REST = cloud persistence) ══
+// 🆕 FIREBASE → BACKEND MIGRATION: pehle 'hrms/<key>' Firebase path use
+// hota tha; ab seedha Postgres 'kv_blob' table ke 'hrms_<key>' keys se
+// (jaise 'hrms_employees', 'hrms_salary_slips', 'hrms_settings').
+const FBSync = {
+  pull: function(key, cb){
+    API.get('/blob/hrms_' + key).then(function(val){
+      if (val !== null && val !== undefined) {
+        try { localStorage.setItem('hrms_' + key, JSON.stringify(val)); } catch(e){}
+        if (cb) cb(val);
+      } else {
+        try {
+          var local = JSON.parse(localStorage.getItem('hrms_' + key));
+          if (local !== null) { API.post('/blob/hrms_' + key, local).catch(function(){}); if(cb) cb(local); }
+          else { if (cb) cb(null); }
+        } catch(e) { if (cb) cb(null); }
+      }
+    }).catch(function(err){
+      console.warn('Backend read error:', err);
+      if (cb) { try { cb(JSON.parse(localStorage.getItem('hrms_' + key))); } catch(e){ cb(null); } }
+    });
+  },
+  push: function(key, val){
+    try { localStorage.setItem('hrms_' + key, JSON.stringify(val)); } catch(e){}
+    API.post('/blob/hrms_' + key, val).catch(function(err){ console.warn('Backend write error for', key, err); });
+  },
+  pullAll: function(cb){
+    // 🔗 FIX: 'attendance' aur 'leaves' yahan se hata diye — inhe ab
+    // SharedFBSync (neeche) alag se 'shdl' root se pull karta hai. Pehle
+    // yeh dono is 'hrms' root se hi load ho rahe the, jahan HRMS khud hi
+    // likhta tha (isliye UI mein data dikhta to tha, par Admin/Agent Panel
+    // — jo 'shdl/staff_att' aur 'shdl/leave_requests' padhte hain — kabhi
+    // yeh submissions dekh hi nahi paate the).
+    var keys = ['employees','salary_slips','settings'];
+    var done = 0;
+    keys.forEach(function(k){ FBSync.pull(k, function(){ done++; if (done === keys.length && cb) cb(); }); });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// 🔗 SharedFBSync — Digital Library ke 'shdl' Firebase root ke saath
+//   seedha kaam karta hai (Admin_panel_Login.html/Agent_login.html jis
+//   root aur jin exact key-naamon — 'staff_att', 'leave_requests' — ko
+//   padhte hain, wahi yahan bhi use hote hain). Isse pehle HRMS apna
+//   attendance/leave data alag 'hrms' Firebase root ('hrms/attendance',
+//   'hrms/leaves') mein likh raha tha, jo Admin Panel/Agent Panel kabhi
+//   padhte hi nahi the — is wajah se staff ki submit ki hui leave ya
+//   attendance kahin bhi Admin/Agent ko dikhti hi nahi thi. Ab yeh
+//   dono seedhe usi shared jagah save/load hote hain jahan Admin/Agent
+//   dekhte hain, poora workflow ek hi data source se turant connect ho
+//   jaata hai.
+// ══════════════════════════════════════════════════════════════════
+const SharedFBSync = {
+  pull: function(key, cb){
+    // 🆕 FIREBASE → BACKEND MIGRATION: 'shdl/staff_att' aur 'shdl/leave_requests'
+    // Firebase paths ki jagah ab seedha usi Postgres 'kv_blob' table ke
+    // 'staff_att'/'leave_requests' keys se — Admin Panel/Agent Login bhi
+    // yehi keys REST se padhte-likhte hain, isliye data ab bhi ek hi
+    // shared jagah se connect rehta hai.
+    API.get('/blob/' + key).then(function(val){
+      var arr = [];
+      if (val) arr = Array.isArray(val) ? val.filter(Boolean) : Object.values(val).filter(Boolean);
+      try { localStorage.setItem('hrms_' + (key==='staff_att'?'attendance':'leaves'), JSON.stringify(arr)); } catch(e){}
+      if (cb) cb(arr);
+    }).catch(function(err){
+      console.warn('Backend read error (shared):', key, err);
+      var localKey = 'hrms_' + (key==='staff_att'?'attendance':'leaves');
+      if (cb) { try { cb(JSON.parse(localStorage.getItem(localKey)) || []); } catch(e){ cb([]); } }
+    });
+  },
+  push: function(key, val){
+    var localKey = 'hrms_' + (key==='staff_att'?'attendance':'leaves');
+    try { localStorage.setItem(localKey, JSON.stringify(val)); } catch(e){}
+    API.post('/blob/' + key, val).catch(function(err){ console.warn('Backend write error (shared) for', key, err); });
+  }
+};
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;font-family:'Nunito','Hind',Arial,sans-serif}
+:root{
+  --nv:#0d1e3d;--nv2:#1a3a6b;--gd:#c9a227;--gd2:#e8c04a;
+  --gr:#0F6E56;--rd:#A32D2D;--pu:#534AB7;--or:#d97706;
+  --bg:#f0f4fa;--wh:#fff;--bd:#dde3ef;
+  --t1:#0d1e3d;--t2:#4a5568;--t3:#8896a8;
+  --transition:.22s cubic-bezier(.4,0,.2,1);
+}
+body.dark{--bg:#0a0f1e;--wh:#1a2035;--bd:#2a3550;--t1:#e2e8f0;--t2:#94a3b8;--t3:#64748b}
+html,body{height:100%;background:var(--bg);color:var(--t1);overflow:hidden}
+body.dark .ct{background:var(--bg)}
+body.dark .card{background:var(--wh);border-color:var(--bd)}
+body.dark thead tr{background:#1e293b}
+body.dark td{border-color:#1e293b;color:var(--t2)}
+body.dark tbody tr:hover{background:#1e293b}
+body.dark .fi{background:var(--wh);border-color:var(--bd);color:var(--t1)}
+body.dark .mo-box{background:var(--wh)}
+body.dark .topbar{background:var(--wh);border-color:var(--bd)}
+
+/* ══ RESPONSIVE: HAMBURGER + SIDEBAR OVERLAY (mobile/tablet) ══ */
+#hb-toggle{display:none;background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;padding:4px 6px;border-radius:7px;flex-shrink:0}
+#hb-toggle:hover{background:#f0f2f7}
+body.dark #hb-toggle:hover{background:#1e293b}
+#sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998}
+#sb-overlay.on{display:block}
+
+@media (max-width:860px){
+  /* ══ 📱 MODERN MOBILE APP SHELL ══
+     Desktop par yeh ek sidebar + hamburger-drawer wala "website" jaisa
+     dashboard hai. Mobile par ab yeh ek real app jaisa dikhta hai: neeche
+     ek fixed "bottom tab bar" (jaisa Instagram/PhonePe waghera mein hota
+     hai), aur upar ek chhota compact app-header — bina kisi HTML/JS
+     structure ko chhue, sirf CSS se. */
+
+  /* Hamburger/overlay-drawer ab zaroori nahi — navigation hamesha neeche
+     dikhta rahega, isliye unhe chhupa dete hain. */
+  #hb-toggle{display:none!important}
+  #sb-overlay{display:none!important}
+  #mob-logout-btn{display:flex!important;align-items:center;justify-content:center}
+
+  html,body{overflow:auto}
+  .main{overflow:visible}
+
+  /* Sidebar → Bottom Tab Bar */
+  .sb{
+    position:fixed;left:0;right:0;bottom:0;top:auto;z-index:997;
+    width:100%;max-width:100%;height:auto;
+    flex-direction:row;
+    transform:none;
+    box-shadow:0 -6px 24px rgba(0,0,0,.18);
+    border-top:1px solid rgba(255,255,255,.08);
+    padding-bottom:env(safe-area-inset-bottom,0);
+  }
+  .sb.open{transform:none} /* purana slide-in state ab irrelevant hai */
+  /* Logo/title header aur profile+logout block bottom-bar mein jagah
+     nahi lete — profile/logout ab topbar ke chhote icon se milta hai. */
+  .sb-top,.sb-bot{display:none}
+  .sb-nav{
+    flex:1;display:flex;flex-direction:row;align-items:stretch;
+    padding:6px 2px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    gap:2px;
+  }
+  .sb-s{display:none} /* section label ("MAIN" waghera) bottom bar mein nahi chahiye */
+  .ni{
+    flex:1 0 62px;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    padding:7px 4px 6px;
+    font-size:9.5px;
+    font-weight:700;
+    text-align:center;
+    border-radius:10px;
+    margin-bottom:0;
+    white-space:nowrap;
+  }
+  .ni.act::before{display:none} /* left gold bar ab useless hai (row layout mein) */
+  .ni.act{background:rgba(201,162,39,.16)}
+  .ni-ic{font-size:19px;width:auto}
+
+  /* Content ko bottom-bar ke neeche chhupne se bachao */
+  .ct{padding:14px 14px 84px}
+
+  /* App-style compact header */
+  .topbar{padding:0 14px;gap:10px;height:54px}
+  #pt{font-size:16px;font-weight:900}
+
+  .sg{grid-template-columns:1fr 1fr!important;gap:10px}
+  .g2{grid-template-columns:1fr}
+  .g3{grid-template-columns:1fr}
+  .calc-sum{grid-template-columns:1fr}
+  .pay-tbl{grid-template-columns:1fr}
+  .pay-emp{flex-direction:column}
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:640px}
+  .ch{flex-direction:column;align-items:flex-start}
+  .ch>div[style*="display:flex"]{width:100%}
+
+  /* Modals → bottom sheets (app jaisa slide-up panel, center-screen box nahi) */
+  .mo{align-items:flex-end}
+  .mo-box{
+    width:100%!important;max-width:100%!important;
+    border-radius:20px 20px 0 0;
+    max-height:88vh;
+    animation:slideUp .3s cubic-bezier(.4,0,.2,1);
+    padding-bottom:env(safe-area-inset-bottom,0);
+  }
+}
+@media (max-width:480px){
+  .sg{grid-template-columns:1fr!important}
+  .sv{font-size:20px}
+  .login-card{padding:26px 18px}
+  .mo-f{flex-wrap:wrap}
+}
+
+/* ══ LOGIN ══ */
+#login-screen{display:flex;align-items:flex-start;justify-content:center;min-height:100vh;
+  background:linear-gradient(145deg,#060f1f 0%,#0d1e3d 55%,#1a3a6b 100%);padding:20px;position:relative;overflow-y:auto;overflow-x:hidden}
+#login-screen::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(201,162,39,.12),transparent),
+             radial-gradient(ellipse 50% 40% at 80% 100%,rgba(83,74,183,.15),transparent);pointer-events:none}
+.particles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.particle{position:absolute;width:2px;height:2px;border-radius:50%;background:rgba(201,162,39,.4);animation:float linear infinite}
+@keyframes float{0%{transform:translateY(100vh) translateX(0);opacity:0}10%{opacity:1}90%{opacity:.5}100%{transform:translateY(-20px) translateX(40px);opacity:0}}
+@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.login-card{width:100%;max-width:420px;position:relative;z-index:1;animation:slideUp .5s cubic-bezier(.4,0,.2,1);
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:28px 24px 44px;backdrop-filter:blur(6px);margin:20px 0 40px;
+  /* 🆕 UI/Scroll Fix: Registration form (photo + kaafi saare fields) lambi
+     ho jaati thi aur screen ke neeche chali jaati thi. Ab card ki height
+     viewport ke 85% tak limit hai aur zyada content aane par card ke
+     andar hi smoothly scroll ho jaata hai. Bottom padding (44px) extra
+     rakhi gayi hai taaki Submit button ke turant baad wala hissa —
+     success/error message, "Login par wapas jao" link, aur "Developed by
+     Anmol Kumar" — kabhi bhi scroll-area ke edge par chipak kar chhupa
+     hua na lage, poora saaf-saaf dikhe. */
+  max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.login-logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,var(--gd),var(--gd2));
+  display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px;box-shadow:0 8px 24px rgba(201,162,39,.35)}
+.login-title{text-align:center;color:#fff;font-size:19px;font-weight:800;margin-bottom:2px}
+.login-sub{text-align:center;color:rgba(255,255,255,.45);font-size:12px;margin-bottom:18px}
+.fl{font-size:11px;font-weight:700;color:rgba(255,255,255,.55);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.fr{margin-bottom:12px}
+.finp{width:100%;padding:11px 14px;border:1.5px solid rgba(255,255,255,.14);border-radius:10px;font-size:14px;
+  background:rgba(255,255,255,.05);color:#fff;outline:none;transition:.2s;box-sizing:border-box}
+.finp:focus{border-color:var(--gd);background:rgba(255,255,255,.08)}
+.finp::placeholder{color:rgba(255,255,255,.3)}
+/* 🆕 Dropdown Styling & Readability Fix: <select class="finp"> ka closed-state
+   background transparent (rgba white 5%) hai, jo card ke dark background ke
+   upar theek dikhta hai. Lekin browser jab <option> list KHOLTA hai, wo apna
+   ALAG native rendering context use karta hai jahan transparent background
+   solid nahi maana jaata — isliye list ka background default (safed) ho
+   jaata hai, jabki text color CSS se white hi rehta hai → white-on-white,
+   naam padhna namumkin. Ab select aur uske andar har option par EXPLICIT
+   solid dark background + chamakta safed text diya gaya hai, taaki list
+   khulne par bhi (jaise "AGT001 - Sharma Ji") saaf padha ja sake.
+   -webkit-appearance/appearance se OS ka default dropdown look bhi hata
+   diya, taaki custom rang har browser mein sahi lagu ho. */
+select.finp{-webkit-appearance:none;appearance:none;background-color:#0d1e3d;color:#fff;cursor:pointer;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c9a227' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:16px;padding-right:38px}
+select.finp option{background-color:#0d1e3d;color:#fff;padding:8px}
+select.finp option:checked,select.finp option:hover{background-color:#1a3a6b;color:#fff}
+.captcha-box{background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.15);border-radius:12px;padding:12px 14px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+.captcha-code{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:900;letter-spacing:8px;color:var(--gd);
+  text-shadow:0 0 12px rgba(201,162,39,.4);user-select:none;pointer-events:none}
+.captcha-refresh{background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);font-size:18px;cursor:pointer;
+  border-radius:7px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+.captcha-refresh:hover{background:rgba(201,162,39,.2);color:var(--gd)}
+.login-btn{width:100%;padding:13px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gd),var(--gd2));
+  color:var(--nv);font-weight:800;font-size:14px;cursor:pointer;transition:.2s}
+.login-btn:hover{filter:brightness(1.06)}
+.login-err{color:#ff8787;font-size:12px;text-align:center;margin-top:10px;min-height:14px}
+.login-hint{text-align:center;color:rgba(255,255,255,.28);font-size:11px;margin-top:16px}
+
+/* ══ APP SHELL ══ */
+.app{display:none;flex-direction:column;height:100vh;background:var(--bg)}
+.app.visible{display:flex}
+.body{display:flex;flex:1;overflow:hidden}
+.sb{width:235px;background:var(--nv);display:flex;flex-direction:column;flex-shrink:0}
+.sb-top{padding:14px 14px 11px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px}
+.sb-lg{width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,var(--gd),var(--gd2));
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.sb-t{font-size:12px;font-weight:800;color:#fff;line-height:1.3}
+.sb-p{font-size:9px;color:var(--gd)}
+.sb-nav{flex:1;padding:10px 8px;overflow-y:auto}
+.sb-s{font-size:9px;font-weight:700;color:rgba(255,255,255,.25);letter-spacing:.1em;padding:10px 8px 4px;text-transform:uppercase}
+.ni{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:13px;
+  color:rgba(255,255,255,.55);margin-bottom:2px;border:none;background:none;width:100%;text-align:left;position:relative}
+.ni:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.9)}
+.ni.act{background:rgba(201,162,39,.16);color:var(--gd)}
+.ni.act::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--gd);border-radius:0 3px 3px 0}
+.ni-ic{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.sb-bot{padding:11px;border-top:1px solid rgba(255,255,255,.07)}
+.sb-u{display:flex;align-items:center;gap:9px;padding:8px 10px;background:rgba(255,255,255,.06);border-radius:9px;margin-bottom:8px}
+.sb-av{width:28px;height:28px;border-radius:50%;background:var(--gd);display:flex;align-items:center;justify-content:center;overflow:hidden;
+  font-size:11px;font-weight:800;color:var(--nv);flex-shrink:0}
+.sb-un{font-size:11px;font-weight:700;color:#fff;line-height:1.2}
+.sb-ur{font-size:9px;color:rgba(255,255,255,.4)}
+.logout-btn{width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:none;
+  color:rgba(255,255,255,.55);font-size:12px;font-weight:700;cursor:pointer;transition:.2s}
+.logout-btn:hover{border-color:var(--rd);color:#ff8787}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--wh);border-bottom:1px solid var(--bd);padding:0 18px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+#pt{font-size:15px;font-weight:800;color:var(--nv);flex:1}
+#dm-toggle{display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;border:1px solid var(--bd);
+  background:var(--wh);cursor:pointer;font-size:12px;font-weight:700;color:var(--t2)}
+#dm-toggle:hover{border-color:var(--nv);color:var(--nv)}
+.ct{flex:1;overflow-y:auto;padding:20px 22px;background:var(--bg)}
+.pg{display:none}.pg.on{display:block}
+.ph{font-size:15px;font-weight:800;color:var(--nv);margin-bottom:14px}
+
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+.sc{background:var(--wh);border-radius:12px;padding:16px 17px;border-left:4px solid var(--gd);box-shadow:0 2px 12px rgba(13,30,61,.06)}
+.sc.g{border-left-color:var(--gr)}.sc.p{border-left-color:var(--pu)}
+.sl{font-size:10px;color:var(--t3);font-weight:700;text-transform:uppercase;margin-bottom:5px;letter-spacing:.04em}
+.sv{font-size:24px;font-weight:800;color:var(--t1);line-height:1}
+
+.card{background:var(--wh);border-radius:12px;margin-bottom:16px;overflow:hidden;border:1px solid var(--bd);box-shadow:0 2px 12px rgba(13,30,61,.05)}
+.ch{padding:13px 16px;border-bottom:1px solid #f0f2f7;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ctit{font-size:14px;font-weight:800;color:var(--t1)}
+.mo-b{padding:18px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead tr{background:#f8fafc}
+th{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;padding:10px 14px;text-align:left;border-bottom:1px solid var(--bd)}
+td{padding:10px 14px;border-bottom:1px solid #f4f6fa;color:var(--t2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#f8fafc}
+.bx{display:inline-block;padding:3px 10px;border-radius:12px;font-size:10.5px;font-weight:700}
+.bgg{background:#E1F5EE;color:#0F6E56}.baa{background:#fff3cd;color:#854F0B}
+.be{padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #dde3ef;background:#e6f0ff;color:var(--nv);margin-right:5px}
+.bp{padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;border:none;background:var(--nv);color:var(--gd)}
+.bp:hover{background:#1a3a6b}
+.bs{padding:8px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;border:1px solid var(--bd);background:var(--wh);color:var(--t1)}
+.fl2{font-size:10px;font-weight:700;color:var(--t2);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.fr2{margin-bottom:13px}
+.fi{width:100%;padding:9px 11px;border:1.5px solid var(--bd);border-radius:8px;font-size:12.5px;color:var(--t1);background:#fff;outline:none}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.sc-sec{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--gd);margin:16px 0 8px;padding-top:10px;border-top:1px dashed var(--bd)}
+.sc-sec:first-of-type{border-top:none;margin-top:0;padding-top:0}
+.calc-sum{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;background:#f0f4fa;border-radius:10px;padding:14px 16px;margin:14px 0}
+.calc-sum div{text-align:center}
+.calc-sum .cl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.calc-sum .cv{font-size:17px;font-weight:800;color:var(--nv)}
+.calc-sum .cv.rd{color:var(--rd)}.calc-sum .cv.gr{color:var(--gr)}
+.sc-hint{font-size:10px;color:var(--t3);margin-top:-6px;margin-bottom:10px}
+body.dark .calc-sum{background:#0a0f1e}
+.ae-row{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:7px;background:#f8fafc;font-size:11.5px;margin-bottom:5px}
+body.dark .ae-row{background:#0a0f1e}
+
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center}
+.mo.on{display:flex}
+.mo-box{background:#fff;border-radius:14px;width:640px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.mo-h{background:var(--nv);padding:15px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:2}
+.mo-t{font-size:14px;font-weight:800;color:var(--gd)}
+.mo-x{width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:15px;cursor:pointer}
+.mo-f{display:flex;gap:10px;padding:13px 18px;border-top:1px solid var(--bd);background:#f8fafc;position:sticky;bottom:0;justify-content:flex-end}
+
+.toast{position:fixed;bottom:24px;right:24px;background:var(--nv);color:#fff;padding:13px 20px;border-radius:10px;
+  font-size:13px;font-weight:700;box-shadow:0 8px 26px rgba(0,0,0,.25);z-index:99999;display:none;max-width:340px;border-left:4px solid var(--gd)}
+.toast.show{display:block;animation:slideUp .3s}
+
+/* payslip receipt */
+.pay-slip{border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+.pay-h{background:var(--nv);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;color:#fff}
+.pay-h .co{font-size:15px;font-weight:800;color:var(--gd)}
+.pay-h .mo2{font-size:12px;color:rgba(255,255,255,.6)}
+.pay-body{padding:18px 20px}
+.pay-emp{display:flex;justify-content:space-between;margin-bottom:14px;font-size:12.5px;flex-wrap:wrap;gap:8px}
+.pay-emp div b{display:block;color:var(--t1)}
+.pay-tbl{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:14px}
+.pay-col-t{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--t3);margin-bottom:6px;letter-spacing:.05em}
+.pay-r{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eef0f5;font-size:12.5px}
+.pay-r:last-child{border-bottom:none}
+.pay-net{background:#f0f4fa;border-radius:9px;padding:12px 16px;display:flex;justify-content:space-between;
+  align-items:center;font-size:14px;font-weight:800;color:var(--nv);margin-top:6px}
+.pay-net span:last-child{color:var(--gr);font-size:18px}
+@media print{
+  body *{visibility:hidden}
+  #print-area,#print-area *{visibility:visible}
+  #print-area{position:absolute;left:0;top:0;width:100%}
+}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN SCREEN (Employee only) ══════════════ -->
+<div id="login-screen">
+  <div class="particles" id="particles"></div>
+  <div class="login-card">
+    <img class="login-logo" src="data:image/jpeg;base64,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" alt="LibraryBook Logo" style="object-fit:cover">
+    <div class="login-title">HRMS Portal</div>
+    <div class="login-sub">Employee Login</div>
+
+    <form class="lf on" id="lf-emp" onsubmit="return DO_LOGIN_EMP(event)">
+      <div class="fr"><label class="fl">Employee ID</label><input class="finp" id="e-user" placeholder="EMP001" autocomplete="off"></div>
+      <div class="fr">
+        <label class="fl">Registered Mobile Number (10 digit)</label>
+        <input class="finp" id="e-mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="Enter Mobile Number" autocomplete="off"
+          oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)">
+      </div>
+      <div class="captcha-box">
+        <span class="captcha-code" id="e-captcha-code">0000</span>
+        <button type="button" class="captcha-refresh" onclick="GEN_CAPTCHA('e')">↻</button>
+      </div>
+      <div class="fr"><label class="fl">Enter Captcha</label><input class="finp" id="e-captcha-in" placeholder="Type code above" autocomplete="off"></div>
+      <button class="login-btn" type="submit">Login</button>
+      <div class="login-err" id="e-err"></div>
+    </form>
+
+    <div class="login-hint" style="margin-top:12px;cursor:pointer;color:var(--gd);font-weight:700" id="lnk-show-register" onclick="TOGGLE_ADMIN_FORM(true)">🆕 Naya Staff? Yahan Register Karein</div>
+
+    <!-- ══ EMPLOYEE SELF-REGISTRATION (Admin approval ke baad hi login active hoga) ══ -->
+    <div class="lf" id="lf-admin-add" style="display:none">
+      <div class="login-sub" style="margin:-4px 0 14px;text-align:left">Apni details bharein — yeh registration Admin ke paas approval ke liye jayega. Approve hone ke baad hi aap login kar payenge (Employee ID bhi tabhi generate hogi).</div>
+      <div class="fr" style="text-align:center">
+        <label class="fl">Photo</label>
+        <div style="display:flex;align-items:center;gap:10px;justify-content:center">
+          <img id="ae-photo-preview" src="" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--gd)">
+          <span id="ae-photo-placeholder" style="width:56px;height:56px;border-radius:50%;background:#f0f2f7;display:flex;align-items:center;justify-content:center;font-size:22px">📷</span>
+          <input type="file" id="ae-photo" accept="image/*" onchange="AE_PHOTO_PREVIEW(this)" style="font-size:11px">
+        </div>
+      </div>
+      <div class="fr"><label class="fl">Full Name *</label><input class="finp" id="ae-name" placeholder="Enter Full Name" autocomplete="off"></div>
+      <div class="fr">
+        <label class="fl">Mobile Number (10 digit) *</label>
+        <input class="finp" id="ae-phone" type="tel" inputmode="numeric" maxlength="10" placeholder="10 digit mobile number" autocomplete="off"
+          oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)">
+      </div>
+      <div class="fr"><label class="fl">Email ID</label><input class="finp" id="ae-email" type="email" placeholder="you@example.com" autocomplete="off"></div>
+      <div class="fr"><label class="fl">Address</label><input class="finp" id="ae-address" placeholder="Enter Address" autocomplete="off"></div>
+      <div class="fr"><label class="fl">Designation</label><input class="finp" id="ae-desig" placeholder="e.g. Teacher" autocomplete="off"></div>
+      <div class="fr"><label class="fl">Department</label><input class="finp" id="ae-dept" placeholder="e.g. Mathematics" autocomplete="off"></div>
+      <div class="fr">
+        <label class="fl">Agent / Library Chunein *</label>
+        <select class="finp" id="ae-agent"><option value="">-- Loading... --</option></select>
+      </div>
+      <button class="login-btn" type="button" onclick="ADD_EMPLOYEE()">Registration Submit</button>
+      <div class="sc-hint">Yeh mobile number login ke liye credential ke roop me use hoga. Admin approve karega tabhi login ho payega.</div>
+      <div class="login-err" id="ae-err"></div>
+      <div class="login-err" id="ae-success" style="color:#4ade80"></div>
+    </div>
+
+    <div class="login-hint" style="margin-top:12px;cursor:pointer;color:var(--gd);font-weight:700;display:none" id="lnk-show-login" onclick="TOGGLE_ADMIN_FORM(false)">← Login par wapas jao</div>
+
+    <div class="login-hint" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12);font-size:12px">Developed by <b style="color:rgba(255,255,255,.75)">Anmol Kumar</b></div>
+  </div>
+</div>
+
+<!-- ══════════════ APP SHELL ══════════════ -->
+<div class="app" id="app">
+  <div class="body">
+    <div class="sb">
+      <div class="sb-top">
+        <img class="sb-lg" src="data:image/jpeg;base64,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" alt="Logo" style="object-fit:cover">
+        <div><div class="sb-t">HRMS Portal</div><div class="sb-p">Employee Portal</div></div>
+      </div>
+      <div class="sb-nav" id="sb-nav">
+        <div class="sb-s">Main</div>
+        <button class="ni" data-pg="emp-dash" onclick="GOTO('emp-dash')"><span class="ni-ic">📊</span><span>Dashboard</span></button>
+        <button class="ni" data-pg="emp-slips" onclick="GOTO('emp-slips')"><span class="ni-ic">📑</span><span>My Payslips</span></button>
+        <button class="ni" data-pg="emp-salary-claim" onclick="GOTO('emp-salary-claim')"><span class="ni-ic">💰</span><span>Salary</span></button>
+        <button class="ni" data-pg="emp-profile" onclick="GOTO('emp-profile')"><span class="ni-ic">🙍</span><span>My Profile</span></button>
+        <div class="sb-s">Time &amp; Leave</div>
+        <button class="ni" data-pg="emp-attendance" onclick="GOTO('emp-attendance')"><span class="ni-ic">🕒</span><span>Attendance</span></button>
+        <button class="ni" data-pg="emp-leave" onclick="GOTO('emp-leave')"><span class="ni-ic">🏖️</span><span>Leave Management</span></button>
+        <div class="sb-s">Support</div>
+        <button class="ni" data-pg="emp-help" onclick="GOTO('emp-help')"><span class="ni-ic">☎️</span><span>Help &amp; Contacts</span></button>
+      </div>
+      <div class="sb-bot">
+        <div class="sb-u">
+          <div class="sb-av" id="sb-av">A</div>
+          <div><div class="sb-un" id="sb-un">—</div><div class="sb-ur" id="sb-ur">—</div></div>
+        </div>
+        <button class="logout-btn" onclick="DO_LOGOUT()">↩ Logout</button>
+        <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.35);margin-top:10px">
+          <span id="fb-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#94a3b8;vertical-align:middle"></span> &nbsp;☁️ Server Status
+        </div>
+        <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.25);margin-top:6px">Developed by Anmol Kumar</div>
+      </div>
+    </div>
+
+    <div id="sb-overlay" onclick="TOGGLE_SIDEBAR(false)"></div>
+
+    <div class="main">
+      <div class="topbar">
+        <button id="hb-toggle" onclick="TOGGLE_SIDEBAR()">☰</button>
+        <div id="pt">Dashboard</div>
+        <div style="position:relative">
+          <button id="hrms-notif-btn" onclick="TOGGLE_HRMS_NOTIF()" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;position:relative;color:var(--t1)">
+            🔔
+            <span id="hrms-notif-badge" style="display:none;position:absolute;top:-2px;right:0;background:#A32D2D;color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
+          </button>
+          <div id="hrms-notif-panel" style="display:none;position:absolute;top:36px;right:0;width:280px;max-height:340px;overflow-y:auto;background:var(--wh);border:1px solid var(--bd);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.15);z-index:9999">
+            <div style="padding:10px 12px;border-bottom:1px solid var(--bd);font-size:12px;font-weight:700;color:var(--t1)">🔔 Notifications</div>
+            <div id="hrms-notif-list" style="padding:8px"><div style="text-align:center;padding:20px;font-size:11px;color:var(--t3)">Koi notification nahi 🎉</div></div>
+          </div>
+        </div>
+        <button id="dm-toggle" onclick="TOGGLE_DARK()">🌙 Dark</button>
+        <button id="mob-logout-btn" onclick="DO_LOGOUT()" title="Logout" style="display:none;background:rgba(163,45,45,.1);border:1px solid rgba(163,45,45,.3);color:var(--rd);font-size:15px;padding:6px 9px;border-radius:8px;cursor:pointer;flex-shrink:0">↩</button>
+      </div>
+
+      <div class="ct">
+
+        <!-- ══ EMPLOYEE: MY DASHBOARD ══ -->
+        <div class="pg" id="pg-emp-dash">
+          <div class="ph">👋 Welcome</div>
+          <div class="sg">
+            <div class="sc"><div class="sl">Last Net Pay</div><div class="sv" id="emp-last-net">₹0</div></div>
+            <div class="sc g"><div class="sl">YTD Earnings</div><div class="sv" id="emp-ytd">₹0</div></div>
+            <div class="sc p"><div class="sl">Total Payslips</div><div class="sv" id="emp-slip-count">0</div></div>
+          </div>
+          <div class="card">
+            <div class="ch"><div class="ctit">📄 Most Recent Payslip</div></div>
+            <div class="mo-b" id="emp-recent-slip" style="font-size:12.5px;color:var(--t3)">Koi payslip abhi generate nahi hui hai.</div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE: MY PAYSLIPS ══ -->
+        <div class="pg" id="pg-emp-slips">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+            <div class="ph" style="margin:0">📑 My Payslips</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <label class="fl2" style="margin:0">Year</label>
+              <select class="fi" id="emp-slips-year" style="width:110px" onchange="RENDER_EMP_SLIPS()"></select>
+            </div>
+          </div>
+          <div class="sg">
+            <div class="sc"><div class="sl">Total Gross (Year)</div><div class="sv" id="emp-slips-total-gross">₹0</div></div>
+            <div class="sc g"><div class="sl">Total Deductions (Year)</div><div class="sv" id="emp-slips-total-ded">₹0</div></div>
+            <div class="sc p"><div class="sl">Total Net Pay (Year)</div><div class="sv" id="emp-slips-total-net">₹0</div></div>
+          </div>
+          <div class="card">
+            <div class="ch"><div class="ctit">📅 Saare 12 Mahine Ka Record</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Month</th><th>Gross</th><th>Deductions</th><th>Net Pay</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="tb-emp-slips"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE: MERA VETAN BANAYEIN (Self Salary Claim → Agent Login Salary Verification) ══ -->
+        <div class="pg" id="pg-emp-salary-claim">
+          <div class="ph">💰 Salary</div>
+          <div class="card">
+            <div class="ch"><div class="ctit">🧾 Salary Calculate Karein</div></div>
+            <div class="mo-b">
+              <div style="font-size:12px;color:var(--t2);margin-bottom:12px">Apni salary ki details bharein aur submit karein. Yeh claim <b>HR / Agent ke paas Salary Verification ke liye</b> jayega — approve hone ke baad hi yeh aapke "My Payslips" mein payslip ban kar dikhega.</div>
+              <div class="g3">
+                <div class="fr2"><label class="fl2">Month</label><select class="fi" id="my-sc-month"></select></div>
+                <div class="fr2"><label class="fl2">Year</label><input class="fi" id="my-sc-year" type="number"></div>
+                <div></div>
+              </div>
+              <div class="sc-sec">✅ Earnings</div>
+              <div class="g3">
+                <div class="fr2"><label class="fl2">Basic Salary (₹)</label><input class="fi" id="my-sc-basic" type="number" value="0" readonly style="background:#f0f2f7;color:var(--t2);cursor:not-allowed">
+                  <div class="sc-hint" style="margin-top:4px">🔒 Yeh Basic Salary Agent Login se fix ki gayi hai, ise edit nahi kiya ja sakta.</div>
+                </div>
+                <div class="fr2"><label class="fl2">HRA (%)</label><input class="fi" id="my-sc-hra-pct" type="number" value="40" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">DA (%)</label><input class="fi" id="my-sc-da-pct" type="number" value="10" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Bonus (₹)</label><input class="fi" id="my-sc-bonus" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Incentive (₹)</label><input class="fi" id="my-sc-incentive" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Overtime Hours</label><input class="fi" id="my-sc-ot-hours" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Overtime Rate (₹/hr)</label><input class="fi" id="my-sc-ot-rate" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+              </div>
+              <div class="sc-hint">HRA aur DA, Basic Salary ke % ke hisaab se auto-calculate hote hain.</div>
+              <div class="sc-sec">➖ Deductions</div>
+              <div class="g3">
+                <div class="fr2"><label class="fl2">PF (%)</label><input class="fi" id="my-sc-pf-pct" type="number" value="12" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">ESI (%)</label><input class="fi" id="my-sc-esi-pct" type="number" value="0.75" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Professional Tax (₹)</label><input class="fi" id="my-sc-pt" type="number" value="200" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">TDS (₹)</label><input class="fi" id="my-sc-tds" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Loan Deduction (₹)</label><input class="fi" id="my-sc-loan" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+                <div class="fr2"><label class="fl2">Advance Salary (₹)</label><input class="fi" id="my-sc-advance" type="number" value="0" oninput="CALC_MY_SALARY()"></div>
+              </div>
+              <div class="calc-sum">
+                <div><div class="cl">Gross Earnings</div><div class="cv gr" id="my-sc-prev-gross">₹0</div></div>
+                <div><div class="cl">Total Deductions</div><div class="cv rd" id="my-sc-prev-ded">₹0</div></div>
+                <div><div class="cl">Net Pay</div><div class="cv" id="my-sc-prev-net">₹0</div></div>
+              </div>
+              <button class="login-btn" style="color:var(--nv)" onclick="SUBMIT_MY_SALARY_CLAIM()">📨 Verification Ke Liye Submit Karein</button>
+              <div class="login-err" id="my-sc-err" style="color:#A32D2D;text-align:left;margin-top:8px"></div>
+              <div class="login-err" id="my-sc-success" style="color:#0F6E56;text-align:left"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">📜 Mere Salary Claims</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Month</th><th>Gross</th><th>Net Pay</th><th>Status</th><th>Reason</th></tr></thead>
+              <tbody id="tb-my-salary-claims"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE: MY PROFILE ══ -->
+        <div class="pg" id="pg-emp-profile">
+          <div class="ph">🙍 My Profile</div>
+          <div class="card"><div class="mo-b" id="emp-profile-box"></div></div>
+        </div>
+
+        <!-- ══ EMPLOYEE: ATTENDANCE ══ -->
+        <div class="pg" id="pg-emp-attendance">
+          <div class="ph">🕒 Attendance</div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">📍 Today — <span id="att-today-date"></span></div></div>
+            <div class="mo-b">
+              <div class="g3" style="align-items:end">
+                <div><label class="fl2">In Time</label><div class="fi" id="att-today-in" style="background:#f8fafc">—</div></div>
+                <div><label class="fl2">Out Time</label><div class="fi" id="att-today-out" style="background:#f8fafc">—</div></div>
+                <div><label class="fl2">Status</label><div class="fi" id="att-today-status" style="background:#f8fafc">—</div></div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:12px">
+                <button class="bp" id="btn-punch-in" onclick="OPEN_PUNCH_MODAL('in')">🟢 Punch In</button>
+                <button class="bp" id="btn-punch-out" style="background:var(--rd)" onclick="OPEN_PUNCH_MODAL('out')">🔴 Punch Out</button>
+              </div>
+              <div style="display:flex;gap:16px;margin-top:12px" id="att-today-proof-wrap">
+                <div id="att-today-in-proof" style="display:none;cursor:pointer" onclick="VIEW_PUNCH_PROOF(currentUser.empId, todayStr(), 'in')">
+                  <img id="att-today-in-thumb" src="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;border:2px solid var(--gr)">
+                  <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:2px">In 📍</div>
+                </div>
+                <div id="att-today-out-proof" style="display:none;cursor:pointer" onclick="VIEW_PUNCH_PROOF(currentUser.empId, todayStr(), 'out')">
+                  <img id="att-today-out-thumb" src="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;border:2px solid var(--rd)">
+                  <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:2px">Out 📍</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sg" style="grid-template-columns:repeat(4,1fr)">
+            <div class="sc g"><div class="sl">Present Days</div><div class="sv" id="att-present">0</div></div>
+            <div class="sc"><div class="sl">Absent Days</div><div class="sv" id="att-absent">0</div></div>
+            <div class="sc p"><div class="sl">Late Arrivals</div><div class="sv" id="att-late">0</div></div>
+            <div class="sc"><div class="sl">Total Hours</div><div class="sv" id="att-total-hours">0</div></div>
+          </div>
+
+          <div class="card">
+            <div class="ch">
+              <div class="ctit">📅 Monthly Attendance — Calendar View</div>
+              <div style="display:flex;gap:8px">
+                <select class="fi" id="att-month-sel" style="width:130px" onchange="RENDER_EMP_ATTENDANCE()"></select>
+                <input class="fi" id="att-year-sel" type="number" style="width:90px" onchange="RENDER_EMP_ATTENDANCE()">
+              </div>
+            </div>
+            <div class="mo-b">
+              <div id="att-calendar" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">📋 Attendance History</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Date</th><th>In Time</th><th>Out Time</th><th>Working Hours</th><th>Status</th><th>Proof</th></tr></thead>
+              <tbody id="tb-att-history"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE: LEAVE MANAGEMENT ══ -->
+        <div class="pg" id="pg-emp-leave">
+          <div class="ph">🏖️ Leave Management</div>
+
+          <div class="sg" id="leave-balance-cards"></div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">📝 Apply Leave</div></div>
+            <div class="mo-b">
+              <div class="g3">
+                <div class="fr2"><label class="fl2">Leave Type *</label>
+                  <select class="fi" id="lv-type">
+                    <option value="Casual">Casual Leave</option>
+                    <option value="Sick">Sick Leave</option>
+                    <option value="Earned">Earned Leave</option>
+                    <option value="Other">Other / Unpaid</option>
+                  </select>
+                </div>
+                <div class="fr2"><label class="fl2">From Date *</label><input class="fi" id="lv-from" type="date"></div>
+                <div class="fr2"><label class="fl2">To Date *</label><input class="fi" id="lv-to" type="date"></div>
+              </div>
+              <div class="fr2"><label class="fl2">Reason *</label><textarea class="fi" id="lv-reason" rows="2" placeholder="Reason for leave"></textarea></div>
+              <div class="fr2"><label class="fl2">Upload Supporting Document (optional)</label><input class="fi" id="lv-doc" type="file" accept="image/*,.pdf" onchange="LV_DOC_PICK(event)"></div>
+              <div class="sc-hint" id="lv-doc-name"></div>
+              <button class="login-btn" style="color:var(--nv)" onclick="APPLY_LEAVE()">📨 Submit Leave Application</button>
+              <div class="login-err" id="lv-err" style="color:#A32D2D;text-align:left;margin-top:8px"></div>
+              <div class="login-err" id="lv-success" style="color:#0F6E56;text-align:left"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">📜 Leave History</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="tb-leave-history"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <!-- ══ EMPLOYEE: HELP & CONTACTS ══ -->
+        <div class="pg" id="pg-emp-help">
+          <div class="ph">☎️ Help &amp; Contacts</div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">🚀 App Launch</div></div>
+            <div class="mo-b" style="font-size:12.5px;color:var(--t2)">
+              Is app ka launch/support point of contact neeche diya gaya hai. Kisi bhi issue, query ya App Launch se juri madad ke liye seedha call karein.
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch"><div class="ctit">👤 Support Contact</div></div>
+            <div class="mo-b">
+              <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+                <div style="width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,var(--gd),var(--gd2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:var(--nv);flex-shrink:0">A</div>
+                <div style="flex:1;min-width:160px">
+                  <div style="font-size:15px;font-weight:800;color:var(--t1)">Anmol Kumar</div>
+                  <div style="font-size:12px;color:var(--t3)">App Launch Support</div>
+                  <div style="font-size:13px;color:var(--t2);margin-top:2px;font-family:'JetBrains Mono',monospace">+91 62021 19756</div>
+                </div>
+                <a class="bp" href="tel:+916202119756" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">📞 Call Now</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MODALS ══════════════ -->
+<div class="mo" id="mo-slip">
+  <div class="mo-box">
+    <div class="mo-h"><div class="mo-t">Salary Slip</div><button class="mo-x" onclick="CLOSE_MODAL('mo-slip')">✕</button></div>
+    <div class="mo-b" id="print-area"></div>
+    <div class="mo-f"><button class="bs" onclick="CLOSE_MODAL('mo-slip')">Close</button><button class="bp" onclick="window.print()">🖨️ Print / Download PDF</button></div>
+  </div>
+</div>
+
+
+<div class="mo" id="mo-admin-pass">
+  <div class="mo-box" style="width:360px">
+    <div class="mo-h"><div class="mo-t">🔒 Admin Verification</div><button class="mo-x" onclick="CLOSE_MODAL('mo-admin-pass')">✕</button></div>
+    <div class="mo-b">
+      <div class="fr2">
+        <label class="fl2">Enter Admin Mobile Number (10 digit)</label>
+        <input class="fi" id="ap-mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="Enter Mobile Number"
+          oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)"
+          onkeydown="if(event.key==='Enter'){VERIFY_ADMIN_PASS();}">
+      </div>
+      <button class="login-btn" style="color:var(--nv)" onclick="VERIFY_ADMIN_PASS()">Enter</button>
+      <div class="login-err" id="ap-err" style="color:#A32D2D;text-align:left;margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GPS + SELFIE PUNCH MODAL ══ -->
+<div class="mo" id="mo-punch">
+  <div class="mo-box" style="width:420px">
+    <div class="mo-h"><div class="mo-t" id="punch-mo-title">🟢 Punch In — Selfie & Location</div><button class="mo-x" onclick="CLOSE_PUNCH_MODAL()">✕</button></div>
+    <div class="mo-b">
+
+      <div style="position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3">
+        <video id="punch-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
+        <img id="punch-photo-preview" style="width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0">
+      </div>
+      <canvas id="punch-canvas" style="display:none"></canvas>
+      <div id="punch-cam-err" style="color:#A32D2D;font-size:12px;margin-top:8px;display:none"></div>
+
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="bs" id="punch-btn-capture" style="flex:1" onclick="CAPTURE_PUNCH_SELFIE()">📸 Capture Selfie</button>
+        <button class="bs" id="punch-btn-retake" style="flex:1;display:none" onclick="RETAKE_PUNCH_SELFIE()">🔄 Retake</button>
+      </div>
+
+      <div class="card" style="margin-top:12px;background:#f8fafc;box-shadow:none;border:1px solid var(--bd)">
+        <div class="mo-b" style="padding:10px 12px">
+          <div style="font-size:12px;font-weight:800;color:var(--t1);margin-bottom:4px">📍 Location</div>
+          <div style="font-size:12px;color:var(--t2)" id="punch-gps-status">Location fetch ho raha hai…</div>
+        </div>
+      </div>
+
+      <div class="login-err" id="punch-err" style="color:#A32D2D;text-align:left;margin-top:8px"></div>
+    </div>
+    <div class="mo-f">
+      <button class="bs" onclick="CLOSE_PUNCH_MODAL()">Cancel</button>
+      <button class="bp" id="punch-btn-confirm" disabled onclick="CONFIRM_PUNCH()">✅ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ VIEW PUNCH PROOF (past selfie + location) ══ -->
+<div class="mo" id="mo-punch-view">
+  <div class="mo-box" style="width:380px">
+    <div class="mo-h"><div class="mo-t" id="punch-view-title">Punch Proof</div><button class="mo-x" onclick="CLOSE_MODAL('mo-punch-view')">✕</button></div>
+    <div class="mo-b">
+      <img id="punch-view-photo" style="width:100%;border-radius:10px;object-fit:cover;aspect-ratio:4/3;background:#f0f2f7">
+      <div style="font-size:12px;color:var(--t2);margin-top:10px" id="punch-view-time"></div>
+      <div style="font-size:12px;color:var(--t2);margin-top:4px" id="punch-view-loc"></div>
+      <a id="punch-view-map-link" href="#" target="_blank" class="bs" style="display:inline-block;margin-top:10px;text-decoration:none;text-align:center">🗺️ View on Google Maps</a>
+    </div>
+    <div class="mo-f"><button class="bs" onclick="CLOSE_MODAL('mo-punch-view')">Close</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════ DISABLE RIGHT-CLICK ══════════════
+document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+// ══════════════ STATE ══════════════
+var EMPLOYEES = [];
+var PENDING_REGISTRATIONS = [];  // self-registrations submitted from the login screen, waiting on Agent Login "Approve"
+var SLIPS = [];
+var CLAIMS = []; // Employee self-generated salary claims, pending Agent Login "Salary Verification" approval
+var ATTENDANCE = [];
+var PUNCH_MODE = null;       // 'in' | 'out'
+var PUNCH_STREAM = null;     // active camera MediaStream
+var PUNCH_PHOTO = null;      // captured selfie dataURL
+var PUNCH_LOC = null;        // { lat, lng, acc }
+var LEAVES = [];
+// FIX: Agar Agent Login se company ka apna logo abhi sync nahi hua hai, to yeh generic
+// placeholder logo Salary Slip par dikhta hai (SETTINGS.logo se automatically replace ho jaata hai).
+var DEFAULT_SLIP_LOGO = "data:image/jpeg;base64,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";
+var SETTINGS = { company: 'Your Company Pvt Ltd', pf: 12, pt: 200, adminMobile: '9876543210',
+  shiftStart: '09:30', shiftEnd: '18:30', graceMinutes: 15,
+  leaveAllocation: { Casual: 12, Sick: 8, Earned: 15 } };
+var currentUser = null;
+var captchaVal = { e: '' };
+var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var ADMIN_VERIFIED = false;
+var ADMIN_PENDING_ACTION = null;
+
+// NOTE: Admin role/login has been removed from this portal.
+// Employee records aur salary slips ab Postgres backend ('hrms_employees'
+// aur 'hrms_salary_slips' blob keys, PUT /api/hr/employees/:empId) se
+// manage hote hain — Admin Panel ya Agent Login ke through.
+
+// ══════════════ PARTICLES ══════════════
+(function(){
+  var wrap = document.getElementById('particles');
+  for (var i=0;i<28;i++){
+    var p = document.createElement('div');
+    p.className='particle';
+    p.style.left = Math.random()*100+'%';
+    p.style.animationDuration = (8+Math.random()*10)+'s';
+    p.style.animationDelay = (Math.random()*8)+'s';
+    wrap.appendChild(p);
+  }
+})();
+
+// ══════════════ CAPTCHA ══════════════
+function GEN_CAPTCHA(which){
+  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', code='';
+  for (var i=0;i<5;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  captchaVal[which] = code;
+  document.getElementById(which+'-captcha-code').textContent = code;
+  document.getElementById(which+'-captcha-in').value='';
+}
+GEN_CAPTCHA('e');
+
+// ══════════════ TOAST ══════════════
+function SHOW_TOAST(msg){
+  var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(window._toastT); window._toastT=setTimeout(function(){t.classList.remove('show');},2800);
+}
+
+// ══════════════ ADMIN: PASSWORD GATE (10-digit mobile) ══════════════
+function REQUEST_ADMIN(action){
+  ADMIN_PENDING_ACTION = action;
+  if (ADMIN_VERIFIED){ PROCEED_ADMIN_ACTION(); return; }
+  document.getElementById('ap-mobile').value='';
+  document.getElementById('ap-err').textContent='';
+  document.getElementById('mo-admin-pass').classList.add('on');
+  setTimeout(function(){ document.getElementById('ap-mobile').focus(); }, 60);
+}
+function VERIFY_ADMIN_PASS(){
+  var val = document.getElementById('ap-mobile').value.trim();
+  var err = document.getElementById('ap-err');
+  if (!/^\d{10}$/.test(val)){ err.textContent='❌ Poora 10-digit mobile number daalein.'; return; }
+  if (val !== String(SETTINGS.adminMobile||'9876543210')){ err.textContent='❌ Galat mobile number.'; return; }
+  ADMIN_VERIFIED = true;
+  CLOSE_MODAL('mo-admin-pass');
+  PROCEED_ADMIN_ACTION();
+}
+function PROCEED_ADMIN_ACTION(){
+  if (ADMIN_PENDING_ACTION==='addemp'){ TOGGLE_ADMIN_FORM(true); }
+  ADMIN_PENDING_ACTION = null;
+}
+
+// ══════════════ ADMIN: ADD EMPLOYEE ══════════════
+function TOGGLE_ADMIN_FORM(show){
+  document.getElementById('lf-emp').style.display = show ? 'none' : '';
+  document.getElementById('lf-admin-add').style.display = show ? '' : 'none';
+  document.getElementById('lnk-show-login').style.display = show ? '' : 'none';
+  document.getElementById('lnk-show-register').style.display = show ? 'none' : '';
+  if (show){
+    RESET_SESSION_STATE(); // FIX: naya registration page load hote hi purani session/form state clear karo
+    document.getElementById('ae-name').value = '';
+    document.getElementById('ae-phone').value = '';
+    document.getElementById('ae-email').value = '';
+    document.getElementById('ae-address').value = '';
+    document.getElementById('ae-desig').value = '';
+    document.getElementById('ae-dept').value = '';
+    document.getElementById('ae-err').textContent = '';
+    document.getElementById('ae-success').textContent = '';
+    document.getElementById('ae-photo').value = '';
+    document.getElementById('ae-photo-preview').style.display = 'none';
+    document.getElementById('ae-photo-placeholder').style.display = 'flex';
+    window._aePhotoData = '';
+    LOAD_AE_AGENT_DROPDOWN();
+  }
+}
+function AE_PHOTO_PREVIEW(input){
+  var file = input.files[0];
+  if(!file) return;
+  if(file.size > 800000){ alert('⚠️ Photo 800KB se chhoti honi chahiye!'); input.value=''; return; }
+  var reader = new FileReader();
+  reader.onload = function(e){
+    window._aePhotoData = e.target.result;
+    document.getElementById('ae-photo-preview').src = e.target.result;
+    document.getElementById('ae-photo-preview').style.display = 'block';
+    document.getElementById('ae-photo-placeholder').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+// 🔒 FIX: yeh registration form bhi (Customer Registration jaisa) sabhi
+// libraries ke liye common hai — is dropdown ke bina Admin/Agent ko kabhi
+// pata nahi chalta ki naya staff KIS library ke liye register hua hai.
+function LOAD_AE_AGENT_DROPDOWN(){
+  var sel = document.getElementById('ae-agent');
+  sel.innerHTML = '<option value="">-- Loading... --</option>';
+  API.get('/admin-entities/agents').then(function(agents){
+    agents = (agents||[]).filter(function(a){ return a && a.status !== 'inactive'; });
+    // 🆕 Dropdown Unique Format: sirf naam dikhane se agar do libraries ka
+    // naam milta-julta ho to confusion hota tha ki kaunsi select ho rahi
+    // hai. Ab har option "(Agent ID - Name)" jaise unique format mein
+    // dikhta hai.
+    sel.innerHTML = '<option value="">-- Agent Library Select --</option>' +
+      agents.map(function(a){
+        var idLabel = a.agentId || a.username || '—';
+        return '<option value="'+a.username+'">'+idLabel+' - '+(a.company||a.name)+'</option>';
+      }).join('');
+  }).catch(function(){
+    sel.innerHTML = '<option value="">⚠️ Load nahi ho paya, refresh karein</option>';
+  });
+}
+// Staff khud apna registration submit karta hai yahan se — record turant login-active NAHI hota,
+// balki 'pending' status ke saath Postgres backend ('hrms_pending_registrations' blob) mein jaata hai.
+// Agent Login ke HR Panel mein isko "✅ Approve" (ya "✏️ Edit" karke approve) kiya jaata hai,
+// tabhi jaake yeh EMPLOYEES/'hrms_employees' mein active ban kar login ke liye available hota hai.
+// 🔒 FIX: pehle yahan ek client-suggested "EMP00X" ID pehle se saath aati thi (GEN_EMP_ID_HRMS) —
+// agar do log lagbhag ek saath register karte (dono ke local cache mein same "next" ID dikhti),
+// to donon EK HI ID claim karne ki koshish karte, aur ek ko "ID pehle se li ja chuki hai" jaisa
+// confusing error milta. Ab pending registration ek RANDOM key se save hoti hai (kabhi collide
+// nahi hoti), aur asli, sahi "EMP00X" ID sirf APPROVAL ke waqt — ek hi jagah, ek hi baar — banti hai.
+function ADD_EMPLOYEE(){
+  var err = document.getElementById('ae-err');
+  var suc = document.getElementById('ae-success');
+  // 🆕 FIX (Button Click Response): pehle error/success message set to ho
+  // jaata tha, lekin card ab scrollable hai (85vh max-height) — agar user
+  // form bharte waqt upar scroll kiye hue tha, to neeche set hua message
+  // screen se bahar reh jaata tha aur "kuch bhi response nahi aaya" jaisa
+  // lagta tha. Ab har baar message set hote hi use turant view mein
+  // smoothly scroll kar dete hain, taaki result hamesha turant dikhe.
+  var showMsg = function(el, text){
+    el.textContent = text;
+    if (text) { try { el.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(e){} }
+  };
+  try {
+    var name = document.getElementById('ae-name').value.trim();
+    var phone = document.getElementById('ae-phone').value.trim();
+    var email = document.getElementById('ae-email').value.trim();
+    var address = document.getElementById('ae-address').value.trim();
+    var desig = document.getElementById('ae-desig').value.trim();
+    var dept = document.getElementById('ae-dept').value.trim();
+    var agentUsername = document.getElementById('ae-agent').value;
+    err.textContent=''; suc.textContent='';
+    if (!name){ showMsg(err, '❌ Naam daalna zaroori hai.'); return; }
+    if (!/^\d{10}$/.test(phone)){ showMsg(err, '❌ Poora 10-digit mobile number daalein.'); return; }
+    if (!agentUsername){ showMsg(err, '❌ Library/Agent chunna zaroori hai.'); return; }
+    if (EMPLOYEES.some(function(e){ return String(e.phone||'').replace(/\D/g,'').slice(-10)===phone; }) ||
+        PENDING_REGISTRATIONS.some(function(p){ return String(p.phone||'').replace(/\D/g,'').slice(-10)===phone; })){
+      showMsg(err, '❌ Yeh mobile number pehle se kisi aur registration ke saath maujood hai.'); return;
+    }
+    var regId = 'PREG' + Date.now() + Math.random().toString(36).slice(2,6);
+    var rec = {
+      id: regId, name: name, phone: phone, email: email, address: address, photo: window._aePhotoData || '',
+      designation: desig, department: dept, agentUsername: agentUsername, status: 'pending',
+      submittedOn: new Date().toLocaleString('en-IN')
+    };
+    // 🆕 FIREBASE → BACKEND MIGRATION: registration ab seedha naye secure
+    // Postgres backend par save hoti hai (POST /api/hr/register), Firebase
+    // ki jagah. Yehi data Admin Panel aur Agent Login ke approval section
+    // mein turant dikhta hai (dono ab isi backend se padhte hain).
+    API.post('/hr/register', rec).then(function(){
+      PENDING_REGISTRATIONS.push(rec);
+      try { localStorage.setItem('hrms_pending_registrations', JSON.stringify(PENDING_REGISTRATIONS)); } catch(e){}
+      showMsg(suc, '✅ Registration submit ho gayi! Admin/Agent approval ke baad Employee ID milegi aur aap login kar payenge.');
+      document.getElementById('ae-name').value='';
+      document.getElementById('ae-phone').value='';
+      document.getElementById('ae-email').value='';
+      document.getElementById('ae-address').value='';
+      document.getElementById('ae-desig').value='';
+      document.getElementById('ae-dept').value='';
+      document.getElementById('ae-photo').value='';
+      document.getElementById('ae-photo-preview').style.display='none';
+      document.getElementById('ae-photo-placeholder').style.display='flex';
+      window._aePhotoData = '';
+    }).catch(function(apiErr){
+      showMsg(err, '❌ Registration submit nahi ho payi: ' + (apiErr.message || 'dobara try karein.'));
+    });
+  } catch (fatalErr) {
+    // 🆕 Defensive catch: koi bhi anjaan/unexpected JS error aaye to bhi
+    // button "chup-chaap kuch na kare" jaisa kabhi na lage — user ko
+    // hamesha ek saaf error dikhega.
+    console.error('ADD_EMPLOYEE error:', fatalErr);
+    showMsg(err, '❌ Kuch gadbad ho gayi: ' + (fatalErr && fatalErr.message ? fatalErr.message : 'dobara try karein.'));
+  }
+}
+
+// NOTE: Admin Salary Calculation / HR Panel have been moved to Agent Login.
+
+// ══════════════ LOAD DATA ══════════════
+function LOAD_ALL(cb){
+  FBSync.pullAll(function(){
+    try { EMPLOYEES = JSON.parse(localStorage.getItem('hrms_employees')) || []; } catch(e){ EMPLOYEES=[]; }
+    try {
+      var rawSlips = JSON.parse(localStorage.getItem('hrms_salary_slips'));
+      SLIPS = Array.isArray(rawSlips) ? rawSlips : (rawSlips ? Object.keys(rawSlips).map(function(k){ return rawSlips[k]; }) : []);
+    } catch(e){ SLIPS=[]; }
+    try { SETTINGS = JSON.parse(localStorage.getItem('hrms_settings')) || SETTINGS; } catch(e){}
+    // 🔗 FIX: attendance/leaves ab shared 'shdl' root se aate hain (dekhein
+    // SharedFBSync upar) — taaki jo Admin/Agent Panel ne pehle se save kiya
+    // hai wahi yahan bhi dikhe, aur HRMS se naya submit kiya hua unhe bhi.
+    var pending = 2;
+    function doneOne(){ pending--; if (pending===0 && cb) cb(); }
+    SharedFBSync.pull('staff_att', function(arr){ ATTENDANCE = arr || []; doneOne(); });
+    SharedFBSync.pull('leave_requests', function(arr){ LEAVES = arr || []; doneOne(); });
+    console.log('HRMS: employees loaded from Firebase →', EMPLOYEES);
+  });
+}
+
+// 🆕 MIGRATED: 'salary_slips' ab naye backend se aata hai (Firebase .on()
+// realtime push ki jagah polling — har 10 second mein fresh data). Thoda
+// delay ho sakta hai (turant push nahi), par data source ab Postgres hai.
+var SALARY_SLIPS_SYNC_STARTED = false;
+function SYNC_SALARY_SLIPS(){
+  if (SALARY_SLIPS_SYNC_STARTED) return; // duplicate poll na lage
+  SALARY_SLIPS_SYNC_STARTED = true;
+  function _pull(){
+    API.get('/hrms-salary/slips').then(function(rows){
+      SLIPS = rows || [];
+      try { localStorage.setItem('hrms_salary_slips', JSON.stringify(SLIPS)); } catch(e){}
+      if (currentUser){ RENDER_EMP_DASH(); RENDER_EMP_SLIPS(); }
+      if (typeof RENDER_ADMIN_SALARY_HISTORY === 'function'){ try{ RENDER_ADMIN_SALARY_HISTORY(); }catch(e){} }
+    }).catch(function(err){ console.warn('Salary slips poll error:', err.message); });
+  }
+  _pull();
+  setInterval(_pull, 10000);
+}
+
+// ══ Employee self-generated salary claims (Salary → Agent Login "Salary Verification") ══
+// 🆕 MIGRATED: naye backend se, polling (Firebase .on() ki jagah).
+var SALARY_CLAIMS_SYNC_STARTED = false;
+function SYNC_SALARY_CLAIMS(){
+  if (SALARY_CLAIMS_SYNC_STARTED) return;
+  SALARY_CLAIMS_SYNC_STARTED = true;
+  function _pull(){
+    API.get('/hrms-salary/claims').then(function(rows){
+      CLAIMS = rows || [];
+      try { localStorage.setItem('hrms_salary_claims', JSON.stringify(CLAIMS)); } catch(e){}
+      if (currentUser){ RENDER_MY_SALARY_CLAIMS(); }
+    }).catch(function(err){ console.warn('Salary claims poll error:', err.message); });
+  }
+  _pull();
+  setInterval(_pull, 10000);
+}
+
+// FIX: Admin Panel ke 'shdl/staff' records ko HRMS ke EMPLOYEES format mein convert karo
+// Admin Panel staff record: { empId, name, mobile, status, subject, batch, ... }
+// HRMS employee record:     { empId, name, phone,  status, designation, department, ... }
+function ADMIN_STAFF_TO_HRMS_EMP(s){
+  return {
+    empId: String(s.empId||'').trim().toUpperCase(),
+    name: s.name || '',
+    phone: String(s.mobile||'').replace(/\D/g,'').slice(-10),
+    designation: s.subject || 'Staff',
+    department: s.batch || '',
+    status: (s.status==='inactive') ? 'inactive' : 'active',
+    photo: s.photo || s.selfie || '',   // FIX: Admin Panel/Agent Login mein upload ki gayi staff photo, Salary Slip par dikhane ke liye
+    basic: parseFloat(s.basic) || 0,    // FIX: Agent Login mein fix ki gayi Basic Salary — pehle yeh field yahan copy hi nahi hoti thi, isliye "Salary" page par Basic Salary hamesha 0 dikhta tha
+    fromAdminPanel: true   // marker — yeh record Admin Panel se aaya hai, HRMS ke apne "Add Employee" se nahi
+  };
+}
+
+// FIX: 'hrms/employees' pehle sirf ek baar (.once, LOAD_ALL ke andar) load hota tha. Isliye
+// agar Agent Login ke HR Panel > Live Attendance se koi Basic Salary fix/update karta tha jab
+// koi Employee already HRMS Portal mein login karke baitha hota tha, to uska "Salary" page
+// tab tak purani (ya 0) Basic Salary hi dikhata rehta tha jab tak wo refresh/re-login na kare.
+// Ab hum 'hrms/employees' ko bhi real-time (.on) sunte hain, taaki Basic Salary fix hote hi
+// turant "Salary" page par (aur My Payslips/Dashboard mein) reflect ho jaaye.
+var EMPLOYEES_SYNC_STARTED = false;
+function SYNC_EMPLOYEES(){
+  if (EMPLOYEES_SYNC_STARTED) return; // duplicate poll na lage
+  EMPLOYEES_SYNC_STARTED = true;
+  try{
+    pollRestData(function(){
+      API.get('/blob/hrms_employees').then(function(val){
+        var incoming = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+        // FIX: Agar Agent Login ke HR Panel se kisi Admin-Panel-wale employee ki Basic Salary
+        // set ki gayi ho, to Agent Login POORI merged list (fromAdminPanel wale records sameत)
+        // 'hrms_employees' mein push kar deta hai — matlab wo record ab 'incoming' mein already
+        // maujood hai. Pehle hum yahan purani EMPLOYEES list se bhi fromAdminPanel records ko
+        // dobara jodh dete the (bina ye check kiye ki wo already 'incoming' mein hain ya nahi),
+        // jisse EMPLOYEES mein SAME empId ke DO duplicate records ban jaate the. Fir jab
+        // SYNC_ADMIN_STAFF apna re-merge chalata, to duplicate ki wajah se uska existingMap
+        // kabhi-kabhi galat (purana/0 wala) record pick kar leta, aur Basic Salary wapas 0 ho
+        // jaati thi. Ab hum sirf UNHI purane fromAdminPanel records ko preserve karte hain jo
+        // 'incoming' mein already nahi hain — isse koi duplicate nahi banega.
+        var incomingIds = {};
+        incoming.forEach(function(e){ incomingIds[String((e&&e.empId)||'').trim().toUpperCase()] = true; });
+        var adminOnly = EMPLOYEES.filter(function(e){
+          return e && e.fromAdminPanel && !incomingIds[String(e.empId||'').trim().toUpperCase()];
+        });
+        EMPLOYEES = incoming.concat(adminOnly);
+        try { localStorage.setItem('hrms_employees', JSON.stringify(incoming)); } catch(e){}
+        if (currentUser){ RENDER_EMP_DASH(); RENDER_MY_SALARY_CLAIMS(); }
+      }).catch(function(e){ console.warn('Employees sync error:', e); });
+    }, 12000);
+  }catch(e){ console.warn('Employees sync error:', e); }
+}
+
+// Admin Panel ke 'shdl/staff' path ko real-time sunte raho aur EMPLOYEES list mein merge karo,
+// taaki Admin Panel mein staff verify/add hote hi HRMS Portal mein bhi turant login ho sake.
+// NOTE: Yeh READ-ONLY hai — hum kabhi 'shdl/staff' ko yahan se overwrite nahi karte.
+function SYNC_ADMIN_STAFF(){
+  try{
+    pollRestData(function(){
+      API.get('/admin-entities/staff').then(function(adminStaff){
+      if (!adminStaff) return;
+      // Firebase kabhi-kabhi array ki jagah {0:.., 2:..} jaisa object bhi de deta hai (gaps ki wajah se)
+      if (typeof adminStaff === 'object' && !Array.isArray(adminStaff)) {
+        adminStaff = Object.keys(adminStaff).map(function(k){ return adminStaff[k]; });
+      }
+      // Pehle EMPLOYEES list se: (a) purane Admin-Panel-wale records, AUR
+      // (b) koi bhi DUPLICATE/purana record jiska empId ab Admin Panel mein bhi hai
+      //     (taaki agar HRMS Portal ke apne test/purane data mein wahi Employee ID
+      //     kisi galat mobile ke saath pehle se pada ho, to wo Admin Panel ke sahi
+      //     record ko override na kare — isi wajah se "Mobile number match nahi kar raha" aa raha tha)
+      var incomingIds = adminStaff.map(function(s){ return String(s.empId||'').trim().toUpperCase(); });
+      // FIX: Is se pehle yahan Admin Panel se match hone wale empId ka record poori tarah
+      // discard karke naya bana diya jaata tha — isliye Employee ne My Profile mein jo
+      // apni Photo/Email/Bank/Account/IFSC save ki thi, wo agle login/sync par gayab ho
+      // jaati thi (Admin Panel ko un fields ka pata hi nahi hota). Ab hum purane record
+      // se yeh "employee-edited" fields nikaal kar naye record mein wapas daal dete hain.
+      var existingMap = {};
+      EMPLOYEES.forEach(function(e){
+        var id = String(e.empId||'').trim().toUpperCase();
+        if (!id) return;
+        // FIX: Agar (kisi wajah se) EMPLOYEES mein isi empId ke DO records aa jaayein, to
+        // sirf isliye ki wo baad mein aaya, uski (potentially stale/0) basic value ko priority
+        // mat do — jis record ki basic value zyada (non-zero/naya) hai usko hi rakho.
+        if (!existingMap[id] || (!existingMap[id].basic && e.basic)) existingMap[id] = e;
+      });
+      EMPLOYEES = EMPLOYEES.filter(function(e){
+        return !e.fromAdminPanel && incomingIds.indexOf(String(e.empId||'').trim().toUpperCase()) === -1;
+      });
+      // Fir latest Admin Panel staff daalo (employee-edited fields preserve karte hue)
+      adminStaff.forEach(function(s){
+        if (!s || !s.empId) return;
+        var newRec = ADMIN_STAFF_TO_HRMS_EMP(s);
+        var old = existingMap[String(s.empId||'').trim().toUpperCase()];
+        if (old){
+          if (old.photo) newRec.photo = old.photo;
+          if (old.email) newRec.email = old.email;
+          if (old.bank)  newRec.bank  = old.bank;
+          if (old.acc)   newRec.acc   = old.acc;
+          if (old.ifsc)  newRec.ifsc  = old.ifsc;
+          // FIX: Agent Login ke HR Panel > Live Attendance se jo Basic Salary fix ki jaati hai,
+          // wo 'hrms/employees' mein save hoti hai — 'shdl/staff' (Staff Members) mein basic
+          // field kabhi set hi nahi hoti, isliye yahan se hamesha 0 aata tha aur har real-time
+          // sync par Agent ki set ki hui Basic Salary turant 0 se overwrite ho jaati thi, isliye
+          // Salary page par Basic Salary show nahi ho raha tha. Ab purani (non-zero) basic
+          // value ko preserve karte hain jab tak 'shdl/staff' khud koi basic na de.
+          if (!newRec.basic && old.basic) newRec.basic = old.basic;
+        }
+        EMPLOYEES.push(newRec);
+      });
+      }).catch(function(e){ console.warn('Admin staff sync error:', e); });
+    }, 12000);
+  }catch(e){ console.warn('Admin staff sync error:', e); }
+}
+
+// 🆕 FIREBASE → BACKEND MIGRATION: 'hrms_pending_registrations' ab Admin/
+// Agent-login-protected hai (isme applicants ka phone+photo jaisa PII
+// hota hai, isliye ab anonymous registration-screen se yeh poori list
+// padhi hi nahi ja sakti — sahi RBAC). Registration-submit ke waqt
+// duplicate-mobile check ab seedha server (POST /api/hr/register) khud
+// karta hai, isliye yahan client-side pending-list ki zaroorat nahi
+// rahi. PENDING_REGISTRATIONS is file mein hamesha khaali [] rehti hai
+// (Agent Login/Admin Panel mein hi asli approval-list dikhti hai).
+function SYNC_PENDING_REGISTRATIONS(){ /* intentionally no-op ab — upar comment dekhein */ }
+
+// FIX: Salary Slip ka Company Name + Logo ab Agent Login se LINKED rahega — koi alag
+// se HRMS mein type/upload nahi karna padega. Agent Login mein jo bhi Company Name/Logo
+// (Admin Panel ke 'shdl/agents' rich record se) set hai, wahi yahan Salary Slip ke
+// header mein automatically dikhega. Yeh bhi READ-ONLY hai, poll karte rehte hain
+// taaki Agent Login mein company/logo change hote hi HRMS Salary Slip turant update ho.
+function SYNC_COMPANY_BRANDING(){
+  try{
+    pollRestData(function(){
+      API.get('/admin-entities/agents').then(function(agents){
+      if (!agents) return;
+      if (typeof agents === 'object' && !Array.isArray(agents)) {
+        agents = Object.keys(agents).map(function(k){ return agents[k]; });
+      }
+      if (!agents.length) return;
+      // Abhi ke liye single-company setup hai, isliye pehla rich Agent record use karte hain.
+      var a = agents[0];
+      // FIX: Pehle yahan 'a.company || a.name' tha — agar Admin Panel ke Agent record
+      // mein "Company Name" field set na ho, to fallback mein Agent/HR ke apne PERSONAL
+      // naam (jaise "Sharma Ji") ko hi Company Name bana kar Salary Slip ke header mein
+      // dikha diya jaata tha. Isse aisa lagta tha ki koi "purana/dusra user ka data" slip
+      // par dikh raha hai. Ab sirf explicit 'company' field hi use hoga; agar wo set
+      // nahi hai to purana/default Company Name hi bana rahega.
+      SETTINGS.company = a.company || SETTINGS.company;
+      SETTINGS.logo = a.photo || a.logo || SETTINGS.logo || '';
+      try { localStorage.setItem('hrms_settings', JSON.stringify(SETTINGS)); } catch(e){}
+      }).catch(function(e){ console.warn('Company branding sync error:', e); });
+    }, 20000);
+  }catch(e){ console.warn('Company branding sync error:', e); }
+}
+
+// ══════════════ LOGIN ══════════════
+function DO_LOGIN_EMP(ev){
+  ev.preventDefault();
+  var u = document.getElementById('e-user').value.trim().toUpperCase();
+  var mobile = document.getElementById('e-mobile').value.trim();
+  var cap = document.getElementById('e-captcha-in').value.trim().toUpperCase();
+  var err = document.getElementById('e-err'); err.textContent='';
+  if (cap !== captchaVal.e){ err.textContent='❌ Captcha galat hai.'; GEN_CAPTCHA('e'); return false; }
+  var found = EMPLOYEES.find(function(x){ return String(x.empId||'').trim().toUpperCase()===u; });
+  if (!found){
+    var pend = PENDING_REGISTRATIONS.find(function(p){ return String(p.empId||'').trim().toUpperCase()===u; });
+    if (pend){ err.textContent='⏳ Aapka registration abhi Admin approval ka wait kar raha hai. Approve hone ke baad login karein.'; GEN_CAPTCHA('e'); return false; }
+    err.textContent='❌ Employee ID nahi mila ya inactive hai.'; GEN_CAPTCHA('e'); return false;
+  }
+  if (found.status==='inactive'){ err.textContent='❌ Employee ID nahi mila ya inactive hai.'; GEN_CAPTCHA('e'); return false; }
+  if (!/^\d{10}$/.test(mobile)){ err.textContent='❌ Poora 10-digit registered mobile number daalein.'; GEN_CAPTCHA('e'); return false; }
+  var regMobile = String(found.phone||'').replace(/\D/g,'').slice(-10); // ignores +91 etc.
+  if (!regMobile || regMobile !== mobile){ err.textContent='❌ Mobile number match nahi kar raha.'; GEN_CAPTCHA('e'); return false; }
+
+  // 🔒 SECURITY: ab backend (POST /api/auth/login, role='employee') se
+  // asli verification hoti hai (Postgres 'hrms_employees' data ke against)
+  // — yehi login ka single source of truth hai, taaki wallet/attendance/
+  // leave jaisi authenticated routes caller ki pehchaan verify kar sakein.
+  // 🆕 RENDER COLD-START NOTICE: free-tier backend sleeps after ~15 min
+  // idle; the first request after that can take 20-50s to wake up. If the
+  // login call hasn't resolved in 4s, swap in a reassuring message instead
+  // of leaving the error box blank with no explanation.
+  var stopWakeupWatch = (function(){
+    var timer = setTimeout(function(){
+      err.textContent = '⏳ Server is waking up, please wait 30s... (free-tier backend sleeps when idle)';
+    }, 4000);
+    return function(){ clearTimeout(timer); };
+  })();
+  API.post('/auth/login', { role: 'employee', username: found.empId, mobile: mobile }).then(function(result){
+    stopWakeupWatch();
+    AUTH_TOKEN = result.token;
+    try { localStorage.setItem('shdl_auth_token', AUTH_TOKEN); } catch (e) {}
+    _AFTER_EMP_LOGIN_VERIFIED(found);
+  }).catch(function(apiErr){
+    stopWakeupWatch();
+    err.textContent = '❌ ' + (apiErr.message || 'Login verify nahi ho paya, dobara try karein.');
+    GEN_CAPTCHA('e');
+  });
+  return false;
+}
+
+function _AFTER_EMP_LOGIN_VERIFIED(found){
+  var err = document.getElementById('e-err');
+  // ══════════════════════════════════════════════════════════════════
+  // 🔒 SMART DEPENDENCY: agar is employee ko register/approve karne
+  // wale Agent ki library subscription lock ho chuki hai (5-din grace
+  // ke baad bhi renew nahi hua), to HRMS Portal bhi is employee ke liye
+  // band ho jaata hai — koi data delete nahi hota, sirf access rukta
+  // hai, aur agent renew karte hi turant wapas khul jaata hai.
+  // ══════════════════════════════════════════════════════════════════
+  var ownerUser = found.ownerUser;
+  if (ownerUser) {
+    API.get('/subscription-status/' + encodeURIComponent(ownerUser)).then(function(subInfo){
+      if (subInfo.status === 'locked') {
+        SHOW_HRMS_SUB_LOCKED_SCREEN(subInfo);
+        return;
+      }
+      currentUser = { empId:found.empId, name:found.name };
+      document.getElementById('e-mobile').value='';
+      ENTER_APP();
+      if (subInfo.status === 'grace' || subInfo.status === 'warning') {
+        setTimeout(function(){ SHOW_HRMS_SUB_WARNING_BANNER(subInfo); }, 500);
+      }
+    }).catch(function(){
+      // Status check fail ho (network glitch) to fail-open — kabhi
+      // employee ko galat tarike se lock nahi karte.
+      currentUser = { empId:found.empId, name:found.name };
+      document.getElementById('e-mobile').value='';
+      ENTER_APP();
+    });
+    return;
+  }
+
+  currentUser = { empId:found.empId, name:found.name };
+  document.getElementById('e-mobile').value='';
+  ENTER_APP();
+}
+
+// 🔒 Locked-out screen — dynamic message seedha agent ke DB record
+// (company + mobile) se, exact jaisa maanga gaya tha.
+function SHOW_HRMS_SUB_LOCKED_SCREEN(subInfo){
+  var company = subInfo.company || 'your library';
+  var mobile = subInfo.mobile || '';
+  var msg = 'Your subscription has expired. Please contact ' + company + (mobile ? (' at ' + mobile) : '') + ' to renew.';
+  var loginScreen = document.getElementById('login-screen');
+  var lockScreen = document.getElementById('hrms-sub-locked-screen');
+  if (!lockScreen) {
+    lockScreen = document.createElement('div');
+    lockScreen.id = 'hrms-sub-locked-screen';
+    lockScreen.style.cssText = 'position:fixed;inset:0;background:linear-gradient(135deg,#0a1628,#0d1e3d 60%,#1a3a6b);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center';
+    document.body.appendChild(lockScreen);
+  }
+  lockScreen.innerHTML =
+    '<div style="max-width:420px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:30px 24px;color:#fff">' +
+      '<div style="font-size:40px;margin-bottom:10px">⛔</div>' +
+      '<div style="font-size:17px;font-weight:800;margin-bottom:10px">HRMS Portal Abhi Band Hai</div>' +
+      '<div style="font-size:13px;color:rgba(255,255,255,.75);line-height:1.6;margin-bottom:16px">' + msg + '</div>' +
+      '<div style="font-size:11px;color:rgba(255,255,255,.5)">Aapka poora data (attendance, leaves, salary history) surakshit hai — renew hote hi turant wapas dikhega.</div>' +
+      '<button onclick="document.getElementById(\'hrms-sub-locked-screen\').remove()" style="margin-top:18px;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:10px 20px;font-size:12px;cursor:pointer">Wapas Login Page Par Jaayein</button>' +
+    '</div>';
+  lockScreen.style.display = 'flex';
+}
+
+// Grace/warning period banner — dashboard load hone ke baad dikhta hai,
+// portal ko block nahi karta.
+function SHOW_HRMS_SUB_WARNING_BANNER(subInfo){
+  var existing = document.getElementById('hrms-sub-warn-banner');
+  if (existing) existing.remove();
+  var b = document.createElement('div');
+  b.id = 'hrms-sub-warn-banner';
+  var isGrace = subInfo.status === 'grace';
+  if (isGrace) {
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;background:linear-gradient(90deg,#a32d2d,#d94848);color:#fff;font-size:12px;font-weight:800;text-align:center;padding:8px 12px';
+    b.textContent = '⛔ Library ki subscription expire ho chuki hai — sirf ' + Math.abs(subInfo.daysLeft) + ' din bache hain grace period ke.';
+  } else {
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;background:linear-gradient(90deg,#c9a227,#e8c04a);color:#0d1e3d;font-size:12px;font-weight:800;text-align:center;padding:8px 12px';
+    b.textContent = '⏳ Library ki subscription ' + subInfo.daysLeft + ' din mein khatam ho rahi hai.';
+  }
+  document.body.appendChild(b);
+}
+
+// FIX: Front-end State Reset — pehle sirf currentUser/ADMIN_VERIFIED clear hote the.
+// Baaki session state (punch camera/photo/location, leave-apply attachment, pending
+// admin action, aur salary-claim/leave form ke unsaved edited values) pichle user ke
+// logout karne ke baad bhi memory + DOM mein reh jaate the, jo agle login/registration
+// mein "leak" ho sakte the. Yeh function sab kuch unki shuru ki (empty/null) value par
+// wapas le aata hai — LOGOUT par aur Registration page fresh open hone par call hota hai.
+function RESET_SESSION_STATE(){
+  // --- punch camera/selfie/location state ---
+  STOP_PUNCH_CAMERA();
+  PUNCH_MODE = null; PUNCH_PHOTO = null; PUNCH_LOC = null;
+  var punchModal = document.getElementById('mo-punch');
+  if (punchModal) punchModal.classList.remove('on');
+
+  // --- leave-apply attachment state ---
+  LV_DOC_DATA = null; LV_DOC_NAME = '';
+  ['lv-type','lv-from','lv-to','lv-reason','lv-doc'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (id==='lv-type' && el.options && el.options.length) el.value = el.options[0].value;
+    else el.value = '';
+  });
+  var lvDocName = document.getElementById('lv-doc-name'); if (lvDocName) lvDocName.textContent = '';
+  var lvErr = document.getElementById('lv-err'); if (lvErr) lvErr.textContent = '';
+  var lvSuc = document.getElementById('lv-success'); if (lvSuc) lvSuc.textContent = '';
+
+  // --- salary self-claim form: reset editable fields back to their defaults ---
+  var scDefaults = { 'my-sc-hra-pct':40, 'my-sc-da-pct':10, 'my-sc-bonus':0, 'my-sc-incentive':0,
+    'my-sc-ot-hours':0, 'my-sc-ot-rate':0, 'my-sc-pf-pct':12, 'my-sc-esi-pct':0.75,
+    'my-sc-pt':200, 'my-sc-tds':0, 'my-sc-loan':0, 'my-sc-advance':0, 'my-sc-basic':0 };
+  Object.keys(scDefaults).forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.value = scDefaults[id];
+  });
+  var scMonth = document.getElementById('my-sc-month'); if (scMonth){ scMonth.innerHTML=''; }
+  var scYear = document.getElementById('my-sc-year'); if (scYear){ scYear.value=''; }
+  var scErr = document.getElementById('my-sc-err'); if (scErr) scErr.textContent = '';
+  var scSuc = document.getElementById('my-sc-success'); if (scSuc) scSuc.textContent = '';
+
+  // --- misc pending/admin flags ---
+  ADMIN_PENDING_ACTION = null;
+}
+
+function DO_LOGOUT(){
+  AUTO_LOGOUT_REDIRECT();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 🔒 AUTO-LOGOUT (Session Timeout) — 6 minute tak koi activity na ho
+//   to security ke liye automatically logout.
+// ══════════════════════════════════════════════════════════════════
+function AUTO_LOGOUT_REDIRECT(){
+  currentUser = null;
+  ADMIN_VERIFIED = false;
+  AUTH_TOKEN = null;
+  RESET_SESSION_STATE();
+  // 🆕 CRITICAL LOGOUT FIX: pehle yahan token/localStorage/sessionStorage
+  // kabhi clear hi nahi hota tha — RESET_SESSION_STATE() sirf in-memory
+  // form fields reset karta hai, asli auth token localStorage mein pada
+  // reh jaata tha. Ab logout par sab kuch turant clear hota hai.
+  try { localStorage.clear(); } catch(e){}
+  try { sessionStorage.clear(); } catch(e){}
+  window.location.replace(SHDL_HOME_URL); /* 🆕 replace() so the login page never re-enters the browser back/forward history — prevents any back-button bounce into a stale session, and avoids Netlify 404s on refresh */
+}
+(function(){
+  var AUTO_LOGOUT_MS = 6 * 60 * 1000; // 6 minutes
+  var logoutTimer = null;
+  function doAutoLogout(){
+    if (!currentUser) return;
+    alert('⏱️ 6 minute tak koi activity nahi hui — security ke liye automatically logout kar diya gaya hai.');
+    AUTO_LOGOUT_REDIRECT();
+  }
+  function resetAutoLogoutTimer(){
+    if (logoutTimer) clearTimeout(logoutTimer);
+    logoutTimer = setTimeout(doAutoLogout, AUTO_LOGOUT_MS);
+  }
+  ['mousemove','mousedown','keypress','touchstart','scroll','click'].forEach(function(evt){
+    document.addEventListener(evt, resetAutoLogoutTimer, {passive:true});
+  });
+  resetAutoLogoutTimer();
+})();
+
+// ══════════════ ENTER APP ══════════════
+function ENTER_APP(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').classList.add('visible');
+  document.getElementById('sb-av').textContent = currentUser.name.charAt(0).toUpperCase();
+  UPDATE_SIDEBAR_AVATAR();
+  document.getElementById('sb-un').textContent = currentUser.name;
+  document.getElementById('sb-ur').textContent = 'Employee — ' + currentUser.empId;
+  GOTO('emp-dash');
+  RENDER_EMP_DASH(); RENDER_EMP_SLIPS(); RENDER_MY_SALARY_CLAIMS(); RENDER_EMP_PROFILE(); RENDER_EMP_ATTENDANCE(); RENDER_EMP_LEAVE();
+  FETCH_HRMS_NOTIFS();
+  setInterval(FETCH_HRMS_NOTIFS, 45000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 🔔 GLOBAL NOTIFICATION SYSTEM — Agent se aayi hui notifications
+// ══════════════════════════════════════════════════════════════════
+var HRMS_NOTIFS = [];
+function FETCH_HRMS_NOTIFS(){
+  if(!currentUser || !currentUser.empId) return;
+  var emp = EMPLOYEES.find(function(e){ return e.empId===currentUser.empId; });
+  var ownerUser = emp ? emp.ownerUser : null;
+  if(!ownerUser){ RENDER_HRMS_NOTIFS(); return; }
+  // Employee ke agent ka asli agentId chahiye (ownerUser sirf username hai)
+  API.get('/admin-entities/agents').then(function(agents){
+    var agent = (agents||[]).find(function(a){ return a.username && a.username.toLowerCase()===ownerUser.toLowerCase(); });
+    var agentId = agent ? agent.agentId : '';
+    return API.get('/notifications?role=employee&id=' + encodeURIComponent(currentUser.empId) + '&agentId=' + encodeURIComponent(agentId));
+  }).then(function(list){
+    HRMS_NOTIFS = list || [];
+    RENDER_HRMS_NOTIFS();
+  }).catch(function(err){ console.warn('HRMS notifications fetch error:', err.message); });
+}
+function RENDER_HRMS_NOTIFS(){
+  var badge = document.getElementById('hrms-notif-badge');
+  var list = document.getElementById('hrms-notif-list');
+  if(!list) return;
+  var unread = HRMS_NOTIFS.filter(function(n){ return !n.isRead; }).length;
+  if(badge){ badge.textContent = unread>9?'9+':unread; badge.style.display = unread===0?'none':'flex'; }
+  if(HRMS_NOTIFS.length===0){ list.innerHTML = '<div style="text-align:center;padding:20px;font-size:11px;color:var(--t3)">Koi notification nahi 🎉</div>'; return; }
+  var icons = { info:'ℹ️', warning:'⚠️', success:'✅' };
+  list.innerHTML = HRMS_NOTIFS.map(function(n){
+    return '<div style="padding:9px;border-radius:8px;margin-bottom:5px;background:'+(n.isRead?'transparent':'rgba(201,162,39,.08)')+';cursor:pointer" onclick="MARK_HRMS_NOTIF_READ('+n.id+')">'+
+      '<div style="font-size:12px;font-weight:700;color:var(--t1)">'+(icons[n.urgency]||'ℹ️')+' '+n.title+'</div>'+
+      (n.message?'<div style="font-size:10px;color:var(--t2);margin-top:2px">'+n.message+'</div>':'')+
+      '<div style="font-size:9px;color:var(--gd);margin-top:3px">'+new Date(n.createdAt).toLocaleString('hi-IN')+'</div>'+
+    '</div>';
+  }).join('');
+}
+function MARK_HRMS_NOTIF_READ(id){
+  var n = HRMS_NOTIFS.find(function(x){ return x.id===id; });
+  if(!n || n.isRead) return;
+  n.isRead = true;
+  RENDER_HRMS_NOTIFS();
+  API.post('/notifications/'+id+'/read', { viewerId: currentUser.empId }).catch(function(){});
+}
+function TOGGLE_HRMS_NOTIF(){
+  var panel = document.getElementById('hrms-notif-panel');
+  if(!panel) return;
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', function(e){
+  var panel = document.getElementById('hrms-notif-panel');
+  var btn = document.getElementById('hrms-notif-btn');
+  if(panel && panel.style.display==='block' && !panel.contains(e.target) && e.target!==btn){
+    panel.style.display='none';
+  }
+});
+
+function GOTO(page){
+  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
+  document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('act');});
+  var pg = document.getElementById('pg-'+page);
+  if (pg) pg.classList.add('on');
+  var nv = document.querySelector('.ni[data-pg="'+page+'"]');
+  if (nv) nv.classList.add('act');
+  var titles = {'emp-dash':'Dashboard','emp-slips':'My Payslips','emp-salary-claim':'Salary','emp-profile':'My Profile','emp-attendance':'Attendance','emp-leave':'Leave Management','emp-help':'Help & Contacts'};
+  document.getElementById('pt').textContent = titles[page] || 'HRMS';
+  if (window.innerWidth <= 860) TOGGLE_SIDEBAR(false); // mobile par page change hone par sidebar auto-close
+
+  // FIX: page switch karte hi us page ka data latest in-memory state se re-render karo
+  // (pehle GOTO sirf visibility toggle karta tha, render nahi — isliye "My Payslips" kabhi
+  // stale/khaali dikh jaata tha jab tak login/generate cycle na chale)
+  if (!currentUser) return;
+  if (page==='emp-dash') RENDER_EMP_DASH();
+  else if (page==='emp-slips') RENDER_EMP_SLIPS();
+  else if (page==='emp-salary-claim') RENDER_MY_SALARY_CLAIMS();
+  else if (page==='emp-profile') RENDER_EMP_PROFILE();
+  else if (page==='emp-attendance') RENDER_EMP_ATTENDANCE();
+  else if (page==='emp-leave') RENDER_EMP_LEAVE();
+}
+
+// ══════════════ RESPONSIVE SIDEBAR (mobile hamburger) ══════════════
+function TOGGLE_SIDEBAR(force){
+  var sb = document.querySelector('.sb');
+  var ov = document.getElementById('sb-overlay');
+  var open = (typeof force === 'boolean') ? force : !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  ov.classList.toggle('on', open);
+}
+
+// ══════════════ DARK MODE ══════════════
+function TOGGLE_DARK(){
+  document.body.classList.toggle('dark');
+  var on = document.body.classList.contains('dark');
+  localStorage.setItem('hrms_dark', on ? '1':'0');
+  document.getElementById('dm-toggle').textContent = on ? '☀️ Light':'🌙 Dark';
+}
+if (localStorage.getItem('hrms_dark')==='1'){ document.body.classList.add('dark'); }
+
+// ══════════════ VIEW / PRINT PAYSLIP ══════════════
+function slipHTML(s){
+  // FIX: Staff/Employee ki apni photo bhi Salary Slip par dikhao (profile se ya Admin Panel/Agent Login se)
+  var slipEmp = EMPLOYEES.find(function(e){ return e.empId===s.empId; });
+  var empPhotoHtml = (slipEmp && slipEmp.photo) ?
+    '<img src="'+slipEmp.photo+'" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid var(--gd);flex-shrink:0">' : '';
+  return '<div class="pay-slip" id="print-inner">' +
+    '<div class="pay-h"><div><div class="co">'+SETTINGS.company+'</div><div class="mo2">Salary Slip — '+MONTHS[s.month]+' '+s.year+'</div></div><img src="'+(SETTINGS.logo||DEFAULT_SLIP_LOGO)+'" alt="Logo" style="width:34px;height:34px;border-radius:8px;object-fit:cover"></div>' +
+    '<div class="pay-body">' +
+      '<div class="pay-emp">' +
+        (empPhotoHtml ? '<div style="display:flex;align-items:center;gap:10px">'+empPhotoHtml+'<div>Employee<br><b>'+s.empName+' ('+s.empId+')</b></div></div>' :
+          '<div>Employee<br><b>'+s.empName+' ('+s.empId+')</b></div>') +
+        '<div>Status<br><b>'+(s.status==='paid'?'✅ Verified & Paid':'⏳ Unpaid')+'</b></div>' +
+        '<div>Generated<br><b>'+s.generatedDate+'</b></div>' +
+      '</div>' +
+      (s.status==='paid' && s.verifiedBy ? '<div style="font-size:11px;color:var(--t3);margin:-4px 0 10px">🔐 Verified by <b>'+s.verifiedBy+' ('+s.verifiedById+')</b> on '+s.verifiedOn+'</div>' : '') +
+      '<div class="pay-tbl">' +
+        '<div><div class="pay-col-t">Earnings</div>' +
+          '<div class="pay-r"><span>Basic Salary</span><span>₹'+(s.basic||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>HRA</span><span>₹'+(s.hra||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>DA</span><span>₹'+(s.da||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Bonus</span><span>₹'+(s.bonus||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Incentive</span><span>₹'+(s.incentive||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Overtime Pay</span><span>₹'+(s.overtime||0).toLocaleString('en-IN')+'</span></div>' +
+          (s.allowance ? '<div class="pay-r"><span>Other Allowance</span><span>₹'+s.allowance.toLocaleString('en-IN')+'</span></div>' : '') +
+        '</div>' +
+        '<div><div class="pay-col-t">Deductions</div>' +
+          '<div class="pay-r"><span>Provident Fund (PF)</span><span>₹'+(s.pf||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>ESI</span><span>₹'+(s.esi||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Professional Tax</span><span>₹'+(s.pt||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>TDS</span><span>₹'+(s.tds||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Loan Deduction</span><span>₹'+(s.loan||0).toLocaleString('en-IN')+'</span></div>' +
+          '<div class="pay-r"><span>Advance Salary</span><span>₹'+(s.advance||0).toLocaleString('en-IN')+'</span></div>' +
+          (s.lop ? '<div class="pay-r"><span>LOP Deduction</span><span>₹'+s.lop.toLocaleString('en-IN')+'</span></div>' : '') +
+          (s.extraDed ? '<div class="pay-r"><span>Other Deduction</span><span>₹'+s.extraDed.toLocaleString('en-IN')+'</span></div>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="pay-r" style="font-weight:800;color:var(--nv)"><span>Gross Earnings</span><span>₹'+(s.gross||0).toLocaleString('en-IN')+'</span></div>' +
+      '<div class="pay-r" style="font-weight:800;color:var(--rd);margin-bottom:8px"><span>Total Deductions</span><span>₹'+(s.totalDed||0).toLocaleString('en-IN')+'</span></div>' +
+      '<div class="pay-net"><span>Net Pay</span><span>₹'+(s.net||0).toLocaleString('en-IN')+'</span></div>' +
+    '</div></div>';
+}
+function VIEW_SLIP(id){
+  var s = SLIPS.find(function(x){return x.id===id;});
+  if (!s) return;
+  document.getElementById('print-area').innerHTML = slipHTML(s);
+  document.getElementById('mo-slip').classList.add('on');
+}
+function CLOSE_MODAL(id){ document.getElementById(id).classList.remove('on'); }
+
+// ══════════════ EMPLOYEE VIEWS ══════════════
+function RENDER_EMP_DASH(){
+  var mySlips = SLIPS.filter(function(s){return s.empId===currentUser.empId;}).sort(function(a,b){return b.year-a.year||b.month-a.month;});
+  document.getElementById('emp-slip-count').textContent = mySlips.length;
+  var ytd = mySlips.filter(function(s){return s.year===new Date().getFullYear();}).reduce(function(sum,s){return sum+s.net;},0);
+  document.getElementById('emp-ytd').textContent = '₹'+ytd.toLocaleString('en-IN');
+  if (mySlips.length){
+    document.getElementById('emp-last-net').textContent = '₹'+mySlips[0].net.toLocaleString('en-IN');
+    document.getElementById('emp-recent-slip').innerHTML = slipHTML(mySlips[0]);
+  } else {
+    document.getElementById('emp-last-net').textContent = '₹0';
+    // FIX: pichle user ka "Most Recent Payslip" HTML yahan reh jaata tha kyunki is
+    // branch mein emp-recent-slip kabhi reset nahi hota tha — naye user (jiske abhi
+    // koi payslip nahi hai) ko purana payslip dikh jaata tha. Ab default message wapas set karo.
+    document.getElementById('emp-recent-slip').innerHTML = 'Koi payslip abhi generate nahi hui hai.';
+  }
+}
+function RENDER_EMP_SLIPS(){
+  var yearSel = document.getElementById('emp-slips-year');
+  var allYears = SLIPS.filter(function(s){return s.empId===currentUser.empId;}).map(function(s){return s.year;});
+  var curYear = new Date().getFullYear();
+  var yearsSet = {}; allYears.concat([curYear]).forEach(function(y){ yearsSet[y]=true; });
+  var years = Object.keys(yearsSet).map(Number).sort(function(a,b){return b-a;});
+  var prevYearVal = yearSel.value ? parseInt(yearSel.value,10) : curYear;
+  yearSel.innerHTML = years.map(function(y){return '<option value="'+y+'">'+y+'</option>';}).join('');
+  yearSel.value = years.indexOf(prevYearVal)>-1 ? prevYearVal : curYear;
+  var selYear = parseInt(yearSel.value,10);
+
+  var mySlips = SLIPS.filter(function(s){return s.empId===currentUser.empId && s.year===selYear;});
+  var byMonth = {};
+  mySlips.forEach(function(s){ byMonth[s.month] = s; });
+
+  var tb = document.getElementById('tb-emp-slips');
+  var totalGross=0, totalDed=0, totalNet=0;
+  tb.innerHTML = MONTHS.map(function(mName, m){
+    var s = byMonth[m];
+    if (s){
+      totalGross += s.gross; totalDed += s.totalDed; totalNet += s.net;
+      return '<tr>' +
+        '<td>'+mName+' '+selYear+'</td>' +
+        '<td>₹'+s.gross.toLocaleString('en-IN')+'</td>' +
+        '<td>₹'+s.totalDed.toLocaleString('en-IN')+'</td>' +
+        '<td><b>₹'+s.net.toLocaleString('en-IN')+'</b></td>' +
+        '<td><span class="bx '+(s.status==='paid'?'bgg':'baa')+'">'+(s.status==='paid'?'✅ Verified & Paid':'⏳ Unpaid')+'</span></td>' +
+        '<td><button class="be" onclick="VIEW_SLIP(\''+s.id+'\')">👁️ View / Print</button></td>' +
+        '</tr>';
+    }
+    return '<tr style="opacity:.55"><td>'+mName+' '+selYear+'</td><td>—</td><td>—</td><td>—</td>' +
+      '<td><span class="bx" style="background:#f0f2f7;color:#8896a8">Not Generated</span></td><td>—</td></tr>';
+  }).join('');
+
+  document.getElementById('emp-slips-total-gross').textContent = '₹'+totalGross.toLocaleString('en-IN');
+  document.getElementById('emp-slips-total-ded').textContent = '₹'+totalDed.toLocaleString('en-IN');
+  document.getElementById('emp-slips-total-net').textContent = '₹'+totalNet.toLocaleString('en-IN');
+}
+// ══════════════ EMPLOYEE: MERA VETAN BANAYEIN (Self Salary Claim) ══════════════
+function MY_COMPUTE_SALARY_VALUES(){
+  var basic = parseFloat(document.getElementById('my-sc-basic').value) || 0;
+  var hraPct = parseFloat(document.getElementById('my-sc-hra-pct').value) || 0;
+  var daPct = parseFloat(document.getElementById('my-sc-da-pct').value) || 0;
+  var bonus = parseFloat(document.getElementById('my-sc-bonus').value) || 0;
+  var incentive = parseFloat(document.getElementById('my-sc-incentive').value) || 0;
+  var otHours = parseFloat(document.getElementById('my-sc-ot-hours').value) || 0;
+  var otRate = parseFloat(document.getElementById('my-sc-ot-rate').value) || 0;
+  var pfPct = parseFloat(document.getElementById('my-sc-pf-pct').value) || 0;
+  var esiPct = parseFloat(document.getElementById('my-sc-esi-pct').value) || 0;
+  var pt = parseFloat(document.getElementById('my-sc-pt').value) || 0;
+  var tds = parseFloat(document.getElementById('my-sc-tds').value) || 0;
+  var loan = parseFloat(document.getElementById('my-sc-loan').value) || 0;
+  var advance = parseFloat(document.getElementById('my-sc-advance').value) || 0;
+
+  var hra = Math.round(basic * hraPct/100);
+  var da = Math.round(basic * daPct/100);
+  var overtime = Math.round(otHours * otRate);
+  var gross = basic + hra + da + bonus + incentive + overtime;
+
+  var pf = Math.round((basic + da) * pfPct/100);
+  var esi = gross <= 21000 ? Math.round(gross * esiPct/100) : 0;
+  var totalDed = pf + esi + pt + tds + loan + advance;
+  var net = gross - totalDed;
+
+  return { basic:basic, hra:hra, da:da, bonus:bonus, incentive:incentive, overtime:overtime, gross:gross,
+    pf:pf, esi:esi, pt:pt, tds:tds, loan:loan, advance:advance, totalDed:totalDed, net:net };
+}
+function CALC_MY_SALARY(){
+  var v = MY_COMPUTE_SALARY_VALUES();
+  document.getElementById('my-sc-prev-gross').textContent = '₹'+v.gross.toLocaleString('en-IN');
+  document.getElementById('my-sc-prev-ded').textContent = '₹'+v.totalDed.toLocaleString('en-IN');
+  document.getElementById('my-sc-prev-net').textContent = '₹'+v.net.toLocaleString('en-IN');
+}
+function SUBMIT_MY_SALARY_CLAIM(){
+  var err = document.getElementById('my-sc-err'); err.textContent='';
+  var suc = document.getElementById('my-sc-success'); suc.textContent='';
+  if (!currentUser){ return; }
+  var v = MY_COMPUTE_SALARY_VALUES();
+  if (v.basic <= 0){ err.textContent='❌ Aapki Basic Salary abhi tak Admin/Agent ne fix nahi ki hai. Kripya HR/Agent se sampark karein.'; return; }
+  var month = parseInt(document.getElementById('my-sc-month').value,10);
+  var year = parseInt(document.getElementById('my-sc-year').value,10);
+
+  var dup = CLAIMS.find(function(c){ return c.empId===currentUser.empId && c.month===month && c.year===year && c.status==='pending'; });
+  if (dup){ err.textContent='❌ '+MONTHS[month]+' '+year+' ka claim pehle se pending hai.'; return; }
+
+  var claim = {
+    id: 'CLM'+Date.now(), empId: currentUser.empId, empName: currentUser.name,
+    month: month, year: year,
+    basic: v.basic, hra: v.hra, da: v.da, bonus: v.bonus, incentive: v.incentive, overtime: v.overtime, gross: v.gross,
+    pf: v.pf, esi: v.esi, pt: v.pt, tds: v.tds, loan: v.loan, advance: v.advance, totalDed: v.totalDed, net: v.net,
+    status: 'pending', claimedOn: new Date().toLocaleString('en-IN')
+  };
+  // 🆕 MIGRATED: ab naya backend khud duplicate-check karke insert karta
+  // hai (routes/hrmsSalary.js) — client ab poori CLAIMS list overwrite
+  // nahi karta, sirf apna naya claim POST karta hai.
+  API.post('/hrms-salary/claims', claim).then(function(result){
+    claim.id = result.id;
+    CLAIMS = CLAIMS.concat([claim]);
+    try { localStorage.setItem('hrms_salary_claims', JSON.stringify(CLAIMS)); } catch(e){}
+    suc.textContent = '✅ '+MONTHS[month]+' '+year+' ka vetan claim submit ho gaya! HR / Agent Salary Verification karega.';
+    RENDER_MY_SALARY_CLAIMS();
+  }).catch(function(errRes){
+    err.textContent = '❌ ' + (errRes.message || 'Claim submit nahi ho saka, dobara try karein.');
+  });
+}
+function MY_SALARY_CLAIM_STATUS_BADGE(status){
+  if (status==='approved') return '<span class="bx bgg">✅ Approved</span>';
+  if (status==='rejected') return '<span class="bx" style="background:#fde8e8;color:#A32D2D">❌ Rejected</span>';
+  return '<span class="bx baa">⏳ Pending Verification</span>';
+}
+function RENDER_MY_SALARY_CLAIMS(){
+  if (!currentUser) return;
+  var monthSel = document.getElementById('my-sc-month');
+  if (monthSel && !monthSel.options.length){
+    monthSel.innerHTML = MONTHS.map(function(m,i){return '<option value="'+i+'">'+m+'</option>';}).join('');
+    monthSel.value = new Date().getMonth();
+  }
+  var yearInp = document.getElementById('my-sc-year');
+  if (yearInp && !yearInp.value) yearInp.value = new Date().getFullYear();
+  var basicInp = document.getElementById('my-sc-basic');
+  if (basicInp){
+    var emp = EMPLOYEES.find(function(e){ return e.empId===currentUser.empId; });
+    basicInp.value = (emp && emp.basic) ? emp.basic : 0;
+  }
+  CALC_MY_SALARY();
+
+  var tb = document.getElementById('tb-my-salary-claims');
+  if (!tb) return;
+  var mine = CLAIMS.filter(function(c){ return c.empId===currentUser.empId; }).sort(function(a,b){ return b.year-a.year || b.month-a.month; });
+  tb.innerHTML = mine.map(function(c){
+    return '<tr>' +
+      '<td>'+MONTHS[c.month]+' '+c.year+'</td>' +
+      '<td>₹'+c.gross.toLocaleString('en-IN')+'</td>' +
+      '<td><b>₹'+c.net.toLocaleString('en-IN')+'</b></td>' +
+      '<td>'+MY_SALARY_CLAIM_STATUS_BADGE(c.status)+'</td>' +
+      '<td style="font-size:11px;color:var(--t3)">'+(c.rejectReason||'—')+'</td>' +
+      '</tr>';
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:20px">Abhi tak koi vetan claim nahi kiya.</td></tr>';
+}
+
+function UPLOAD_PROFILE_PHOTO(ev){
+  var f = ev.target.files[0];
+  if (!f) return;
+  if (!f.type.startsWith('image/')){ SHOW_TOAST('⚠️ Sirf image file upload karein.'); ev.target.value=''; return; }
+  if (f.size > 1.5*1024*1024){ SHOW_TOAST('⚠️ Photo 1.5MB se choti honi chahiye.'); ev.target.value=''; return; }
+  var reader = new FileReader();
+  reader.onload = function(){
+    var e = EMPLOYEES.find(function(x){ return x.empId===currentUser.empId; });
+    if (!e) return;
+    e.photo = reader.result;
+    // ═ OLD RECORDS SAFETY: sirf apna hi record likho — EMPLOYEES ek merged list
+    // hai (Agent Login ke saath), poori list overwrite karne se doosre employees
+    // ke records (ya Admin Panel se aaye records) corrupt ho sakte the. Naya
+    // PUT /api/hr/employees/:empId route bhi isi tarah sirf ek record update
+    // karta hai (poori list nahi), aur server par verify karta hai ki
+    // sirf apni khud ki profile update ho rahi hai.
+    API.put('/hr/employees/' + e.empId, { photo: e.photo }).catch(function(errFb){ console.warn('Profile photo save error:', errFb); });
+    SHOW_TOAST('✅ Profile photo update ho gayi.');
+    RENDER_EMP_PROFILE();
+    UPDATE_SIDEBAR_AVATAR();
+  };
+  reader.readAsDataURL(f);
+}
+function UPDATE_SIDEBAR_AVATAR(){
+  var e = EMPLOYEES.find(function(x){ return x.empId===currentUser.empId; });
+  var av = document.getElementById('sb-av');
+  if (e && e.photo){
+    av.innerHTML = '<img src="'+e.photo+'" style="width:100%;height:100%;object-fit:cover">';
+  } else {
+    av.textContent = currentUser.name.charAt(0).toUpperCase();
+  }
+}
+function RENDER_EMP_PROFILE(){
+  var e = EMPLOYEES.find(function(x){return x.empId===currentUser.empId;});
+  var box = document.getElementById('emp-profile-box');
+  if (!e){ box.innerHTML='Profile nahi mili.'; return; }
+  var photoBlock = e.photo ?
+    '<img src="'+e.photo+'" style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--gd);flex-shrink:0">' :
+    '<div style="width:88px;height:88px;border-radius:50%;background:var(--nv);color:var(--gd);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;border:3px solid var(--gd);flex-shrink:0">'+e.name.charAt(0).toUpperCase()+'</div>';
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap">' +
+      photoBlock +
+      '<div>' +
+        '<div style="font-size:15px;font-weight:800;color:var(--t1)">'+e.name+'</div>' +
+        '<div style="font-size:12px;color:var(--t3);margin-bottom:8px">'+(e.designation||'Employee')+' — '+e.empId+'</div>' +
+        '<label class="be" style="cursor:pointer;display:inline-block">📷 '+(e.photo?'Change Photo':'Upload Photo')+
+          '<input type="file" accept="image/*" style="display:none" onchange="UPLOAD_PROFILE_PHOTO(event)"></label>' +
+      '</div>' +
+    '</div>' +
+    '<div class="g2">' +
+      '<div class="fr2"><label class="fl2">Name</label><div class="fi" style="background:#f8fafc">'+e.name+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Employee ID</label><div class="fi" style="background:#f8fafc">'+e.empId+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Designation</label><div class="fi" style="background:#f8fafc">'+(e.designation||'—')+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Department</label><div class="fi" style="background:#f8fafc">'+(e.department||'—')+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Email</label><div class="fi" style="background:#f8fafc">'+(e.email||'—')+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Phone</label><div class="fi" style="background:#f8fafc">'+(e.phone||'—')+'</div></div>' +
+      '<div class="fr2"><label class="fl2">Date of Joining</label><div class="fi" style="background:#f8fafc">'+(e.doj||'—')+'</div></div>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--t3);margin:14px 0 8px;font-weight:800;text-transform:uppercase;letter-spacing:.04em">✏️ Yeh details aap khud edit kar sakte hain</div>' +
+    '<div class="g2">' +
+      '<div class="fr2"><label class="fl2">Email</label><input type="email" id="pf-email" class="fi" placeholder="aapka@email.com" value="'+(e.email||'')+'"></div>' +
+      '<div class="fr2"><label class="fl2">Bank Name</label><input type="text" id="pf-bank" class="fi" placeholder="Bank ka naam" value="'+(e.bank||'')+'"></div>' +
+      '<div class="fr2"><label class="fl2">Account Number</label><input type="text" id="pf-acc" class="fi" placeholder="Account number" value="'+(e.acc||'')+'"></div>' +
+      '<div class="fr2"><label class="fl2">IFSC Code</label><input type="text" id="pf-ifsc" class="fi" placeholder="e.g. SBIN0001234" style="text-transform:uppercase" value="'+(e.ifsc||'')+'"></div>' +
+    '</div>' +
+    '<div id="pf-err" style="color:var(--rd);font-size:12px;font-weight:700;margin-top:8px"></div>' +
+    '<button class="be" style="margin-top:10px;background:var(--gr);color:#fff" onclick="SAVE_EMP_PROFILE_FIELDS()">💾 Save Changes</button>';
+}
+
+// ══════════════ EMPLOYEE: SELF-EDIT EMAIL / BANK / ACCOUNT / IFSC ══════════════
+function SAVE_EMP_PROFILE_FIELDS(){
+  var e = EMPLOYEES.find(function(x){ return x.empId===currentUser.empId; });
+  if (!e) return;
+  var err = document.getElementById('pf-err'); err.textContent = '';
+
+  var email = document.getElementById('pf-email').value.trim();
+  var bank  = document.getElementById('pf-bank').value.trim();
+  var acc   = document.getElementById('pf-acc').value.trim();
+  var ifsc  = document.getElementById('pf-ifsc').value.trim().toUpperCase();
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent = '❌ Email sahi format mein daalein.'; return; }
+  if (ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)){ err.textContent = '❌ IFSC code galat hai (jaise SBIN0001234).'; return; }
+  if (acc && !/^\d{6,20}$/.test(acc)){ err.textContent = '❌ Account number sirf digits mein aur sahi length ka hona chahiye.'; return; }
+
+  e.email = email;
+  e.bank  = bank;
+  e.acc   = acc;
+  e.ifsc  = ifsc;
+  API.put('/hr/employees/' + e.empId, { email: email, bank: bank, acc: acc, ifsc: ifsc }).catch(function(errFb){ console.warn('Profile fields save error:', errFb); });
+  SHOW_TOAST('✅ Profile details update ho gayi.');
+  RENDER_EMP_PROFILE();
+}
+
+// ══════════════ ATTENDANCE + LEAVE: SHARED HELPERS ══════════════
+function pad2(n){ return n<10 ? '0'+n : ''+n; }
+function fmtDate(y,m,d){ return y+'-'+pad2(m+1)+'-'+pad2(d); }
+function todayStr(){ var d=new Date(); return fmtDate(d.getFullYear(), d.getMonth(), d.getDate()); }
+function nowTimeStr(){ var d=new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+function timeToMinutes(t){ if(!t) return null; var p=String(t).split(':'); return parseInt(p[0],10)*60+parseInt(p[1],10); }
+function hoursBetween(inT, outT){
+  var a=timeToMinutes(inT), b=timeToMinutes(outT);
+  if (a===null||b===null||b<a) return 0;
+  return Math.round(((b-a)/60)*100)/100;
+}
+function getShiftSettings(){
+  return {
+    start: SETTINGS.shiftStart || '09:30',
+    end: SETTINGS.shiftEnd || '18:30',
+    grace: (SETTINGS.graceMinutes!=null ? SETTINGS.graceMinutes : 15)
+  };
+}
+function findAttendance(empId, date){
+  return ATTENDANCE.find(function(a){ return a.empId===empId && a.date===date; });
+}
+function isOnApprovedLeave(empId, date){
+  return LEAVES.some(function(l){ return l.empId===empId && l.status==='approved' && date>=l.from && date<=l.to; });
+}
+// Derives the display status for a given employee+date from raw punches, approved leave and Sundays-as-holiday.
+function computeDayStatus(empId, date){
+  var rec = findAttendance(empId, date);
+  if (rec && rec.inTime){
+    var sh = getShiftSettings();
+    var lateMin = timeToMinutes(sh.start) + sh.grace;
+    var isLate = timeToMinutes(rec.inTime) > lateMin;
+    var isEarly = rec.outTime ? (timeToMinutes(rec.outTime) < timeToMinutes(sh.end)) : false;
+    var hrs = rec.outTime ? hoursBetween(rec.inTime, rec.outTime) : 0;
+    return { status: isLate?'Late':'Present', inTime:rec.inTime, outTime:rec.outTime||'', hours:hrs, late:isLate, early:isEarly };
+  }
+  if (isOnApprovedLeave(empId, date)) return { status:'On Leave', inTime:'', outTime:'', hours:0 };
+  var isSunday = new Date(date+'T00:00:00').getDay()===0;
+  if (isSunday) return { status:'Holiday', inTime:'', outTime:'', hours:0 };
+  if (date > todayStr()) return { status:'—', inTime:'', outTime:'', hours:0 };
+  return { status:'Absent', inTime:'', outTime:'', hours:0 };
+}
+function statusBadge(status){
+  if (status==='Present') return '<span class="bx bgg">✅ Present</span>';
+  if (status==='Late') return '<span class="bx baa">⏰ Late</span>';
+  if (status==='Absent') return '<span class="bx" style="background:#fde8e8;color:#A32D2D">❌ Absent</span>';
+  if (status==='On Leave') return '<span class="bx" style="background:#e6f0ff;color:#1a3a6b">🏖️ On Leave</span>';
+  if (status==='Holiday') return '<span class="bx" style="background:#f0f2f7;color:#8896a8">Holiday</span>';
+  return '<span class="bx" style="background:#f8fafc;color:#c4cdd8">—</span>';
+}
+
+// ══════════════ EMPLOYEE: PUNCH IN / OUT (with GPS + Selfie verification) ══════════════
+function OPEN_PUNCH_MODAL(mode){
+  var date = todayStr();
+  var existing = findAttendance(currentUser.empId, date);
+  if (mode==='in' && existing && existing.inTime){ SHOW_TOAST('⚠️ Aap aaj already Punch In kar chuke hain.'); return; }
+  if (mode==='out'){
+    if (!existing || !existing.inTime){ SHOW_TOAST('⚠️ Pehle Punch In karein.'); return; }
+    if (existing.outTime){ SHOW_TOAST('⚠️ Aap aaj already Punch Out kar chuke hain.'); return; }
+  }
+  PUNCH_MODE = mode;
+  PUNCH_PHOTO = null;
+  PUNCH_LOC = null;
+
+  document.getElementById('punch-mo-title').textContent = (mode==='in' ? '🟢 Punch In' : '🔴 Punch Out') + ' — Selfie & Location';
+  document.getElementById('punch-cam-err').style.display = 'none';
+  document.getElementById('punch-err').textContent = '';
+  document.getElementById('punch-gps-status').textContent = '📡 Location fetch ho raha hai…';
+  document.getElementById('punch-photo-preview').style.display = 'none';
+  document.getElementById('punch-photo-preview').src = '';
+  document.getElementById('punch-video').style.display = 'block';
+  document.getElementById('punch-btn-capture').style.display = 'block';
+  document.getElementById('punch-btn-capture').disabled = false;
+  document.getElementById('punch-btn-retake').style.display = 'none';
+  document.getElementById('punch-btn-confirm').disabled = true;
+
+  document.getElementById('mo-punch').classList.add('on');
+  START_PUNCH_CAMERA();
+  START_PUNCH_GPS();
+}
+
+function START_PUNCH_CAMERA(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    document.getElementById('punch-cam-err').style.display='block';
+    document.getElementById('punch-cam-err').textContent = '❌ Yeh browser camera access support nahi karta.';
+    document.getElementById('punch-btn-capture').disabled = true;
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false }).then(function(stream){
+    PUNCH_STREAM = stream;
+    var v = document.getElementById('punch-video');
+    v.srcObject = stream;
+  }).catch(function(err){
+    document.getElementById('punch-cam-err').style.display='block';
+    document.getElementById('punch-cam-err').textContent = '❌ Camera access nahi mila — permission allow karein aur dubara try karein.';
+    document.getElementById('punch-btn-capture').disabled = true;
+  });
+}
+
+function START_PUNCH_GPS(){
+  if (!navigator.geolocation){
+    document.getElementById('punch-gps-status').textContent = '❌ Yeh browser location access support nahi karta.';
+    CHECK_PUNCH_READY();
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    PUNCH_LOC = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy) };
+    document.getElementById('punch-gps-status').innerHTML =
+      '✅ ' + PUNCH_LOC.lat.toFixed(6) + ', ' + PUNCH_LOC.lng.toFixed(6) + ' <span style="color:var(--t3)">(±'+PUNCH_LOC.acc+'m)</span>';
+    CHECK_PUNCH_READY();
+  }, function(err){
+    var msg = '❌ Location nahi mil paayi.';
+    if (err.code === 1) msg = '❌ Location permission denied — allow karke retry karein.';
+    else if (err.code === 3) msg = '❌ Location fetch timeout ho gaya — retry karein.';
+    document.getElementById('punch-gps-status').innerHTML = msg + ' <button class="be" style="margin-left:6px" onclick="START_PUNCH_GPS()">🔄 Retry</button>';
+    CHECK_PUNCH_READY();
+  }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+}
+
+function CAPTURE_PUNCH_SELFIE(){
+  var v = document.getElementById('punch-video');
+  if (!PUNCH_STREAM || !v.videoWidth){ SHOW_TOAST('⚠️ Camera abhi ready nahi hai, thoda wait karein.'); return; }
+  var c = document.getElementById('punch-canvas');
+  var w = 320, h = Math.round(w * v.videoHeight / v.videoWidth);
+  c.width = w; c.height = h;
+  var ctx = c.getContext('2d');
+  // mirror horizontally so the selfie preview matches what the user sees
+  ctx.translate(w, 0); ctx.scale(-1, 1);
+  ctx.drawImage(v, 0, 0, w, h);
+  PUNCH_PHOTO = c.toDataURL('image/jpeg', 0.6);
+
+  document.getElementById('punch-photo-preview').src = PUNCH_PHOTO;
+  document.getElementById('punch-photo-preview').style.display = 'block';
+  document.getElementById('punch-video').style.display = 'none';
+  document.getElementById('punch-btn-capture').style.display = 'none';
+  document.getElementById('punch-btn-retake').style.display = 'block';
+  CHECK_PUNCH_READY();
+}
+
+function RETAKE_PUNCH_SELFIE(){
+  PUNCH_PHOTO = null;
+  document.getElementById('punch-photo-preview').style.display = 'none';
+  document.getElementById('punch-video').style.display = 'block';
+  document.getElementById('punch-btn-capture').style.display = 'block';
+  document.getElementById('punch-btn-retake').style.display = 'none';
+  CHECK_PUNCH_READY();
+}
+
+function CHECK_PUNCH_READY(){
+  document.getElementById('punch-btn-confirm').disabled = !(PUNCH_PHOTO && PUNCH_LOC);
+}
+
+function STOP_PUNCH_CAMERA(){
+  if (PUNCH_STREAM){
+    PUNCH_STREAM.getTracks().forEach(function(t){ t.stop(); });
+    PUNCH_STREAM = null;
+  }
+}
+
+function CLOSE_PUNCH_MODAL(){
+  STOP_PUNCH_CAMERA();
+  document.getElementById('mo-punch').classList.remove('on');
+  PUNCH_MODE = null; PUNCH_PHOTO = null; PUNCH_LOC = null;
+}
+
+function CONFIRM_PUNCH(){
+  var err = document.getElementById('punch-err'); err.textContent = '';
+  if (!PUNCH_PHOTO){ err.textContent = '❌ Pehle selfie capture karein.'; return; }
+  if (!PUNCH_LOC){ err.textContent = '❌ Location fetch hone ka wait karein ya retry karein.'; return; }
+
+  if (PUNCH_MODE === 'in') PUNCH_IN(PUNCH_PHOTO, PUNCH_LOC);
+  else PUNCH_OUT(PUNCH_PHOTO, PUNCH_LOC);
+
+  CLOSE_PUNCH_MODAL();
+}
+
+function VIEW_PUNCH_PROOF(empId, date, which){
+  var rec = findAttendance(empId, date);
+  if (!rec) return;
+  var photo = which==='in' ? rec.inPhoto : rec.outPhoto;
+  var loc = which==='in' ? rec.inLoc : rec.outLoc;
+  var time = which==='in' ? rec.inTime : rec.outTime;
+  if (!photo && !loc) { SHOW_TOAST('ℹ️ Is punch ke liye photo/location record nahi hai.'); return; }
+  document.getElementById('punch-view-title').textContent = (which==='in' ? '🟢 Punch In' : '🔴 Punch Out') + ' — ' + date;
+  document.getElementById('punch-view-photo').src = photo || '';
+  document.getElementById('punch-view-time').textContent = '🕒 Time: ' + (time || '—');
+  if (loc){
+    document.getElementById('punch-view-loc').textContent = '📍 ' + loc.lat.toFixed(6) + ', ' + loc.lng.toFixed(6) + ' (±'+loc.acc+'m)';
+    document.getElementById('punch-view-map-link').href = 'https://www.google.com/maps?q=' + loc.lat + ',' + loc.lng;
+    document.getElementById('punch-view-map-link').style.display = 'inline-block';
+  } else {
+    document.getElementById('punch-view-loc').textContent = '📍 Location record uplabdh nahi hai.';
+    document.getElementById('punch-view-map-link').style.display = 'none';
+  }
+  document.getElementById('mo-punch-view').classList.add('on');
+}
+
+function PUNCH_IN(photo, loc){
+  var date = todayStr();
+  var existing = findAttendance(currentUser.empId, date);
+  if (existing && existing.inTime){ SHOW_TOAST('⚠️ Aap aaj already Punch In kar chuke hain.'); return; }
+  var rec = existing || { empId: currentUser.empId, date: date };
+  rec.inTime = nowTimeStr();
+  if (photo) rec.inPhoto = photo;
+  if (loc) rec.inLoc = loc;
+  if (!existing) ATTENDANCE.push(rec);
+  SharedFBSync.push('staff_att', ATTENDANCE);
+  SHOW_TOAST('🟢 Punch In ho gaya — '+rec.inTime);
+  RENDER_EMP_ATTENDANCE();
+}
+function PUNCH_OUT(photo, loc){
+  var date = todayStr();
+  var rec = findAttendance(currentUser.empId, date);
+  if (!rec || !rec.inTime){ SHOW_TOAST('⚠️ Pehle Punch In karein.'); return; }
+  if (rec.outTime){ SHOW_TOAST('⚠️ Aap aaj already Punch Out kar chuke hain.'); return; }
+  rec.outTime = nowTimeStr();
+  if (photo) rec.outPhoto = photo;
+  if (loc) rec.outLoc = loc;
+  SharedFBSync.push('staff_att', ATTENDANCE);
+  SHOW_TOAST('🔴 Punch Out ho gaya — '+rec.outTime);
+  RENDER_EMP_ATTENDANCE();
+}
+
+// ══════════════ EMPLOYEE: RENDER ATTENDANCE (today card + calendar + history) ══════════════
+function RENDER_EMP_ATTENDANCE(){
+  if (!currentUser) return;
+  var today = new Date();
+  document.getElementById('att-today-date').textContent = today.toLocaleDateString('en-IN', {weekday:'short', day:'2-digit', month:'short', year:'numeric'});
+
+  var todayInfo = computeDayStatus(currentUser.empId, todayStr());
+  document.getElementById('att-today-in').textContent = todayInfo.inTime || '—';
+  document.getElementById('att-today-out').textContent = todayInfo.outTime || '—';
+  document.getElementById('att-today-status').textContent = todayInfo.status;
+  var rawToday = findAttendance(currentUser.empId, todayStr());
+  document.getElementById('btn-punch-in').disabled = !!(rawToday && rawToday.inTime);
+  document.getElementById('btn-punch-out').disabled = !(rawToday && rawToday.inTime && !rawToday.outTime);
+  var inProofEl = document.getElementById('att-today-in-proof'), outProofEl = document.getElementById('att-today-out-proof');
+  if (rawToday && rawToday.inPhoto){ document.getElementById('att-today-in-thumb').src = rawToday.inPhoto; inProofEl.style.display='block'; } else { inProofEl.style.display='none'; }
+  if (rawToday && rawToday.outPhoto){ document.getElementById('att-today-out-thumb').src = rawToday.outPhoto; outProofEl.style.display='block'; } else { outProofEl.style.display='none'; }
+
+  var monthSel = document.getElementById('att-month-sel');
+  if (!monthSel.options.length){
+    monthSel.innerHTML = MONTHS.map(function(m,i){return '<option value="'+i+'">'+m+'</option>';}).join('');
+    monthSel.value = today.getMonth();
+  }
+  var yearInp = document.getElementById('att-year-sel');
+  if (!yearInp.value) yearInp.value = today.getFullYear();
+
+  var month = parseInt(monthSel.value,10), year = parseInt(yearInp.value,10);
+  var daysInMonth = new Date(year, month+1, 0).getDate();
+  var firstDay = new Date(year, month, 1).getDay();
+
+  var present=0, absent=0, late=0, totalHours=0;
+  var dayColors = {'Present':['#E1F5EE','#0F6E56'],'Late':['#fff3cd','#854F0B'],'Absent':['#fde8e8','#A32D2D'],
+    'On Leave':['#e6f0ff','#1a3a6b'],'Holiday':['#f0f2f7','#8896a8'],'—':['#f8fafc','#c4cdd8']};
+
+  var html = ['Su','Mo','Tu','We','Th','Fr','Sa'].map(function(d){
+    return '<div style="text-align:center;font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase">'+d+'</div>';
+  }).join('');
+  for (var i=0;i<firstDay;i++) html += '<div></div>';
+  for (var d=1; d<=daysInMonth; d++){
+    var date = fmtDate(year, month, d);
+    var info = computeDayStatus(currentUser.empId, date);
+    if (info.status==='Present' || info.status==='Late') present++;
+    if (info.status==='Late') late++;
+    if (info.status==='Absent') absent++;
+    totalHours += info.hours||0;
+    var col = dayColors[info.status] || dayColors['—'];
+    var tip = info.status + (info.inTime?(' • In: '+info.inTime):'') + (info.outTime?(' • Out: '+info.outTime):'');
+    html += '<div title="'+tip+'" style="text-align:center;padding:7px 0;border-radius:7px;background:'+col[0]+';color:'+col[1]+';font-size:11px;font-weight:700">'+d+'</div>';
+  }
+  document.getElementById('att-calendar').innerHTML = html;
+
+  document.getElementById('att-present').textContent = present;
+  document.getElementById('att-absent').textContent = absent;
+  document.getElementById('att-late').textContent = late;
+  document.getElementById('att-total-hours').textContent = totalHours.toFixed(1)+' hrs';
+
+  var tb = document.getElementById('tb-att-history');
+  var rows = [];
+  for (var d2=daysInMonth; d2>=1; d2--){
+    var date2 = fmtDate(year, month, d2);
+    if (date2 > todayStr()) continue;
+    var info2 = computeDayStatus(currentUser.empId, date2);
+    if (info2.status==='Holiday' && !info2.inTime) continue; // plain Sundays skipped from the history list
+    rows.push('<tr><td>'+date2+'</td><td>'+(info2.inTime||'—')+'</td><td>'+(info2.outTime||'—')+'</td><td>'+(info2.hours||0)+' hrs</td><td>'+statusBadge(info2.status)+'</td><td>'+punchProofCell(currentUser.empId, date2)+'</td></tr>');
+  }
+  tb.innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:var(--t3);padding:20px">Is mahine ka koi record nahi hai.</td></tr>';
+}
+
+// Builds the small 📷 In / 📷 Out proof-view buttons for a given empId+date, based on whichever punches have a stored selfie/location.
+function punchProofCell(empId, date){
+  var rec = findAttendance(empId, date);
+  if (!rec) return '<span style="color:var(--t3)">—</span>';
+  var btns = [];
+  if (rec.inPhoto || rec.inLoc) btns.push('<button class="be" onclick="VIEW_PUNCH_PROOF(\''+empId+'\',\''+date+'\',\'in\')">📷 In</button>');
+  if (rec.outPhoto || rec.outLoc) btns.push('<button class="be" onclick="VIEW_PUNCH_PROOF(\''+empId+'\',\''+date+'\',\'out\')">📷 Out</button>');
+  return btns.length ? btns.join(' ') : '<span style="color:var(--t3)">—</span>';
+}
+
+// ══════════════ LEAVE: HELPERS ══════════════
+var LV_DOC_DATA = null, LV_DOC_NAME = '';
+function LV_DOC_PICK(ev){
+  var f = ev.target.files[0];
+  if (!f) return;
+  if (f.size > 1.5*1024*1024){ SHOW_TOAST('⚠️ File 1.5MB se choti honi chahiye.'); ev.target.value=''; return; }
+  var reader = new FileReader();
+  reader.onload = function(){ LV_DOC_DATA = reader.result; LV_DOC_NAME = f.name; document.getElementById('lv-doc-name').textContent = '📎 '+f.name; };
+  reader.readAsDataURL(f);
+}
+function dateDiffDays(from, to){
+  var a = new Date(from+'T00:00:00'), b = new Date(to+'T00:00:00');
+  return Math.round((b-a)/86400000) + 1;
+}
+function getLeaveAllocation(){
+  return SETTINGS.leaveAllocation || { Casual:12, Sick:8, Earned:15 };
+}
+function usedLeaveDays(empId, type, year){
+  return LEAVES.filter(function(l){
+    return l.empId===empId && l.type===type && l.status==='approved' && new Date(l.from+'T00:00:00').getFullYear()===year;
+  }).reduce(function(sum,l){ return sum + l.days; }, 0);
+}
+
+// ══════════════ EMPLOYEE: APPLY / CANCEL LEAVE ══════════════
+function APPLY_LEAVE(){
+  var type = document.getElementById('lv-type').value;
+  var from = document.getElementById('lv-from').value;
+  var to = document.getElementById('lv-to').value;
+  var reason = document.getElementById('lv-reason').value.trim();
+  var err = document.getElementById('lv-err'); err.textContent='';
+  var suc = document.getElementById('lv-success'); suc.textContent='';
+  if (!from || !to){ err.textContent='❌ From aur To date daalein.'; return; }
+  if (to < from){ err.textContent='❌ To date, From date se pehle nahi ho sakti.'; return; }
+  if (!reason){ err.textContent='❌ Reason daalna zaroori hai.'; return; }
+  var days = dateDiffDays(from, to);
+  var emp = EMPLOYEES.find(function(e){ return e.empId===currentUser.empId; });
+  var rec = {
+    id: 'LV'+Date.now(), empId: currentUser.empId, empName: emp?emp.name:currentUser.name,
+    type: type, from: from, to: to, days: days, reason: reason,
+    docBase64: LV_DOC_DATA, docName: LV_DOC_NAME,
+    status: 'pending', appliedOn: new Date().toLocaleString('en-IN')
+  };
+  LEAVES.push(rec);
+  SharedFBSync.push('leave_requests', LEAVES);
+  suc.textContent = '✅ Leave application submit ho gayi. HR approval ka intezaar karein.';
+  document.getElementById('lv-reason').value='';
+  document.getElementById('lv-from').value='';
+  document.getElementById('lv-to').value='';
+  document.getElementById('lv-doc').value='';
+  document.getElementById('lv-doc-name').textContent='';
+  LV_DOC_DATA=null; LV_DOC_NAME='';
+  RENDER_EMP_LEAVE();
+}
+function CANCEL_LEAVE(id){
+  var l = LEAVES.find(function(x){ return x.id===id; });
+  if (!l || l.status!=='pending') return;
+  l.status = 'cancelled';
+  SharedFBSync.push('leave_requests', LEAVES);
+  SHOW_TOAST('🗑️ Leave application cancel ho gayi.');
+  RENDER_EMP_LEAVE();
+}
+function leaveStatusBadge(status){
+  if (status==='approved') return '<span class="bx bgg">✅ Approved</span>';
+  if (status==='rejected') return '<span class="bx" style="background:#fde8e8;color:#A32D2D">❌ Rejected</span>';
+  if (status==='cancelled') return '<span class="bx" style="background:#f0f2f7;color:#8896a8">Cancelled</span>';
+  return '<span class="bx baa">⏳ Pending</span>';
+}
+
+function RENDER_EMP_LEAVE(){
+  if (!currentUser) return;
+  var year = new Date().getFullYear();
+  var alloc = getLeaveAllocation();
+  var box = document.getElementById('leave-balance-cards');
+  box.innerHTML = Object.keys(alloc).map(function(type){
+    var used = usedLeaveDays(currentUser.empId, type, year);
+    var total = alloc[type];
+    return '<div class="sc"><div class="sl">'+type+' Leave Balance</div><div class="sv">'+(total-used)+' <span style="font-size:12px;color:var(--t3)">/ '+total+'</span></div></div>';
+  }).join('');
+
+  var tb = document.getElementById('tb-leave-history');
+  var mine = LEAVES.filter(function(l){ return l.empId===currentUser.empId; }).sort(function(a,b){ return b.from < a.from ? -1 : 1; });
+  tb.innerHTML = mine.map(function(l){
+    return '<tr><td>'+l.type+'</td><td>'+l.from+'</td><td>'+l.to+'</td><td>'+l.days+'</td><td>'+l.reason+'</td><td>'+leaveStatusBadge(l.status)+'</td>'+
+      '<td>'+(l.status==='pending' ? '<button class="be" style="background:#fde8e8;color:var(--rd)" onclick="CANCEL_LEAVE(\''+l.id+'\')">Cancel</button>' : '—')+'</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:20px">Abhi tak koi leave apply nahi ki gayi.</td></tr>';
+}
+
+// ══════════════ INIT ══════════════
+LOAD_ALL(function(){
+  SYNC_ADMIN_STAFF(); // FIX: Admin Panel ke Staff Members ko bhi HRMS login mein shaamil karo (LOAD_ALL ke baad, taaki race condition na ho)
+  SYNC_EMPLOYEES(); // FIX: Agent Login HR Panel se Basic Salary fix hote hi turant reflect ho (LOAD_ALL ke baad, taaki race condition na ho)
+  SYNC_SALARY_SLIPS(); // FIX: My Payslips ab real-time update hoga, refresh/re-login ki zaroorat nahi
+  SYNC_SALARY_CLAIMS(); // Salary: self salary claims real-time sync
+  SYNC_COMPANY_BRANDING(); // FIX: Salary Slip ka Company Name/Logo Agent Login se link
+  SYNC_PENDING_REGISTRATIONS(); // Self-registration ka pending list, Agent Login ke Approve/Edit ke liye
+});
+</script>
+
+<!-- ══ SECURITY: Block copy/paste/cut/right-click on Login ID & Password fields ══ -->
+<script>
+(function(){
+  var protectedIds = ['e-user', 'e-mobile', 'ap-mobile'];
+  function blockEvent(e){
+    e.preventDefault();
+    var el = e.target;
+    el.setAttribute('data-blocked','1');
+    el.style.outline = '1px solid #e04b4b';
+    setTimeout(function(){ el.style.outline=''; }, 400);
+    return false;
+  }
+  function attachGuards(el){
+    if(!el || el.getAttribute('data-paste-guarded')) return;
+    el.setAttribute('data-paste-guarded','1');
+    ['paste','copy','cut','contextmenu','drop'].forEach(function(evt){
+      el.addEventListener(evt, blockEvent);
+    });
+  }
+  function init(){
+    protectedIds.forEach(function(id){
+      attachGuards(document.getElementById(id));
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  // Re-attach if these fields get re-rendered dynamically later
+  var observer = new MutationObserver(init);
+  observer.observe(document.documentElement, {childList:true, subtree:true});
+})();
+</script>
+<script>(function (global) {
+  function nowTs() {
+    return Date.now();
+  }
+
+  // NOTE: commission % calculation ab Cloud Function ke andar hoti hai
+  // — client ko yeh ab jaanne ki zaroorat nahi.
+
+  // ══════════════════════════════════════════════════════════════
+  // 🔒 SECURITY NOTE: createStudentPaymentTransaction, hrmsVerifyTransaction
+  // aur hrmsRejectTransaction ab seedhe agent_wallets/admin_wallet/
+  // transactions par nahi likhte — yeh sab ab Cloud Functions
+  // (functions/index.js) ke andar chalta hai, jahan client kabhi
+  // pahunch nahi sakta. Yahan sirf ek secure "call" hota hai. Same
+  // function signature (callback-style) rakha gaya hai taaki baaki
+  // app mein kahin bhi code badalna na pade.
+  // ══════════════════════════════════════════════════════════════
+
+  function createStudentPaymentTransaction(params, callback) {
+    callback = callback || function () {};
+    if (!params || !params.agentId || !(params.amount > 0)) {
+      return callback(new Error('agentId and a positive amount are required'));
+    }
+    API.post('/payments/student-transaction', params)
+      .then(function (result) { callback(null, result.txnId); })
+      .catch(function (err) { callback(new Error(err.message || 'Transaction fail ho gaya.')); });
+  }
+
+  function hrmsVerifyTransaction(txnId, hrmsUid, callback) {
+    callback = callback || function () {};
+    if (!txnId) return callback(new Error('txnId is required'));
+    API.post('/payments/transactions/' + txnId + '/verify', {})
+      .then(function (result) { callback(null, result); })
+      .catch(function (err) { callback(new Error(err.message || 'Verification fail ho gaya.')); });
+  }
+
+  function hrmsRejectTransaction(txnId, reason, hrmsUid, callback) {
+    callback = callback || function () {};
+    if (!txnId) return callback(new Error('txnId is required'));
+    API.post('/payments/transactions/' + txnId + '/reject', { reason: reason })
+      .then(function () { callback(null); })
+      .catch(function (err) { callback(new Error(err.message || 'Reject fail ho gaya.')); });
+  }
+
+  // 🆕 FIREBASE → BACKEND MIGRATION: pehle yeh teeno FBDB.ref(...).on('value')
+  // real-time listeners the — asal mein STALE the (writes bahut pehle hi
+  // /api/payments/... route par shift ho chuki thi, Firebase ka purana
+  // 'Pending_HRMS' status naye Postgres 'pending' status se kabhi match
+  // hi nahi hota tha). Ab seedha REST polling (har 10 second) se, sahi
+  // Postgres data ke saath.
+  function watchAgentWallet(agentId, onChange) {
+    function fetchNow() {
+      API.get('/wallet/me').then(function (w) {
+        onChange({
+          pendingBalance: Number((w && w.pending_balance) || 0),
+          approvedBalance: Number((w && w.approved_balance) || 0),
+          totalEarned: Number((w && w.total_earned) || 0)
+        });
+      }).catch(function (e) { console.warn('watchAgentWallet poll error:', e); });
+    }
+    var intervalId = pollRestData(fetchNow, 10000);
+    return function unsubscribe() { clearInterval(intervalId); };
+  }
+
+  function watchPendingTransactions(onChange) {
+    function fetchNow() {
+      API.get('/hr/pending-transactions').then(function (list) {
+        onChange(list || []);
+      }).catch(function (e) { console.warn('watchPendingTransactions poll error:', e); });
+    }
+    var intervalId = pollRestData(fetchNow, 10000);
+    return function unsubscribe() { clearInterval(intervalId); };
+  }
+
+  function watchAdminDashboard(onChange) {
+    function fetchNow() {
+      API.get('/hr/admin-dashboard').then(function (d) {
+        onChange({ totalCommission: (d && d.totalCommission) || 0, ledger: (d && d.ledger) || [] });
+      }).catch(function (e) { console.warn('watchAdminDashboard poll error:', e); });
+    }
+    var intervalId = pollRestData(fetchNow, 10000);
+    return function unsubscribe() { clearInterval(intervalId); };
+  }
+
+  global.WalletSystem = {
+    createStudentPaymentTransaction: createStudentPaymentTransaction,
+    hrmsVerifyTransaction: hrmsVerifyTransaction,
+    hrmsRejectTransaction: hrmsRejectTransaction,
+    watchAgentWallet: watchAgentWallet,
+    watchPendingTransactions: watchPendingTransactions,
+    watchAdminDashboard: watchAdminDashboard
+  };
+
+})(window);
+</script>
+</body>
+</html>

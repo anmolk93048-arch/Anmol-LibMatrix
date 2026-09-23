@@ -1,0 +1,2927 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mobile Attendance</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Hind:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{--nv:#0d1e3d;--gd:#c9a227;--gr:#0F6E56;--rd:#A32D2D;--bg:#f0f4fa;--wh:#fff;--bd:#dde3ef;--t1:#0d1e3d;--t2:#4a5568;--t3:#8896a8;--pu:#534AB7}
+  html,body{height:100%;background:var(--nv);font-family:'Nunito','Hind',sans-serif;overflow-x:hidden}
+  .screen{display:none;min-height:100vh}
+  .screen.active{display:flex;flex-direction:column}
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,162,39,.4)}50%{box-shadow:0 0 0 10px rgba(201,162,39,0)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+  .fade-in{animation:fadeIn .35s ease both}
+  .slide-up{animation:slideUp .4s ease both}
+
+  /* ── LOGIN ── */
+  #s-login{background:linear-gradient(145deg,#060f1f 0%,#0d1e3d 50%,#1a3a6b 100%);align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+  .lcard{width:100%;max-width:390px;animation:fadeIn .4s ease}
+  .logo-area{text-align:center;margin-bottom:22px}
+  .logo-icon{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#c9a227,#e8c04a);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 12px;box-shadow:0 8px 30px rgba(201,162,39,.35)}
+  .logo-area h1{font-size:18px;font-weight:900;color:#fff;letter-spacing:.01em}
+  .logo-area p{font-size:11px;color:rgba(255,255,255,.45);margin-top:3px}
+  .badge-pill{display:inline-block;background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.35);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:700;color:var(--gd);margin-bottom:20px}
+
+  .card-box{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:24px 20px;margin-bottom:14px}
+  .fl{font-size:10px;font-weight:700;color:rgba(255,255,255,.45);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}
+  .fg{margin-bottom:13px}
+  .iw{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:11px;padding:12px 13px;transition:.2s}
+  .iw:focus-within{border-color:var(--gd);background:rgba(201,162,39,.06)}
+  .iw input,.iw select{background:transparent;border:none;outline:none;color:#fff;font-size:14px;width:100%;font-family:'Nunito',sans-serif;font-weight:700}
+  .iw select option{background:#0d1e3d}
+  .ic{font-size:16px;opacity:.55;flex-shrink:0}
+  .btn-p{width:100%;padding:14px;border-radius:12px;font-size:14px;font-weight:900;cursor:pointer;border:none;background:linear-gradient(135deg,#c9a227,#e8c04a);color:#0d1e3d;transition:.15s;letter-spacing:.02em}
+  .btn-p:active{transform:scale(.97)}
+  .btn-p:disabled{opacity:.6;cursor:not-allowed}
+  .err{background:rgba(163,45,45,.25);border:1px solid rgba(163,45,45,.4);border-radius:9px;padding:9px 12px;font-size:12px;font-weight:700;color:#ff8080;margin-bottom:12px;text-align:center;display:none}
+  .success-msg{background:rgba(15,110,86,.2);border:1px solid #0F6E56;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:700;color:#4ade80;margin-bottom:12px;text-align:center;display:none}
+  input::placeholder{color:rgba(255,255,255,.25)}
+
+  /* ── STUDENT CHIP ── */
+  .sel-chip{display:flex;align-items:center;gap:9px;background:rgba(15,110,86,.15);border:1.5px solid #0F6E56;border-radius:11px;padding:10px 13px;margin-bottom:13px}
+  #selected-student{display:none!important}
+
+  /* ── OTP SCREEN ── */
+  #s-otp{background:linear-gradient(145deg,#060f1f,#0d1e3d,#1a3a6b);align-items:center;justify-content:center;padding:20px}
+  .otp-card{width:100%;max-width:380px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:28px 22px;animation:slideUp .4s ease}
+  .otp-sim-box{background:linear-gradient(135deg,rgba(83,74,183,.25),rgba(26,115,232,.2));border:1.5px solid rgba(83,74,183,.5);border-radius:14px;padding:16px;margin-bottom:20px;text-align:center}
+  .otp-sim-title{font-size:11px;font-weight:700;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+  .otp-digits{font-size:42px;font-weight:900;color:#fff;letter-spacing:8px;font-family:'Nunito',sans-serif}
+  .otp-hint{font-size:11px;color:rgba(255,255,255,.35);margin-top:6px}
+  .otp-inputs{display:flex;gap:10px;justify-content:center;margin-bottom:18px}
+  .otp-inp{width:56px;height:60px;border-radius:12px;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font-size:26px;font-weight:900;text-align:center;font-family:'Nunito',sans-serif;outline:none;transition:.2s;caret-color:transparent}
+  .otp-inp:focus{border-color:#c9a227;background:rgba(201,162,39,.1)}
+  .otp-timer{font-size:11px;color:rgba(255,255,255,.35);text-align:center;margin-bottom:14px}
+  .otp-timer span{color:#c9a227;font-weight:700}
+  .btn-resend{background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;cursor:pointer;text-decoration:underline;display:block;margin:0 auto 14px}
+  .btn-resend.active{color:#c9a227}
+
+  /* ── PROFILE ── */
+  #s-profile{background:linear-gradient(145deg,#060f1f 0%,#0d1e3d 60%,#1a3a6b 100%);align-items:flex-start;overflow-y:auto}
+  .prof-topbar{background:rgba(0,0,0,.3);backdrop-filter:blur(10px);padding:12px 16px;width:100%;flex-shrink:0;border-bottom:1px solid rgba(201,162,39,.08);position:sticky;top:0;z-index:10}
+  .prof-topbar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent 0%,rgba(201,162,39,.75) 50%,transparent 100%)}
+  .prof-topbar-inner{display:flex;align-items:center;justify-content:space-between}
+  .prof-lib-name{font-size:17px;font-weight:900;color:#c9a227;letter-spacing:.02em;text-shadow:0 0 14px rgba(201,162,39,.25)}
+  .prof-lib-sub{font-size:10px;color:rgba(255,255,255,.4);text-align:left;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn-logout{background:rgba(255,80,80,.15);border:1px solid rgba(255,80,80,.3);color:#ff8080;font-size:10px;font-weight:700;padding:6px 10px;border-radius:8px;cursor:pointer}
+  .prof-badge-wrap{width:42px;height:42px;position:relative;flex-shrink:0;border-radius:11px;background:linear-gradient(145deg,rgba(201,162,39,.22),rgba(201,162,39,.04));box-shadow:inset 0 0 0 1px rgba(201,162,39,.4);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .prof-badge-wrap::before,.prof-badge-wrap::after{content:'';position:absolute;width:10px;height:10px;pointer-events:none;z-index:2}
+  .prof-badge-wrap::before{top:0;left:0;border-top:2px solid #c9a227;border-left:2px solid #c9a227;border-radius:5px 0 0 0}
+  .prof-badge-wrap::after{bottom:0;right:0;border-bottom:2px solid #c9a227;border-right:2px solid #c9a227;border-radius:0 0 5px 0}
+  .prof-badge-wrap img{width:100%;height:100%;object-fit:cover}
+  .prof-badge-ph{font-size:19px;line-height:1}
+  .prof-content{padding:24px 16px 100px;width:100%}
+  .prof-photo-wrap{text-align:center;margin-bottom:20px}
+  .prof-av{width:110px;height:110px;border-radius:50%;border:4px solid #c9a227;object-fit:cover;box-shadow:0 8px 30px rgba(201,162,39,.3);animation:pulse 2s infinite}
+  .prof-av-placeholder{width:110px;height:110px;border-radius:50%;border:4px solid rgba(201,162,39,.4);display:flex;align-items:center;justify-content:center;font-size:44px;background:rgba(255,255,255,.07);margin:0 auto}
+  .cam-badge{position:relative;display:inline-block}
+  .cam-badge-btn{position:absolute;bottom:2px;right:2px;width:32px;height:32px;border-radius:50%;background:#c9a227;border:3px solid #0d1e3d;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .prof-name{font-size:22px;font-weight:900;color:#fff;text-align:center;margin-bottom:4px}
+  .prof-sub-text{font-size:12px;color:rgba(255,255,255,.45);text-align:center}
+
+  /* Status card */
+  .status-card{border-radius:16px;padding:20px;text-align:center;margin-bottom:14px;transition:.3s}
+  .status-card.none{background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.12)}
+  .status-card.present{background:rgba(15,110,86,.25);border:2px solid #0F6E56;box-shadow:0 4px 20px rgba(15,110,86,.2)}
+  .status-card.absent{background:rgba(163,45,45,.25);border:2px solid #A32D2D}
+  .status-icon{font-size:44px;margin-bottom:10px}
+  .status-title{font-size:20px;font-weight:900;margin-bottom:5px}
+  .status-card.none .status-title{color:#fff}
+  .status-card.present .status-title{color:#4ade80}
+  .status-card.absent .status-title{color:#f87171}
+  .status-sub{font-size:12px;color:rgba(255,255,255,.45)}
+
+  /* Info rows */
+  .info-box{background:rgba(255,255,255,.06);border-radius:13px;overflow:hidden;margin-bottom:14px}
+  .info-row{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .info-row:last-child{border-bottom:none}
+  .info-lbl{font-size:12px;color:rgba(255,255,255,.4);font-weight:600}
+  .info-val{font-size:12px;color:#fff;font-weight:800}
+  .info-val.gold{color:#c9a227}
+
+  /* History */
+  .hist-box{background:rgba(255,255,255,.06);border-radius:13px;padding:15px;margin-bottom:14px}
+  .hist-title{font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px}
+  .hist-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+  .hist-day{text-align:center}
+  .hist-day-lbl{font-size:9px;font-weight:700;color:rgba(255,255,255,.35);margin-bottom:4px}
+  .hist-dot{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;margin:0 auto}
+  .hist-dot.p{background:rgba(15,110,86,.4);color:#4ade80;border:1.5px solid #0F6E56}
+  .hist-dot.a{background:rgba(163,45,45,.3);color:#f87171;border:1.5px solid #A32D2D}
+  .hist-dot.none{background:rgba(255,255,255,.07);color:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.1)}
+  .hist-dot.today{border-color:#c9a227!important}
+
+  /* Prof action buttons */
+  .prof-actions{display:flex;flex-direction:column;gap:10px}
+  .prof-btn{width:100%;padding:14px;border-radius:13px;font-size:14px;font-weight:900;cursor:pointer;border:none;transition:.15s;letter-spacing:.02em}
+  .prof-btn:active{transform:scale(.97)}
+  .prof-btn.gold-btn{background:linear-gradient(135deg,#c9a227,#e8c04a);color:#0d1e3d}
+  .prof-btn.ghost-btn{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.15);color:#fff}
+  .prof-btn.xl-btn{background:linear-gradient(135deg,#217346,#1a5c38);color:#fff}
+  .prof-btn.danger-btn{background:rgba(163,45,45,.2);border:1.5px solid rgba(163,45,45,.4);color:#f87171}
+
+  /* ── SELFIE MODAL ── */
+  .selfie-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;align-items:center;justify-content:center;padding:16px}
+  .selfie-card{width:100%;max-width:380px;background:#0d1e3d;border:1px solid rgba(201,162,39,.25);border-radius:20px;overflow:hidden;animation:slideUp .3s ease}
+  .selfie-top{background:rgba(0,0,0,.3);padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+  .selfie-top h2{font-size:13px;font-weight:800;color:#c9a227}
+  .cam-wrap{position:relative;background:#000;width:100%}
+  #mob-video{width:100%;height:300px;object-fit:cover;display:block}
+  #mob-canvas{display:none}
+  #mob-preview{width:100%;height:300px;object-fit:cover;display:none}
+  .cam-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+  .face-guide{width:160px;height:160px;border-radius:50%;border:3px dashed rgba(201,162,39,.7)}
+  .cam-btns{padding:14px 16px;display:flex;gap:10px;align-items:center;justify-content:center;background:rgba(0,0,0,.3)}
+  .btn-capture{width:62px;height:62px;border-radius:50%;background:#fff;border:4px solid #c9a227;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 24px rgba(201,162,39,.5)}
+  .btn-retake{padding:10px 16px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff}
+  .btn-use{padding:10px 18px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;border:none;background:linear-gradient(135deg,#0F6E56,#0a5c47);color:#fff}
+  .selfie-info{padding:12px 16px;text-align:center}
+  .stu-chip{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);border-radius:20px;padding:7px 14px;margin-bottom:6px}
+  .stu-chip span{font-size:13px;font-weight:800;color:#fff}
+
+  /* ── MAIN ATT SCREEN ── */
+  #s-main{background:var(--bg)}
+  .topbar{background:var(--nv);padding:13px 15px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .back-btn{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .tb-info{flex:1;min-width:0}
+  .tb-title{font-size:13px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tb-sub{font-size:10px;color:rgba(255,255,255,.45)}
+  .date-chip{background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.3);border-radius:7px;padding:5px 9px;font-size:10px;font-weight:700;color:var(--gd);flex-shrink:0}
+  .filter-row{padding:10px 14px;background:#fff;border-bottom:1px solid var(--bd);display:flex;gap:8px;flex-shrink:0}
+  .filter-row select{flex:1;padding:8px 11px;border:1.5px solid var(--bd);border-radius:8px;font-size:12px;font-family:'Nunito',sans-serif;font-weight:700;color:var(--t1);background:#fff;outline:none}
+  .search-row{padding:8px 14px;background:#fff;border-bottom:1px solid var(--bd);flex-shrink:0}
+  .srch{width:100%;padding:8px 12px 8px 32px;border:1.5px solid var(--bd);border-radius:8px;font-size:12px;font-family:'Nunito',sans-serif;font-weight:600;color:var(--t1);background:#f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' fill='none' stroke='%238896a8' stroke-width='2.5' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 11px center;outline:none}
+  .stats-row{display:flex;background:#fff;border-bottom:1px solid var(--bd);flex-shrink:0}
+  .stat{flex:1;text-align:center;padding:9px 5px;border-right:1px solid var(--bd)}
+  .stat:last-child{border-right:none}
+  .stat-v{font-size:18px;font-weight:900;line-height:1}
+  .stat-l{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;margin-top:2px}
+  .stat.g .stat-v{color:var(--gr)}.stat.r .stat-v{color:var(--rd)}.stat.d .stat-v{color:var(--nv)}.stat.y .stat-v{color:var(--gd)}
+  .list{flex:1;overflow-y:auto;padding:8px 12px 100px}
+  .srow{background:#fff;border-radius:12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;padding:11px 12px;border:2px solid var(--bd);transition:.15s}
+  .srow.P{border-color:#0F6E56;background:#f0fdf4}
+  .savt{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#0d1e3d,#534AB7);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0}
+  .sinfo{flex:1;min-width:0}
+  .sname{font-size:13px;font-weight:800;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ssub{font-size:10px;color:var(--t3);font-weight:600}
+  .att-btns{display:flex;gap:4px;flex-shrink:0}
+  .ab{min-width:76px;height:34px;border-radius:20px;border:2px solid var(--bd);background:#f8fafc;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:800;transition:.15s;padding:0 12px;color:var(--t3)}
+  .ab.ap{background:#0F6E56;border-color:#0F6E56;color:#fff}
+  .empty{text-align:center;padding:48px 20px;color:var(--t3)}
+  .empty-icon{font-size:44px;margin-bottom:10px}
+  .empty-t{font-size:14px;font-weight:700;color:var(--t2);margin-bottom:4px}
+  .save-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--bd);padding:11px 14px;display:flex;gap:8px;box-shadow:0 -4px 20px rgba(0,0,0,.1)}
+  .btn-all{flex:1;padding:11px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:var(--bg);color:var(--t1)}
+  .btn-save{flex:2;padding:11px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;border:none;background:linear-gradient(135deg,#0F6E56,#0a5c47);color:#fff;box-shadow:0 3px 10px rgba(15,110,86,.3)}
+  .btn-save:active{transform:scale(.97)}
+  .btn-selfie-bar{width:44px;height:44px;border-radius:10px;font-size:18px;cursor:pointer;border:2px solid var(--bd);background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:.15s}
+  .btn-selfie-bar.done{border-color:#0F6E56;background:#f0fdf4}
+
+  /* ── SUCCESS ── */
+  #s-done{background:linear-gradient(145deg,#060f1f,#0d1e3d);align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+  .done-card{text-align:center;width:100%;max-width:360px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:28px 20px;animation:slideUp .4s ease}
+  .done-icon{font-size:60px;margin-bottom:14px;display:block}
+  .done-t{font-size:22px;font-weight:900;color:#fff;margin-bottom:6px}
+  .done-s{font-size:12px;color:rgba(255,255,255,.45);margin-bottom:20px;line-height:1.7}
+  .sgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px}
+  .sbox{background:rgba(255,255,255,.08);border-radius:11px;padding:12px 6px}
+  .sbox-v{font-size:24px;font-weight:900;margin-bottom:2px}
+  .sbox-l{font-size:9px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase}
+  .sbox.g .sbox-v{color:#4ade80}.sbox.r .sbox-v{color:#f87171}.sbox.b .sbox-v{color:#818cf8}
+  .done-actions{display:flex;flex-direction:column;gap:9px}
+  .btn-xl{width:100%;padding:13px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;border:none;background:linear-gradient(135deg,#217346,#1a5c38);color:#fff}
+  .btn-home{width:100%;padding:12px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;border:none;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.15);color:#fff}
+
+  /* ── HELP ── */
+  #s-help{background:linear-gradient(145deg,#060f1f,#0d1e3d)}
+  .help-content{flex:1;overflow-y:auto;padding:20px 16px 40px}
+
+  /* ── DEV CARD ── */
+  .dev-card{background:rgba(255,255,255,.06);border:1px solid rgba(201,162,39,.3);border-radius:15px;padding:20px;margin-bottom:14px}
+
+  /* ── TOAST ── */
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-80px);background:#0d1e3d;border:1px solid rgba(201,162,39,.3);color:#fff;padding:10px 20px;border-radius:20px;font-size:12px;font-weight:700;transition:.3s;z-index:99999;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  ::-webkit-scrollbar{width:0}
+
+  /* ── PAY FEE BUTTON ── */
+  .prof-btn.pay-btn{background:linear-gradient(135deg,#5522c2,#7c3aed);color:#fff;position:relative;overflow:hidden}
+  .prof-btn.pay-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.15),transparent);pointer-events:none}
+
+  /* ── FEE MODAL OVERLAY ── */
+  .fee-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9998;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+  .fee-overlay.open{display:flex}
+  .fee-sheet{width:100%;max-width:480px;background:#0d1e3d;border-radius:24px 24px 0 0;border:1px solid rgba(255,255,255,.12);animation:slideUp .35s cubic-bezier(.4,0,.2,1);padding-bottom:env(safe-area-inset-bottom,20px)}
+  .fee-handle{width:36px;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin:12px auto 0}
+  .fee-header{padding:16px 20px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .fee-title{font-size:16px;font-weight:900;color:#fff}
+  .fee-sub{font-size:11px;color:rgba(255,255,255,.4);margin-top:2px}
+  .fee-body{padding:16px 20px 20px;overflow-y:auto;max-height:70vh}
+
+  /* Fee status card */
+  .fee-status-card{border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+  .fee-status-card.paid{background:rgba(15,110,86,.2);border:1.5px solid #0F6E56}
+  .fee-status-card.due{background:rgba(163,45,45,.2);border:1.5px solid #A32D2D}
+  .fee-status-card.none{background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.12)}
+  .fee-status-icon{font-size:28px;flex-shrink:0}
+  .fee-status-title{font-size:14px;font-weight:900;color:#fff}
+  .fee-status-sub{font-size:11px;color:rgba(255,255,255,.4);margin-top:2px}
+
+  /* Payment method selector */
+  .pay-method-row{display:flex;gap:10px;margin-bottom:16px}
+  .pay-method-btn{flex:1;padding:12px 8px;border-radius:12px;border:2px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);cursor:pointer;text-align:center;transition:.15s;position:relative}
+  .pay-method-btn.active{border-color:#c9a227;background:rgba(201,162,39,.1)}
+  .pay-method-btn .pm-icon{font-size:22px;margin-bottom:4px}
+  .pay-method-btn .pm-label{font-size:11px;font-weight:800;color:#fff}
+  .pay-method-btn .pm-sub{font-size:9px;color:rgba(255,255,255,.4)}
+  .phonepe-color{background:linear-gradient(135deg,#5f259f,#8b2fc9)!important;border-color:#8b2fc9!important}
+  .cash-color{background:linear-gradient(135deg,#0F6E56,#0a5c47)!important;border-color:#0a5c47!important}
+
+  /* Amount input */
+  .fee-amt-wrap{margin-bottom:16px}
+  .fee-amt-label{font-size:10px;font-weight:700;color:rgba(255,255,255,.45);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em}
+  .fee-amt-inp{display:flex;align-items:center;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:12px;padding:14px 16px;gap:8px;transition:.2s}
+  .fee-amt-inp:focus-within{border-color:#c9a227;background:rgba(201,162,39,.06)}
+  .fee-amt-sym{font-size:18px;font-weight:900;color:rgba(255,255,255,.4)}
+  .fee-amt-inp input{background:transparent;border:none;outline:none;color:#fff;font-size:22px;font-weight:900;width:100%;font-family:'Nunito',sans-serif}
+
+  /* PhonePe QR section */
+  .phonepe-qr-section{display:none;background:rgba(95,37,159,.1);border:1.5px solid rgba(139,47,201,.4);border-radius:14px;padding:16px;margin-bottom:16px;text-align:center}
+  .phonepe-qr-section.show{display:block}
+  .phonepe-qr-title{font-size:12px;font-weight:700;color:#c084fc;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em}
+  .qr-placeholder{width:140px;height:140px;border-radius:12px;background:rgba(255,255,255,.95);margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5f259f;font-weight:700;flex-direction:column;gap:4px;padding:10px}
+  .qr-upi-id{font-size:11px;color:rgba(255,255,255,.5);margin-top:4px}
+  .qr-upi-id b{color:#c084fc}
+
+  /* Submit button */
+  .fee-submit-btn{width:100%;padding:15px;border-radius:13px;font-size:15px;font-weight:900;cursor:pointer;border:none;background:linear-gradient(135deg,#c9a227,#e8c04a);color:#0d1e3d;letter-spacing:.02em;box-shadow:0 6px 24px rgba(201,162,39,.3);transition:.15s}
+  .fee-submit-btn:active{transform:scale(.97)}
+  .fee-submit-btn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* Payment history */
+  .fee-hist-box{background:rgba(255,255,255,.05);border-radius:12px;overflow:hidden;margin-top:16px}
+  .fee-hist-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .fee-hist-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .fee-hist-item:last-child{border-bottom:none}
+  .fee-hist-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .fee-hist-name{font-size:12px;font-weight:700;color:#fff;flex:1}
+  .fee-hist-amt{font-size:13px;font-weight:900;color:#4ade80}
+  .fee-hist-date{font-size:10px;color:rgba(255,255,255,.4)}
+
+  /* ══ NOTIFICATION BELL (MOBILE) ══ */
+  .mob-notif-wrap{position:relative}
+  .mob-notif-btn{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;position:relative}
+  .mob-notif-badge{position:absolute;top:-4px;right:-4px;background:#A32D2D;color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:2px solid #0d1e3d}
+  .mob-notif-badge.hidden{display:none}
+  .mob-notif-panel{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:99999;display:none;align-items:flex-end}
+  .mob-notif-panel.open{display:flex}
+  .mob-notif-sheet{background:#1e2d4a;border-radius:20px 20px 0 0;width:100%;max-height:70vh;overflow-y:auto;padding-bottom:20px}
+  .mob-notif-sheet-h{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#1e2d4a;z-index:1}
+  .mob-notif-item{display:flex;gap:11px;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .mob-notif-item.unread{background:rgba(201,162,39,.06)}
+  .mob-notif-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;background:rgba(255,255,255,.08)}
+
+  /* ══ FEE DUE BANNER (MOBILE) ══ */
+  .mob-fee-banner{display:none;background:linear-gradient(135deg,#A32D2D,#c0392b);padding:10px 16px;font-size:11px;font-weight:700;color:#fff;align-items:center;gap:8px}
+  .mob-fee-banner.show{display:flex}
+
+  /* ══ PHOTO UPLOAD (MOBILE) ══ */
+  .mob-photo-upload{border:2px dashed rgba(201,162,39,.4);border-radius:14px;padding:16px;text-align:center;cursor:pointer;position:relative;background:rgba(255,255,255,.03);margin-bottom:14px;transition:.2s}
+  .mob-photo-upload:active{background:rgba(201,162,39,.08)}
+  .mob-photo-circle{width:90px;height:90px;border-radius:50%;border:3px solid rgba(201,162,39,.5);margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:36px;overflow:hidden;background:rgba(255,255,255,.06)}
+  .mob-photo-circle img{width:100%;height:100%;object-fit:cover}
+
+/* ══════════════════════════════════════════════════════
+   DESKTOP / TABLET RESPONSIVE STYLES
+   Yeh file mobile-first hai. Desktop par card/panel
+   centered + wider dikhenge — sidebars ke saath.
+══════════════════════════════════════════════════════ */
+
+/* ── TABLET (600px+) ── */
+@media(min-width:600px){
+  /* Login */
+  #s-login{padding:40px 20px}
+  .lcard{max-width:460px}
+  .logo-icon{width:88px;height:88px;font-size:40px}
+  .logo-area h1{font-size:22px}
+  .card-box{padding:28px 26px;border-radius:22px}
+  .btn-p{padding:16px;font-size:15px;border-radius:14px}
+  .iw{padding:14px 16px;border-radius:13px}
+  .iw input,.iw select{font-size:15px}
+
+  /* OTP */
+  .otp-card{max-width:440px;padding:36px 28px}
+  .otp-digits{font-size:52px}
+  .otp-inp{width:64px;height:68px;font-size:30px}
+
+  /* Profile */
+  .prof-content{padding:30px 24px 120px}
+  .prof-av,.prof-av-placeholder{width:130px;height:130px;font-size:52px}
+  .prof-name{font-size:26px}
+  .info-lbl,.info-val{font-size:13px}
+
+  /* Main attendance list */
+  .topbar{padding:14px 20px}
+  .filter-row{padding:12px 18px;gap:12px}
+  .filter-row select{font-size:13px;padding:9px 13px}
+  .search-row{padding:10px 18px}
+  .srch{font-size:13px;padding:10px 14px 10px 36px}
+  .stat{padding:12px 10px}
+  .stat-v{font-size:20px}
+  .list{padding:10px 16px 120px}
+  .srow{padding:13px 15px;border-radius:14px;margin-bottom:9px}
+  .savt{width:46px;height:46px;font-size:15px}
+  .sname{font-size:14px}
+  .ssub{font-size:11px}
+  .ab{min-width:82px;height:38px;font-size:13px}
+  .save-bar{padding:13px 18px}
+
+  /* Selfie modal */
+  .selfie-card{max-width:440px;border-radius:22px}
+  #mob-video,#mob-preview{height:350px}
+  .face-guide{width:190px;height:190px}
+
+  /* Done card */
+  .done-card{max-width:420px;padding:36px 26px;border-radius:26px}
+  .done-t{font-size:26px}
+  .sbox-v{font-size:28px}
+
+  /* History dots */
+  .hist-dot{width:36px;height:36px;font-size:13px}
+  .hist-day-lbl{font-size:10px}
+}
+
+/* ── DESKTOP (960px+) : Two-column layout ── */
+@media(min-width:960px){
+  html,body{overflow:auto}
+
+  /* Full-screen screens become centered panels */
+  .screen.active{
+    background:linear-gradient(145deg,#060f1f 0%,#0d1e3d 50%,#1a3a6b 100%) !important;
+    align-items:center;
+    justify-content:flex-start;
+    min-height:100vh;
+    padding:40px 20px 60px;
+  }
+
+  /* LOGIN — card centered */
+  #s-login{justify-content:center;padding:60px 20px}
+  .lcard{max-width:500px;width:100%}
+
+  /* OTP — centered */
+  #s-otp{justify-content:center;padding:60px 20px}
+  .otp-card{max-width:480px}
+
+  /* PROFILE — two-column layout */
+  #s-profile{
+    flex-direction:column;
+    align-items:center;
+  }
+  .prof-topbar{max-width:900px;width:100%;border-radius:0 0 14px 14px;position:relative;top:0}
+  .prof-content{
+    max-width:900px;
+    width:100%;
+    padding:30px 20px 60px;
+    display:grid;
+    grid-template-columns:260px 1fr;
+    gap:24px;
+    align-items:start;
+  }
+  /* Left col: photo + status card */
+  .prof-photo-wrap{margin-bottom:0}
+  .prof-av,.prof-av-placeholder{width:150px;height:150px;font-size:60px}
+  .prof-name{font-size:28px}
+  /* Right col: info + actions fill remaining space */
+  .prof-actions{flex-direction:column;gap:11px}
+  .prof-btn{padding:15px;font-size:15px}
+
+  /* MAIN ATTENDANCE — two-column */
+  #s-main{
+    flex-direction:column;
+    align-items:center;
+    background:var(--bg)
+  }
+  #s-main .topbar{
+    width:100%;
+    max-width:900px;
+    border-radius:0 0 14px 14px;
+    align-self:center;
+  }
+  #s-main .filter-row,
+  #s-main .search-row,
+  #s-main .stats-row{
+    max-width:900px;
+    width:100%;
+    align-self:center;
+    border-radius:10px;
+    margin:4px auto 0;
+  }
+  #s-main .list{
+    max-width:900px;
+    width:100%;
+    align-self:center;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    padding:14px 0 120px;
+    align-items:start;
+  }
+  #s-main .list .empty{
+    grid-column:1/-1;
+  }
+  .srow{margin-bottom:0}
+  .save-bar{
+    max-width:900px;
+    left:50%;
+    transform:translateX(-50%);
+    border-radius:14px 14px 0 0;
+    padding:14px 20px;
+  }
+
+  /* DONE screen */
+  #s-done{justify-content:center;padding:60px 20px}
+  .done-card{max-width:460px}
+  .done-t{font-size:28px}
+
+  /* HELP screen */
+  #s-help .help-content{max-width:800px;align-self:center;width:100%}
+
+  /* Selfie modal — bigger camera view */
+  .selfie-overlay{padding:24px}
+  .selfie-card{max-width:500px;border-radius:24px}
+  #mob-video,#mob-preview{height:400px}
+  .face-guide{width:210px;height:210px}
+  .btn-capture{width:72px;height:72px;font-size:26px}
+
+  /* Fee modal */
+  .fee-sheet{border-radius:20px;max-width:520px;width:95%;margin-bottom:40px}
+  .fee-overlay{align-items:center}
+
+  /* Toast */
+  .toast{font-size:13px;padding:12px 24px}
+}
+
+/* ── LARGE DESKTOP (1280px+) ── */
+@media(min-width:1280px){
+  #s-main .list{max-width:1100px}
+  #s-main .topbar,
+  #s-main .filter-row,
+  #s-main .search-row,
+  #s-main .stats-row{max-width:1100px}
+  .save-bar{max-width:1100px}
+  .prof-content{max-width:1100px}
+  .prof-topbar{max-width:1100px}
+  .lcard{max-width:540px}
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- ══ FIREBASE SDK ══ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+// ══ FIREBASE CONFIG (Shri Hari Digital Library) ══
+const firebaseConfig = {
+  apiKey: "AIzaSyDnK_3vfnclWSRnvsINBOcaOG02_fEuCKU",
+  authDomain: "digital-library-21663.firebaseapp.com",
+  databaseURL: "https://digital-library-21663-default-rtdb.firebaseio.com/",
+  projectId: "digital-library-21663",
+  storageBucket: "digital-library-21663.firebasestorage.app",
+  messagingSenderId: "410179243155",
+  appId: "1:410179243155:web:6eb1d7825cd4afa58c1166",
+  measurementId: "G-RCKKC4907R"
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const FBDB = firebase.database();
+const FB_ROOT = 'shdl';
+
+// ══ MOBILE APP FIREBASE HELPER ══
+const MobFB = {
+  // Firebase se students load karo (Admin panel ne jo save kiye woh)
+  loadStudents: function(cb) {
+    FBDB.ref(FB_ROOT + '/students').once('value', function(snap) {
+      var val = snap.val();
+      // Firebase object ya array dono handle karo
+      var arr = [];
+      if (val) {
+        if (Array.isArray(val)) { arr = val.filter(Boolean); }
+        else if (typeof val === 'object') { arr = Object.values(val).filter(Boolean); }
+      }
+      if (arr.length > 0) {
+        try {
+          localStorage.setItem('shdl_students', JSON.stringify(arr));
+          localStorage.setItem('shri_hari_students', JSON.stringify(arr));
+        } catch(e){}
+        if (cb) cb(arr);
+      } else {
+        try {
+          var local = JSON.parse(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students') || '[]');
+          if (cb) cb(Array.isArray(local) && local.length ? local : []);
+        } catch(e) { if (cb) cb([]); }
+      }
+    }, function(err) {
+      console.warn('Firebase students load error:', err);
+      try {
+        var local = JSON.parse(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students') || '[]');
+        if (cb) cb(Array.isArray(local) ? local : []);
+      } catch(e) { if (cb) cb([]); }
+    });
+  },
+  // Attendance Firebase mein save karo
+  saveAttendance: function(attArray) {
+    try {
+      FBDB.ref(FB_ROOT + '/att_records').set(attArray, function(err){
+        if (err) console.warn('Firebase att save error:', err);
+        else console.log('✅ Attendance Firebase mein save ho gaya!');
+      });
+    } catch(e){ console.warn('MobFB.saveAttendance error:', e); }
+  },
+  // Settings load karo
+  loadSettings: function(cb) {
+    FBDB.ref(FB_ROOT + '/settings').once('value', function(snap) {
+      var val = snap.val();
+      if (val) {
+        try {
+          localStorage.setItem('shdl_settings', JSON.stringify(val));
+          localStorage.setItem('shri_hari_settings', JSON.stringify(val));
+        } catch(e){}
+        if (cb) cb(val);
+      } else {
+        // Fallback
+        try {
+          var raw = localStorage.getItem('shdl_settings') || localStorage.getItem('shri_hari_settings');
+          if (cb) cb(raw ? JSON.parse(raw) : null);
+        } catch(e) { if (cb) cb(null); }
+      }
+    }, function() { if (cb) cb(null); });
+  },
+  // Fee payments Firebase mein save karo
+  saveFeePayment: function(paymentsArray) {
+    try {
+      FBDB.ref(FB_ROOT + '/fee_payments').set(paymentsArray);
+      localStorage.setItem('shri_hari_fee_payments', JSON.stringify(paymentsArray));
+    } catch(e){}
+  },
+  // Fee payments load karo
+  loadFeePayments: function(cb) {
+    FBDB.ref(FB_ROOT + '/fee_payments').once('value', function(snap) {
+      var val = snap.val();
+      var arr = [];
+      if (val) {
+        if (Array.isArray(val)) { arr = val.filter(Boolean); }
+        else if (typeof val === 'object') { arr = Object.values(val).filter(Boolean); }
+      }
+      if (arr.length > 0) {
+        try { localStorage.setItem('shri_hari_fee_payments', JSON.stringify(arr)); } catch(e){}
+        if (cb) cb(arr);
+      } else {
+        try {
+          var local = JSON.parse(localStorage.getItem('shri_hari_fee_payments') || '[]');
+          if (cb) cb(Array.isArray(local) ? local : []);
+        } catch(e) { if (cb) cb([]); }
+      }
+    }, function() { if (cb) cb([]); });
+  }
+};
+</script>
+<body>
+<script>
+  // Force l-phone field blank on load/reload — browsers restore old typed value
+  // otherwise (bfcache / form-restore), even with autocomplete="off".
+  window.addEventListener('pageshow', function(){
+    var pf = document.getElementById('l-phone');
+    if(pf) pf.value = '';
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    var pf = document.getElementById('l-phone');
+    if(pf) pf.value = '';
+  });
+</script>
+
+<div class="toast" id="toast"></div>
+
+<!-- ════════════ SELFIE MODAL ════════════ -->
+<div class="selfie-overlay" id="selfie-modal-mob">
+  <div class="selfie-card">
+    <div class="selfie-top">
+      <h2>📸 Apni Selfie Lo</h2>
+      <button onclick="CLOSE_SELFIE_MODAL()" style="font-size:20px;color:rgba(255,255,255,.5);background:none;border:none;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div class="selfie-info">
+      <div class="stu-chip">
+        <img id="sf-prev-thumb" src="" alt="" style="display:none;width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid #c9a227">
+        <span id="sf-stu-name">—</span>
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,.4)" id="sf-hint">Chehra frame mein rakho aur 📷 dabao</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:5px;display:flex;align-items:center;gap:5px" id="sf-gps-status">📍 <span id="sf-gps-txt">GPS location le rahe hain...</span></div>
+    </div>
+    <div class="cam-wrap">
+      <video id="mob-video" autoplay playsinline muted></video>
+      <canvas id="mob-canvas"></canvas>
+      <img id="mob-preview" alt="">
+      <div class="cam-overlay"><div class="face-guide"></div></div>
+    </div>
+    <div class="cam-btns">
+      <button class="btn-retake" id="btn-retake" onclick="RETAKE_MOB()" style="display:none">🔄 Dobara</button>
+      <button class="btn-capture" id="btn-capture" onclick="CAPTURE_MOB()">📷</button>
+      <button class="btn-use" id="btn-use" onclick="USE_MOB_SELFIE()" style="display:none">✅ Save Karo</button>
+    </div>
+    <div style="text-align:center;padding:10px">
+      <button style="background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;text-decoration:underline" onclick="SKIP_SELFIE()">Skip karo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ LOGIN ════════════ -->
+<div class="screen active" id="s-login">
+  <div class="lcard" style="margin:auto">
+
+    <!-- Logo -->
+    <div class="logo-area">
+      <img src="data:image/png;base64,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" style="width:72px;height:72px;border-radius:18px;border:2.5px solid #c9a227;object-fit:cover;margin:0 auto 12px;display:block;box-shadow:0 8px 28px rgba(201,162,39,.35)">
+      <p style="font-size:13px;font-weight:800;color:#c9a227;margin-top:5px;letter-spacing:.05em">ANMOL KUMAR</p>
+    </div>
+
+    <div style="text-align:center;margin-bottom:20px">
+      <span class="badge-pill">📱 Student Attendance Portal</span>
+    </div>
+
+    <div class="card-box">
+      <div class="fg">
+        <label class="fl">Apna Batch Chunein</label>
+        <div class="iw">
+          <span class="ic">🕐</span>
+          <select id="l-batch">
+            <option value="">-- Batch Select Karein --</option>
+            <option value="1">B1 — 06:00 AM – 11:00 AM (Morning)</option>
+            <option value="2">B2 — 11:00 AM – 04:00 PM (Afternoon)</option>
+            <option value="3">B3 — 04:00 PM – 09:00 PM (Evening)</option>
+            <option value="4">B4 — 09:00 PM – 06:00 AM (Night)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="fg">
+        <div class="iw">
+          <span class="ic">🪪</span>
+          <input type="text" id="l-mobile" placeholder="SHL-001" maxlength="12" style="text-transform:uppercase;letter-spacing:.05em"
+            oninput="CHECK_MOBILE(this.value)"
+            onkeydown="if(event.key==='Enter')document.getElementById('l-phone').focus()">
+        </div>
+      </div>
+
+      <div class="fg">
+        <label class="fl">Registered Mobile Number (10 digit)</label>
+        <div class="iw">
+          <span class="ic">📱</span>
+          <input type="text" id="l-phone" value="" placeholder="Enter Mobile Number" maxlength="10" inputmode="numeric" pattern="[0-9]*" autocomplete="off" name="reg-mobile-no-autofill" readonly onfocus="this.removeAttribute('readonly')"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"
+            onkeydown="if(event.key==='Enter')SEND_OTP_CLICK()">
+        </div>
+      </div>
+
+      <!-- Name suggestions -->
+      <div id="name-suggestions" style="display:none;background:rgba(255,255,255,.05);border-radius:9px;margin-bottom:10px;overflow:hidden"></div>
+
+      <div id="selected-student" style="display:none">
+        <span id="sel-name"></span>
+        <span id="sel-info"></span>
+      </div>
+
+      <div class="err" id="l-err"></div>
+
+      <button class="btn-p" id="btn-send-otp" onclick="SEND_OTP_CLICK()">✅ Login Karein →</button>
+
+      <div id="demo-notice" style="display:none;background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.3);border-radius:8px;padding:9px 12px;margin-top:10px;font-size:11px;color:#c9a227;text-align:center">
+        ⚠️ Demo data dikh raha hai. Admin panel se students add karo phir yeh page refresh karo.
+      </div>
+    </div>
+
+
+    <div style="text-align:center;padding-bottom:20px">
+      <button onclick="SHOW_SCREEN('s-help')" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;text-decoration:underline">🆘 Help & Support</button>
+    </div>
+
+    <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.15);padding-bottom:10px">
+      Digital Library © 2026 &nbsp;|&nbsp; Developed by Anmol Kumar
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ OTP SCREEN ════════════ -->
+<div class="screen" id="s-otp">
+  <div class="otp-card">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:44px;margin-bottom:10px">🔐</div>
+      <div style="font-size:18px;font-weight:900;color:#fff;margin-bottom:5px">OTP Verify Karein</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.4)" id="otp-screen-sub">Aapke registered mobile pe OTP bheja gaya</div>
+    </div>
+
+    <!-- Simulated SMS Box -->
+    <div class="otp-sim-box">
+      <div class="otp-sim-title">📱 Simulated OTP (Demo)</div>
+      <div class="otp-digits" id="otp-display-val">----</div>
+      <div class="otp-hint">Yeh OTP real app mein aapke mobile pe aayega</div>
+    </div>
+
+    <!-- OTP Input -->
+    <div class="otp-inputs" id="otp-inputs">
+      <input class="otp-inp" type="tel" maxlength="1" id="oi0" oninput="OTP_INPUT(0)" onkeydown="OTP_KEY(event,0)">
+      <input class="otp-inp" type="tel" maxlength="1" id="oi1" oninput="OTP_INPUT(1)" onkeydown="OTP_KEY(event,1)">
+      <input class="otp-inp" type="tel" maxlength="1" id="oi2" oninput="OTP_INPUT(2)" onkeydown="OTP_KEY(event,2)">
+      <input class="otp-inp" type="tel" maxlength="1" id="oi3" oninput="OTP_INPUT(3)" onkeydown="OTP_KEY(event,3)">
+    </div>
+
+    <div class="otp-timer">OTP valid hai: <span id="otp-timer-txt">5:00</span></div>
+
+    <div class="err" id="otp-err"></div>
+
+    <button class="btn-p" onclick="VERIFY_OTP()">✅ Verify & Login</button>
+
+    <button class="btn-resend" id="btn-resend" onclick="RESEND_OTP()" style="margin-top:12px" disabled>🔄 OTP Dobara Bhejo</button>
+
+    <button onclick="SHOW_SCREEN('s-login')" style="display:block;margin:10px auto 0;background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;text-decoration:underline">← Wapas Jaein</button>
+  </div>
+</div>
+
+<!-- ════════════ PROFILE ════════════ -->
+<div class="screen" id="s-profile">
+
+  <!-- FEE DUE BANNER (MOBILE) -->
+  <div class="mob-fee-banner" id="mob-fee-banner">
+    <span>⚠️</span><span id="mob-fee-msg" style="flex:1">Fee due hai!</span>
+    <button onclick="this.parentNode.style.display='none'" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:20px;height:20px;border-radius:4px;cursor:pointer;font-size:12px">✕</button>
+  </div>
+
+  <!-- NOTIFICATION PANEL (MOBILE) -->
+  <div class="mob-notif-panel" id="mob-notif-panel" onclick="if(event.target===this)CLOSE_MOB_NOTIF()">
+    <div class="mob-notif-sheet">
+      <div class="mob-notif-sheet-h">
+        <span style="font-size:13px;font-weight:700;color:#fff">🔔 Notifications</span>
+        <div style="display:flex;gap:8px">
+          <button onclick="CLEAR_MOB_NOTIFS()" style="font-size:11px;background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);padding:4px 10px;border-radius:6px;cursor:pointer">Sab Clear</button>
+          <button onclick="CLOSE_MOB_NOTIF()" style="font-size:16px;background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer">✕</button>
+        </div>
+      </div>
+      <div id="mob-notif-list">
+        <div style="text-align:center;padding:30px;font-size:12px;color:rgba(255,255,255,.3)">Koi notification nahi 🎉</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prof-topbar">
+    <div class="prof-topbar-inner">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow:hidden">
+        <div class="prof-badge-wrap">
+          <img id="prof-lib-logo" src="" alt="" style="display:none">
+          <span id="prof-lib-logo-ph" class="prof-badge-ph">🏛️</span>
+        </div>
+        <div class="prof-lib-name" id="prof-lib-name" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;flex:1"></div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;flex-shrink:0;margin-left:6px">
+        <div class="mob-notif-wrap">
+          <button class="mob-notif-btn" onclick="TOGGLE_MOB_NOTIF()" title="Notifications">
+            🔔
+            <span class="mob-notif-badge hidden" id="mob-notif-badge">0</span>
+          </button>
+        </div>
+        <button class="btn-logout" onclick="LOGOUT_CONFIRM()">Logout</button>
+      </div>
+    </div>
+    <div class="prof-lib-sub" id="prof-lib-sub"></div>
+  </div>
+
+  <div class="prof-content">
+
+    <!-- Photo -->
+    <div class="prof-photo-wrap">
+      <div class="cam-badge">
+        <div id="prof-placeholder" class="prof-av-placeholder">👤</div>
+        <img id="prof-photo" src="" alt="" class="prof-av" style="display:none">
+        <input type="file" id="mob-photo-upload-input" accept="image/*" style="display:none" onchange="UPLOAD_MOB_PHOTO(this)">
+      </div>
+    </div>
+    <div class="prof-name" id="prof-name">—</div>
+    <div class="prof-sub-text" id="prof-sub"></div>
+    <!-- Photo upload prompt removed (no upload button available) -->
+    <div id="mob-photo-prompt" style="display:none"></div>
+
+    <!-- Status -->
+    <div id="prof-status-card" class="status-card none" style="margin-top:18px">
+      <div class="status-icon" id="prof-status-icon">📋</div>
+      <div class="status-title" id="prof-status-text">Aaj Attendance Nahi Di</div>
+      <div class="status-sub" id="prof-status-sub">Neeche button dabao</div>
+    </div>
+
+    <!-- Info -->
+    <div class="info-box">
+      <div class="info-row">
+        <span class="info-lbl">Batch</span>
+        <span class="info-val" id="prof-batch">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-lbl">Class</span>
+        <span class="info-val" id="prof-class">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-lbl">Date</span>
+        <span class="info-val" id="prof-date">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-lbl">Time</span>
+        <span class="info-val gold" id="prof-time">—</span>
+      </div>
+    </div>
+
+    <!-- ══ AGENT MANAGEMENT: auto-filled agent/company info card (hidden until an agent is linked) ══ -->
+    <div class="dev-card" id="agent-info-card" style="display:none">
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">🧑‍💼 Your Agent</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <img id="agent-logo-img" src="" alt="" style="width:56px;height:56px;border-radius:12px;border:2px solid #c9a227;object-fit:cover;flex-shrink:0;display:none">
+        <div id="agent-logo-placeholder" style="width:56px;height:56px;border-radius:12px;border:2px solid rgba(201,162,39,.4);display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.06);flex-shrink:0">🏢</div>
+        <div>
+          <div style="font-size:16px;font-weight:900;color:#fff" id="agent-company-name">—</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.45)" id="agent-name-text">—</div>
+        </div>
+      </div>
+      <a id="agent-call-link" href="tel:" style="display:flex;align-items:center;gap:12px;background:rgba(15,110,86,.2);border:1.5px solid #0F6E56;border-radius:10px;padding:12px 14px;text-decoration:none;margin-bottom:10px">
+        <span style="font-size:20px">📞</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#4ade80" id="agent-mobile-text">—</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)">Agent ko call karein</div>
+        </div>
+      </a>
+      <div style="display:flex;align-items:center;gap:12px;background:rgba(83,74,183,.12);border:1.5px solid rgba(83,74,183,.4);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <span style="font-size:20px">💳</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#818cf8" id="agent-upi-text">—</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)">UPI ID</div>
+        </div>
+      </div>
+      <div id="agent-qr-wrap" style="text-align:center;display:none">
+        <img id="agent-qr-img" src="" alt="Agent QR Code" style="width:150px;height:150px;object-fit:contain;border-radius:12px;border:2px solid #c9a227;background:#fff;padding:6px">
+        <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:6px">📷 Scan karke payment karein</div>
+      </div>
+    </div>
+    <!-- ══ END AGENT MANAGEMENT CARD ══ -->
+
+    <!-- Last 7 Days History -->
+    <div class="hist-box">
+      <div class="hist-title">📅 Last 7 Days Attendance</div>
+      <div class="hist-grid" id="hist-grid">
+        <!-- filled by JS -->
+      </div>
+      <div style="display:flex;gap:12px;margin-top:10px;justify-content:center">
+        <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:rgba(255,255,255,.4)"><div style="width:12px;height:12px;border-radius:3px;background:rgba(15,110,86,.4);border:1px solid #0F6E56"></div>Present</div>
+        <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:rgba(255,255,255,.4)"><div style="width:12px;height:12px;border-radius:3px;background:rgba(163,45,45,.3);border:1px solid #A32D2D"></div>Absent</div>
+        <div style="display:flex;align-items:center;gap:4px;font-size:10px;color:rgba(255,255,255,.4)"><div style="width:12px;height:12px;border-radius:3px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1)"></div>No Data</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="prof-actions">
+      <button id="prof-present-btn" class="prof-btn gold-btn" onclick="MARK_SELF_PRESENT()">✅ Present Mark Karo</button>
+      <button id="prof-undo-btn" class="prof-btn danger-btn" onclick="UNDO_SELF_ATT()" style="display:none">↩ Attendance Hatao</button>
+      <button class="prof-btn pay-btn" onclick="OPEN_FEE_MODAL()">💸 Fee Pay Karo / Dekho</button>
+      <button class="prof-btn ghost-btn" onclick="LOGOUT_CONFIRM()">🚪 Logout</button>
+    </div>
+
+    <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.15);padding-top:18px">
+      Digital Library © 2026 &nbsp;|&nbsp; Developed by Anmol Kumar
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════ FEE PAYMENT MODAL ════════════ -->
+<div class="fee-overlay" id="fee-modal">
+  <div class="fee-sheet">
+    <div class="fee-handle"></div>
+    <div class="fee-header">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="fee-title">💸 Fee Payment</div>
+          <div class="fee-sub" id="fee-student-name-lbl">—</div>
+        </div>
+        <button onclick="CLOSE_FEE_MODAL()" style="background:rgba(255,255,255,.1);border:none;color:#fff;width:32px;height:32px;border-radius:8px;font-size:16px;cursor:pointer;flex-shrink:0">✕</button>
+      </div>
+    </div>
+    <div class="fee-body">
+
+      <!-- Fee Status Card -->
+      <div class="fee-status-card none" id="fee-status-card">
+        <div class="fee-status-icon" id="fee-status-icon">📋</div>
+        <div>
+          <div class="fee-status-title" id="fee-status-title">Fee Status Load Ho Raha Hai...</div>
+          <div class="fee-status-sub" id="fee-status-sub">Is month ki payment jaankari</div>
+        </div>
+      </div>
+
+      <!-- Payment Method -->
+      <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Payment Method Chunein</div>
+      <div class="pay-method-row">
+        <div class="pay-method-btn active" id="pm-phonepe" onclick="SELECT_PAY_METHOD('phonepe')">
+          <div class="pm-icon">🟣</div>
+          <div class="pm-label">PhonePe</div>
+          <div class="pm-sub">UPI se pay</div>
+        </div>
+        <div class="pay-method-btn" id="pm-cash" onclick="SELECT_PAY_METHOD('cash')">
+          <div class="pm-icon">💵</div>
+          <div class="pm-label">Cash</div>
+          <div class="pm-sub">Seedha admin ko</div>
+        </div>
+      </div>
+
+      <!-- PhonePe QR Section — FIX #3: Real dynamic UPI QR using qrcode.js -->
+      <div class="phonepe-qr-section show" id="phonepe-qr-section">
+        <div class="phonepe-qr-title"></div>
+        <div class="qr-placeholder" id="fee-qr-box" style="background:#fff;border-radius:10px;padding:8px;display:flex;align-items:center;justify-content:center;min-height:136px">
+          <div id="real-qr-canvas"></div>
+        </div>
+        <div class="qr-upi-id"><b id="fee-upi-id" style="display:none">shrihari@ybl</b></div>
+        <div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:6px"></div>
+      </div>
+
+      <!-- Cash info -->
+      <div id="cash-info-section" style="display:none;background:rgba(15,110,86,.1);border:1.5px solid rgba(15,110,86,.4);border-radius:14px;padding:14px;margin-bottom:16px;text-align:center">
+        <div style="font-size:20px;margin-bottom:6px">💵</div>
+        <div style="font-size:13px;font-weight:800;color:#4ade80">Admin ya Staff ko Cash Dein</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">Neeche amount enter karein aur submit karein — Admin ko notify ho jayega</div>
+      </div>
+
+      <!-- Amount Input -->
+      <div class="fee-amt-wrap">
+        <label class="fee-amt-label">Amount (₹)</label>
+        <div class="fee-amt-inp">
+          <span class="fee-amt-sym">₹</span>
+          <input type="number" id="fee-amount-input" placeholder="0" min="1" inputmode="numeric" oninput="UPDATE_QR_AMOUNT()">
+        </div>
+      </div>
+
+      <!-- Note -->
+      <div style="margin-bottom:16px">
+        <label class="fee-amt-label">Note (Optional)</label>
+        <div class="iw" style="border-radius:12px;padding:12px 14px">
+          <input type="text" id="fee-note-input" placeholder="e.g. March ki fee..." style="background:transparent;border:none;outline:none;color:#fff;font-size:13px;width:100%;font-family:'Nunito',sans-serif;font-weight:600">
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button class="fee-submit-btn" id="fee-submit-btn" onclick="SUBMIT_FEE_PAYMENT()">
+        💸 Payment Submit Karo
+      </button>
+
+      <!-- Payment History -->
+      <div class="fee-hist-box" id="fee-hist-box" style="display:none">
+        <div class="fee-hist-title">📜 Pichle Payments</div>
+        <div id="fee-hist-list"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MAIN ATT SCREEN ════════════ -->
+<div class="screen" id="s-main">
+  <div class="topbar">
+    <button class="back-btn" onclick="GO_BACK()">←</button>
+    <div class="tb-info">
+      <div class="tb-title" id="m-user">—</div>
+      <div class="tb-sub" id="m-batch-lbl">—</div>
+    </div>
+    <div class="date-chip" id="m-date">—</div>
+  </div>
+
+  <div class="filter-row">
+    <select id="f-batch" onchange="APPLY_FILTER()">
+      <option value="">Sabhi Students</option>
+      <option value="1">B1 — Morning</option>
+      <option value="2">B2 — Afternoon</option>
+      <option value="3">B3 — Evening</option>
+      <option value="4">B4 — Night</option>
+    </select>
+  </div>
+
+  <div class="search-row">
+    <input class="srch" type="text" placeholder="Naam se search karein..." oninput="FILTER_BY_NAME(this.value)">
+  </div>
+
+  <div class="stats-row">
+    <div class="stat d"><div class="stat-v" id="st-tot">0</div><div class="stat-l">Total</div></div>
+    <div class="stat g"><div class="stat-v" id="st-p">0</div><div class="stat-l">Present</div></div>
+    <div class="stat r"><div class="stat-v" id="st-a">0</div><div class="stat-l">Absent</div></div>
+    <div class="stat y"><div class="stat-v" id="st-l">0</div><div class="stat-l">Leave</div></div>
+  </div>
+
+  <div class="list" id="stu-list">
+    <div class="empty"><div class="empty-icon">☝️</div><div class="empty-t">Batch Select Karein</div></div>
+  </div>
+
+  <div class="save-bar">
+    <button class="btn-all" onclick="MARK_ALL_P()">✅ Sab Present</button>
+    <button class="btn-selfie-bar" id="btn-selfie-bar" onclick="OPEN_SELFIE_MODAL()" title="Selfie Lo">📷</button>
+    <button class="btn-save" onclick="SAVE_ATT()">💾 Save</button>
+  </div>
+
+  <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.15);padding:8px 0 14px">
+    Digital Library © 2026 &nbsp;|&nbsp; Developed by Anmol Kumar
+  </div>
+</div>
+
+<!-- ════════════ SUCCESS ════════════ -->
+<div class="screen" id="s-done">
+  <div style="margin:auto;padding:20px;width:100%;display:flex;align-items:center;justify-content:center">
+  <div class="done-card">
+    <span class="done-icon">🎉</span>
+    <div class="done-t">Attendance Save Ho Gayi!</div>
+    <div class="done-s" id="done-sub-text">Aaj ki attendance safaltapurvak save ho gayi.<br>Admin panel mein <b>🔄 Mobile Sync</b> dabao.</div>
+    <div class="sgrid">
+      <div class="sbox g"><div class="sbox-v" id="d-p">0</div><div class="sbox-l">Present</div></div>
+      <div class="sbox r"><div class="sbox-v" id="d-a">0</div><div class="sbox-l">Absent</div></div>
+      <div class="sbox b"><div class="sbox-v" id="d-l">0</div><div class="sbox-l">Leave</div></div>
+    </div>
+    <div style="font-size:10px;color:rgba(255,255,255,.3);margin-bottom:18px" id="d-info"></div>
+    <div class="done-actions">
+      <button class="btn-xl" onclick="EXPORT_CSV()">📊 Excel Mein Download Karo</button>
+      <button class="btn-home" onclick="RESET()">🏠 Wapas Jaein</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ════════════ HELP ════════════ -->
+<div class="screen" id="s-help">
+  <div style="background:rgba(0,0,0,.3);backdrop-filter:blur(10px);padding:12px 16px;flex-shrink:0;border-bottom:1px solid rgba(201,162,39,.2)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <button onclick="GO_BACK()" style="background:rgba(255,255,255,.1);border:none;color:#fff;width:32px;height:32px;border-radius:8px;font-size:16px;cursor:pointer;flex-shrink:0">←</button>
+      <span style="font-size:15px;font-weight:900;color:#c9a227;display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;flex:1;justify-content:center">
+        <img id="help-lib-logo" src="" alt="" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #c9a227;object-fit:cover;display:none;flex-shrink:0">
+        <span id="help-lib-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </span>
+      <div style="width:32px;flex-shrink:0"></div>
+    </div>
+    <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.4);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="help-lib-sub"></div>
+  </div>
+
+  <div class="help-content">
+    <div style="text-align:center;margin-bottom:22px">
+      <div style="font-size:40px;margin-bottom:8px">🆘</div>
+      <div style="font-size:18px;font-weight:900;color:#c9a227">Help & Support</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">Kisi bhi problem ke liye sampark karein</div>
+    </div>
+
+    <div class="dev-card">
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">👨‍💻 Developer / Support</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <img src="data:image/png;base64,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" style="width:56px;height:56px;border-radius:12px;border:2px solid #c9a227;object-fit:cover;flex-shrink:0">
+        <div>
+          <div style="font-size:16px;font-weight:900;color:#fff">LibraryBook.co.in</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.45)">Anmol Kumar · Manager</div>
+        </div>
+      </div>
+      <a href="tel:+916202119756" style="display:flex;align-items:center;gap:12px;background:rgba(15,110,86,.2);border:1.5px solid #0F6E56;border-radius:10px;padding:12px 14px;text-decoration:none;margin-bottom:10px">
+        <span style="font-size:20px">📞</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#4ade80">+91 62021 19756</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)">Call karein</div>
+        </div>
+      </a>
+      <a href="https://LibraryBook.co.in" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(201,162,39,.1);border:1.5px solid rgba(201,162,39,.4);border-radius:10px;padding:12px 14px;text-decoration:none">
+        <span style="font-size:20px">🌐</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#c9a227">LibraryBook.co.in</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)">Website visit karein</div>
+        </div>
+      </a>
+    </div>
+
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">🏛️ Library Contact</div>
+      <!-- Library phone (auto-filled from agent/company profile) -->
+      <a id="lc-phone-link" href="tel:" style="display:flex;align-items:center;gap:12px;background:rgba(201,162,39,.1);border:1.5px solid rgba(201,162,39,.3);border-radius:10px;padding:12px 14px;text-decoration:none;margin-bottom:10px">
+        <span style="font-size:20px">📞</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#c9a227" id="lc-phone-text">—</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)" id="lc-phone-sub">Library ka number</div>
+        </div>
+      </a>
+      <!-- Email -->
+      <a href="/cdn-cgi/l/email-protection#ee9d869c87868f9c8782878c9c8f9c97ae89838f8782c08d8183" style="display:flex;align-items:center;gap:12px;background:rgba(83,74,183,.12);border:1.5px solid rgba(83,74,183,.4);border-radius:10px;padding:12px 14px;text-decoration:none;margin-bottom:10px">
+        <span style="font-size:20px">📧</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#818cf8"><span class="__cf_email__" data-cfemail="0d7e657f64656c7f6461646f7f6c7f744d6a606c6461236e6260">[email&#160;protected]</span></div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)">Email karein</div>
+        </div>
+      </a>
+      <!-- Address (auto-filled from agent/company profile) -->
+      <a id="lc-maps-link" href="#" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(234,67,53,.12);border:1.5px solid rgba(234,67,53,.4);border-radius:10px;padding:12px 14px;text-decoration:none">
+        <span style="font-size:20px">📍</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#f87171">Google Maps pe Dekhein</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4)" id="lc-address-text">—</div>
+        </div>
+      </a>
+    </div>
+
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">📖 Kaise Use Karein</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.65);line-height:1.9">
+        <div style="margin-bottom:6px">1️⃣ &nbsp;Apna <b style="color:#c9a227">Batch</b> select karein</div>
+        <div style="margin-bottom:6px">2️⃣ &nbsp;Apna <b style="color:#c9a227">Student ID</b> likhein (jaise SHL-001)</div>
+        <div style="margin-bottom:6px">3️⃣ &nbsp;<b style="color:#c9a227">OTP</b> verify karein</div>
+        <div style="margin-bottom:6px">4️⃣ &nbsp;<b style="color:#c9a227">📷 Selfie</b> lo — tabhi Present mark hoga</div>
+        <div>5️⃣ &nbsp;Admin <b style="color:#c9a227">🔄 Mobile Sync</b> se attendance sync karega</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;font-size:10px;color:rgba(255,255,255,.15);padding-bottom:10px">
+      Digital Library © 2026 &nbsp;|&nbsp; Developed by Anmol Kumar
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ JAVASCRIPT ════════════ -->
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ============================================================
+// DATA
+// ============================================================
+var DEMO = [
+  {name:"Rahul Kumar",   cls:"Class 10",batch:1,mobile:"9876543210",id:"SHL-001",studentId:"SHL-001"},
+  {name:"Priya Singh",   cls:"Class 9", batch:1,mobile:"9876543211",id:"SHL-002",studentId:"SHL-002"},
+  {name:"Amit Sharma",   cls:"Class 11",batch:1,mobile:"9876543212",id:"SHL-003",studentId:"SHL-003"},
+  {name:"Sunita Devi",   cls:"Class 8", batch:1,mobile:"9876543213",id:"SHL-004",studentId:"SHL-004"},
+  {name:"Vikash Yadav",  cls:"Class 12",batch:1,mobile:"9876543214",id:"SHL-005",studentId:"SHL-005"},
+  {name:"Pooja Gupta",   cls:"Class 10",batch:2,mobile:"9876543215",id:"SHL-006",studentId:"SHL-006"},
+  {name:"Rohit Mishra",  cls:"Class 9", batch:2,mobile:"9876543216",id:"SHL-007",studentId:"SHL-007"},
+  {name:"Neha Verma",    cls:"Class 11",batch:2,mobile:"9876543217",id:"SHL-008",studentId:"SHL-008"},
+  {name:"Sachin Kumar",  cls:"Class 8", batch:2,mobile:"9876543218",id:"SHL-009",studentId:"SHL-009"},
+  {name:"Kavita Rai",    cls:"Class 12",batch:3,mobile:"9876543219",id:"SHL-010",studentId:"SHL-010"},
+  {name:"Deepak Singh",  cls:"Class 10",batch:3,mobile:"9876543220",id:"SHL-011"},
+  {name:"Anjali Kumari", cls:"Class 9", batch:3,mobile:"9876543221",id:"SHL-012"},
+  {name:"Manish Tiwari", cls:"Class 11",batch:4,mobile:"9876543222",id:"SHL-013"},
+  {name:"Ritu Sahu",     cls:"Class 8", batch:4,mobile:"9876543223",id:"SHL-014"},
+  {name:"Ajay Pandey",   cls:"Class 12",batch:4,mobile:"9876543224",id:"SHL-015"},
+];
+
+var BATCH_LBL = {"1":"B1 — 06:00 AM–11:00 AM","2":"B2 — 11:00 AM–04:00 PM","3":"B3 — 04:00 PM–09:00 PM","4":"B4 — 09:00 PM–06:00 AM"};
+
+function NORMALIZE_STUDENT(s) {
+  var sid = s.studentId || s.id || '';
+  return Object.assign({}, s, {
+    id: sid, studentId: sid,
+    cls: s.cls || s.addr || '',
+    batch: String(s.batch||'1'),
+    status: s.status || 'active'
+  });
+}
+
+function GET_STUDENTS() {
+  try {
+    // shdl_students (admin panel — normalized) ko pehle try karo
+    var s1 = localStorage.getItem('shdl_students');
+    var a1 = s1 ? JSON.parse(s1) : [];
+    if(Array.isArray(a1) && a1.length > 0) return a1.map(NORMALIZE_STUDENT);
+    // Fallback: legacy shri_hari_students
+    var s2 = localStorage.getItem('shri_hari_students');
+    if(s2) { var a2 = JSON.parse(s2); if(Array.isArray(a2) && a2.length > 0) return a2.map(NORMALIZE_STUDENT); }
+  } catch(e){}
+  // localStorage mein nahi — DEMO return karo (Firebase load hone tak)
+  return DEMO;
+}
+
+function HAS_REAL_STUDENTS() {
+  try {
+    var s = localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students');
+    if(s) { var a = JSON.parse(s); return Array.isArray(a) && a.length > 0; }
+  } catch(e){}
+  return false;
+}
+
+// Firebase se students chahiye tab ye use karo (async)
+// FIX: Hamesha Firebase se fresh data lo — localStorage pe depend mat karo
+function GET_STUDENTS_ASYNC(cb) {
+  MobFB.loadStudents(function(students) {
+    if (students && students.length) {
+      cb(students.map(NORMALIZE_STUDENT));
+    } else {
+      cb(GET_STUDENTS());
+    }
+  });
+}
+
+var att = {};
+// 🆕 This page can be served either statically on Netlify or dynamically
+// from Render via /api/pages/<slug> — a relative redirect would 404 in the
+// second case, so Logout always sends the browser to the real, absolute
+// Netlify homepage URL instead.
+// 🆕 CRITICAL FIX: an absolute 'https://digitallibraryanmollive.netlify.app/'
+// was hardcoded here, guessing at the live site's subdomain. If the real
+// Netlify site has a different name or a custom domain, that guess is wrong
+// and every logout hits Netlify's own "Site not found" 404 page. A plain
+// relative path always resolves against whatever domain is actually
+// serving this page (Netlify subdomain, custom domain, or deploy preview),
+// so it can never point at the wrong site.
+var SHDL_HOME_URL = window.SHDL_HOME_URL || 'index.html';
+var currentUser = null;
+var allStu = [];
+var visibleStu = [];
+var selectedStudent = null;
+var capturedSelfie = null;
+var currentOTP = null;
+var otpTimerID = null;
+var lastSavedSummary = null;
+
+// ============================================================
+// FEE PAYMENT SYSTEM
+// ============================================================
+var selectedPayMethod = 'phonepe';
+
+function OPEN_FEE_MODAL() {
+  if(!currentUser) return;
+  var modal = document.getElementById('fee-modal');
+  document.getElementById('fee-student-name-lbl').textContent = currentUser.name + ' · ' + (currentUser.id||'');
+
+  // ── AUTOFILL: agent ke UPI ID se fill karo + real QR generate karo ──
+  var agentUpi = _currentAgentData ? (_currentAgentData.upi || _currentAgentData.upiId || '') : '';
+  var upiIdEl = document.getElementById('fee-upi-id');
+  if(agentUpi) {
+    upiIdEl.textContent = agentUpi;
+    upiIdEl.style.display = 'block';
+    var payName = (_currentAgentData && (_currentAgentData.company || _currentAgentData.companyName)) || 'Library';
+    GEN_UPI_QR(agentUpi, document.getElementById('fee-amount-input').value, payName);
+  } else {
+    upiIdEl.textContent = '';
+    upiIdEl.style.display = 'none';
+    var qrBox = document.getElementById('real-qr-canvas');
+    if(qrBox) qrBox.innerHTML = '<div style="font-size:10px;color:#8896a8;text-align:center;padding:10px">Agent ka UPI ID set nahi hai.</div>';
+  }
+
+  // Reset form
+  document.getElementById('fee-amount-input').value = '';
+  document.getElementById('fee-note-input').value = '';
+  SELECT_PAY_METHOD('phonepe');
+
+  // Update status
+  REFRESH_FEE_STATUS();
+  modal.classList.add('open');
+}
+
+function CLOSE_FEE_MODAL() {
+  document.getElementById('fee-modal').classList.remove('open');
+}
+
+function SELECT_PAY_METHOD(method) {
+  selectedPayMethod = method;
+  document.getElementById('pm-phonepe').classList.toggle('active', method==='phonepe');
+  document.getElementById('pm-cash').classList.toggle('active', method==='cash');
+  document.getElementById('phonepe-qr-section').classList.toggle('show', method==='phonepe');
+  document.getElementById('cash-info-section').style.display = method==='cash' ? 'block' : 'none';
+}
+
+function REFRESH_FEE_STATUS() {
+  if(!currentUser) return;
+  var payments = GET_MY_PAYMENTS();
+  var card = document.getElementById('fee-status-card');
+  var icon = document.getElementById('fee-status-icon');
+  var title = document.getElementById('fee-status-title');
+  var sub = document.getElementById('fee-status-sub');
+
+  // Current month
+  var now = new Date();
+  var monthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  var monthPayments = payments.filter(function(p){ return p.monthKey === monthKey; });
+  var totalPaid = monthPayments.reduce(function(s,p){ return s+Number(p.amount); }, 0);
+
+  if(monthPayments.length > 0) {
+    card.className = 'fee-status-card paid';
+    icon.textContent = '✅';
+    title.textContent = 'Is Month Fee Di Hai!';
+    sub.textContent = '₹' + totalPaid.toLocaleString('en-IN') + ' — ' + MONTH_NAME(now.getMonth()) + ' ' + now.getFullYear();
+  } else {
+    card.className = 'fee-status-card due';
+    icon.textContent = '⚠️';
+    title.textContent = 'Is Month Fee Baki Hai';
+    sub.textContent = MONTH_NAME(now.getMonth()) + ' ' + now.getFullYear() + ' ki fee abhi nahi di';
+  }
+
+  // History
+  if(payments.length > 0) {
+    var histBox = document.getElementById('fee-hist-box');
+    var histList = document.getElementById('fee-hist-list');
+    var modeEmoji = {'phonepe':'🟣','cash':'💵'};
+    histList.innerHTML = payments.slice(-5).reverse().map(function(p){
+      return '<div class="fee-hist-item">' +
+        '<div class="fee-hist-dot" style="background:'+(p.method==='phonepe'?'#8b2fc9':'#0F6E56')+'"></div>' +
+        '<div class="fee-hist-name">' + (modeEmoji[p.method]||'💸') + ' ' + (p.note||'Fee Payment') + '</div>' +
+        '<div style="text-align:right"><div class="fee-hist-amt">₹' + Number(p.amount).toLocaleString('en-IN') + '</div>' +
+        '<div class="fee-hist-date">' + p.date + '</div></div></div>';
+    }).join('');
+    histBox.style.display = 'block';
+  } else {
+    document.getElementById('fee-hist-box').style.display = 'none';
+  }
+}
+
+function GET_MY_PAYMENTS() {
+  if(!currentUser) return [];
+  try {
+    var all = JSON.parse(localStorage.getItem('shri_hari_fee_payments')||'[]');
+    return all.filter(function(p){ return p.studentId === currentUser.id; });
+  } catch(e){ return []; }
+}
+
+function SUBMIT_FEE_PAYMENT() {
+  if(!currentUser) return;
+  var amt = document.getElementById('fee-amount-input').value.trim();
+  var note = document.getElementById('fee-note-input').value.trim();
+
+  if(!amt || isNaN(amt) || Number(amt) <= 0) {
+    SHOW_TOAST('⚠️ Sahi amount daalein!');
+    return;
+  }
+
+  var now = new Date();
+  var monthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  var dateStr = now.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'});
+  var timeStr = now.toLocaleTimeString('hi-IN', {hour:'2-digit',minute:'2-digit',hour12:true});
+
+  var payment = {
+    id: 'PAY-' + Date.now(),
+    studentId: currentUser.id,
+    studentName: currentUser.name,
+    studentClass: currentUser.cls || '',
+    batch: String(currentUser.batch || ''),
+    amount: Number(amt),
+    method: selectedPayMethod,
+    note: note || (selectedPayMethod === 'phonepe' ? 'PhonePe Payment' : 'Cash Payment'),
+    date: dateStr,
+    time: timeStr,
+    monthKey: monthKey,
+    status: selectedPayMethod === 'phonepe' ? 'pending' : 'cash_submitted',
+    savedAt: now.toISOString()
+  };
+
+  // Save to localStorage
+  try {
+    var existing = JSON.parse(localStorage.getItem('shri_hari_fee_payments')||'[]');
+    existing.push(payment);
+    localStorage.setItem('shri_hari_fee_payments', JSON.stringify(existing));
+    // Trigger storage event for netlify sync
+    localStorage.setItem('shri_hari_fee_updated', Date.now().toString());
+    // ── Firebase mein bhi save karo ──
+    MobFB.saveFeePayment(existing);
+  } catch(e){ SHOW_TOAST('❌ Save nahi ho saka!'); return; }
+
+  // Clear inputs
+  document.getElementById('fee-amount-input').value = '';
+  document.getElementById('fee-note-input').value = '';
+
+  // Refresh status
+  REFRESH_FEE_STATUS();
+
+  var methodMsg = selectedPayMethod === 'phonepe' ? 'PhonePe se QR scan karke' : 'Cash ke liye admin se confirm karein';
+  SHOW_TOAST('✅ ₹' + Number(amt).toLocaleString('en-IN') + ' submit ho gaya!');
+
+  setTimeout(function(){
+    SHOW_TOAST('ℹ️ ' + methodMsg);
+  }, 2000);
+}
+
+function MONTH_NAME(idx) {
+  var m = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return m[idx] || '';
+}
+
+// Close fee modal on overlay click
+document.addEventListener('DOMContentLoaded', function(){
+  var feeOverlay = document.getElementById('fee-modal');
+  if(feeOverlay) {
+    feeOverlay.addEventListener('click', function(e){
+      if(e.target === this) CLOSE_FEE_MODAL();
+    });
+  }
+});
+
+// ============================================================
+// ★ LIBRARY BRANDING — Agent ke Admin Panel mein set kiya naam/
+// address/phone/logo (shdl/settings) yahan topbar mein auto-fill
+// ============================================================
+function APPLY_LIB_BRANDING(settings) {
+  settings = settings || {};
+  var name  = settings.libName  || 'Library';
+  var addr  = settings.libAddr  || '';
+  var phone = settings.libPhone || '';
+  var logo  = settings.libLogo  || settings.logo || '';
+
+  var nameEls = [document.getElementById('help-lib-name')];
+  nameEls.forEach(function(el){ if(el) el.textContent = name; });
+  var profNameEl = document.getElementById('prof-lib-name');
+  if (profNameEl) profNameEl.textContent = name;
+
+  var subText = [addr, phone].filter(Boolean).join(' · ');
+  var subProf = document.getElementById('prof-lib-sub');
+  var subHelp = document.getElementById('help-lib-sub');
+  if(subProf) subProf.textContent = subText;
+  if(subHelp) subHelp.textContent = subText;
+
+  var logoEls = [document.getElementById('prof-lib-logo'), document.getElementById('help-lib-logo')];
+  logoEls.forEach(function(el){
+    if(!el) return;
+    if(logo) { el.src = logo; el.style.display = 'block'; }
+    else { el.style.display = 'none'; }
+  });
+  var logoPh = document.getElementById('prof-lib-logo-ph');
+  if(logoPh) logoPh.style.display = logo ? 'none' : '';
+}
+// Cached settings se turant paint karo (instant), phir Firebase se fresh data aane par refresh karo
+(function INIT_LIB_BRANDING(){
+  try {
+    var cached = localStorage.getItem('shdl_settings') || localStorage.getItem('shri_hari_settings');
+    if(cached) APPLY_LIB_BRANDING(JSON.parse(cached));
+  } catch(e){}
+  if(typeof FBApp !== 'undefined' && FBApp.loadSettings) {
+    FBApp.loadSettings(function(settings){ if(settings) APPLY_LIB_BRANDING(settings); });
+  }
+})();
+
+function todayISO() {
+  var d = new Date();
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+function pad(n){ return String(n).padStart(2,'0'); }
+function todayStr() {
+  var d = new Date();
+  var D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return D[d.getDay()] + ', ' + d.getDate() + ' ' + M[d.getMonth()] + ' ' + d.getFullYear();
+}
+function isoToDisplay(iso) {
+  var p = iso.split('-');
+  var d = new Date(+p[0], +p[1]-1, +p[2]);
+  var M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate() + ' ' + M[d.getMonth()];
+}
+function getDayLabel(iso) {
+  var p = iso.split('-');
+  var d = new Date(+p[0], +p[1]-1, +p[2]);
+  var D = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  return D[d.getDay()];
+}
+function getLast7Dates() {
+  var arr = [];
+  for(var i=6; i>=0; i--) {
+    var d = new Date(); d.setDate(d.getDate()-i);
+    arr.push(d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()));
+  }
+  return arr;
+}
+
+
+// ============================================================
+// ★ AUTOFILL HELPER — Agent Login ke liye
+// ============================================================
+function AUTOFILL_LOGIN_FIELDS() {
+  // URL parameters se check karo (Agent panel se genuinely redirect hua ho toh)
+  var urlParams = new URLSearchParams(window.location.search);
+  var urlId = urlParams.get('studentId') || urlParams.get('id') || '';
+  var urlBatch = urlParams.get('batch') || '';
+
+  var mobileInput = document.getElementById('l-mobile');
+  var batchSelect = document.getElementById('l-batch');
+
+  // Sirf URL redirect case mein autofill karo. Shared/kiosk device hone ki wajah se
+  // localStorage ke last-login ko autofill NAHI karte — warna next student ka
+  // login blank field ke saath bhi pichhle student ki ID (jaise SHL-001) se
+  // "connect" ho jaata hai aur galat student ka attendance mark ho sakta hai.
+  if(urlId && mobileInput) {
+    mobileInput.value = urlId.toUpperCase();
+    if(urlBatch && batchSelect) batchSelect.value = urlBatch;
+    CHECK_MOBILE(urlId);
+    console.log('✅ AUTOFILL: URL se fill kiya -', urlId);
+  }
+}
+
+// Save last login for next time autofill
+function SAVE_LAST_LOGIN(studentId, batch) {
+  try {
+    localStorage.setItem('shdl_last_student_id', studentId);
+    localStorage.setItem('shdl_last_batch', batch);
+  } catch(e) {}
+}
+
+// ============================================================
+// CHECK MOBILE / STUDENT ID
+// ============================================================
+function CHECK_MOBILE(val) {
+  selectedStudent = null;
+  document.getElementById('selected-student').style.display = 'none';
+
+  var v = val.trim().toUpperCase();
+  if(v.length < 3) {
+    document.getElementById('name-suggestions').style.display = 'none';
+    return;
+  }
+
+  // Firebase-aware search: pehle localStorage, phir Firebase
+  GET_STUDENTS_ASYNC(function(students) { _DO_SEARCH(v, students); });
+}
+
+function _DO_SEARCH(v, students) {
+  // Exact SHL-ID match (new format) OR legacy id match
+  var found = students.find(function(s){
+    var sid = (s.studentId||s.id||'').toUpperCase();
+    return sid === v;
+  });
+
+  if(found) {
+    selectedStudent = found;
+    document.getElementById('selected-student').style.display = 'flex';
+    document.getElementById('sel-name').textContent = found.name;
+    document.getElementById('sel-info').textContent = (found.cls||'') + ' · ' + (BATCH_LBL[found.batch]||'') + ' · ' + (found.studentId||found.id);
+    var batchEl = document.getElementById('l-batch');
+    if(!batchEl.value && found.batch) batchEl.value = String(found.batch);
+    document.getElementById('name-suggestions').style.display = 'none';
+  } else {
+    // Partial suggestions by name or ID
+    var matches = students.filter(function(s){
+      var sid = (s.studentId||s.id||'').toUpperCase();
+      return sid && (s.name.toUpperCase().includes(v) || sid.includes(v));
+    }).slice(0,4);
+    if(matches.length > 0) {
+      var html = '';
+      matches.forEach(function(m){
+        var isExp = false;
+        if(m.expiry){ var td=new Date();td.setHours(0,0,0,0);var ed=new Date(m.expiry);ed.setHours(0,0,0,0);if(ed<td)isExp=true; }
+        var badge = isExp ? '<span style="font-size:9px;background:#A32D2D;color:#fff;padding:1px 6px;border-radius:4px;margin-left:5px">⛔ Expired</span>' : '';
+        var nameColor = isExp ? 'color:rgba(255,100,100,.7)' : 'color:#fff';
+        html += '<div onclick="SELECT_SUGGESTION(\''+m.id+'\')" style="padding:9px 13px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between;align-items:center">';
+        html += '<span style="'+nameColor+'">'+m.name+badge+'</span><span style="font-size:10px;color:rgba(255,255,255,.4)">'+m.id+'</span></div>';
+      });
+      document.getElementById('name-suggestions').innerHTML = html;
+      document.getElementById('name-suggestions').style.display = 'block';
+    } else {
+      document.getElementById('name-suggestions').style.display = 'none';
+    }
+  }
+} // end _DO_SEARCH
+
+function SELECT_SUGGESTION(id) {
+  document.getElementById('l-mobile').value = id;
+  document.getElementById('name-suggestions').style.display = 'none';
+  CHECK_MOBILE(id);
+}
+
+// ============================================================
+// OTP SYSTEM
+// ============================================================
+function SEND_OTP_CLICK() {
+  var batch = document.getElementById('l-batch').value;
+  var mobile = document.getElementById('l-mobile').value.trim().toUpperCase();
+  var phone = document.getElementById('l-phone').value.trim();
+  var err = document.getElementById('l-err');
+
+  if(!mobile) { err.textContent='❌ Student ID daalein!'; err.style.display='block'; return; }
+  if(!phone) { err.textContent='❌ Registered Mobile Number daalein!'; err.style.display='block'; return; }
+  if(!/^[0-9]{10}$/.test(phone)) { err.textContent='❌ Mobile Number 10 digit ka hona chahiye!'; err.style.display='block'; return; }
+
+  // Firebase se fresh students load karo
+  err.textContent = '⏳ Students load ho rahe hain...'; err.style.display='block';
+  GET_STUDENTS_ASYNC(function(students) {
+  var realStudents = students.filter(function(s){ return s.studentId || s.id; });
+  if(realStudents.length === 0) {
+    err.innerHTML='❌ Koi student registered nahi mila!<br><small>Admin panel mein student add karo, phir yeh page refresh karo.</small><br><button onclick="location.reload()" style="margin-top:6px;padding:5px 14px;border-radius:7px;border:none;background:#c9a227;color:#0d1e3d;font-weight:700;font-size:11px;cursor:pointer">🔄 Refresh Karo</button>';
+    err.style.display='block'; return;
+  }
+  var found = realStudents.find(function(s){ return (s.studentId||s.id||'').toUpperCase() === mobile; }) || null;
+  if(!found) {
+    err.innerHTML='❌ ID <b>'+mobile+'</b> registered nahi hai!<br><small>Sahi Student ID daalein. Admin panel se ID check karo.</small>';
+    err.style.display='block'; document.getElementById('l-mobile').value=''; document.getElementById('l-phone').value=''; return;
+  }
+
+  // ── MOBILE NUMBER VERIFICATION ──
+  var regPhone = ((found.mobile || found.phone || '')+'').replace(/[^0-9]/g,'').slice(-10);
+  if(!regPhone || regPhone !== phone) {
+    err.innerHTML='❌ Mobile Number registered ID se match nahi karta!<br><small>Apna sahi registered mobile number daalein.</small>';
+    err.style.display='block'; document.getElementById('l-phone').value=''; return;
+  }
+
+  // Auto-fill batch from student data if not selected
+  if(!batch && found.batch) {
+    var batchEl2 = document.getElementById('l-batch');
+    if(batchEl2) { batchEl2.value = String(found.batch); batch = String(found.batch); }
+  }
+  if(!batch) { err.textContent='❌ Pehle batch select karein!'; err.style.display='block'; return; }
+
+  // ── EXPIRY CHECK ──
+  if(found.expiry) {
+    var today = new Date(); today.setHours(0,0,0,0);
+    var expDate = new Date(found.expiry); expDate.setHours(0,0,0,0);
+    if(expDate < today) {
+      var expStr = expDate.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      err.innerHTML = '⛔ Aapki registration <b>' + expStr + '</b> ko expire ho gayi hai!<br>Library jaake renewal karwao.';
+      err.style.display = 'block';
+      document.getElementById('l-mobile').value = '';
+      document.getElementById('l-phone').value = '';
+      return;
+    }
+  }
+  // ── STATUS CHECK ──
+  if(found.status && found.status === 'inactive') {
+    err.innerHTML = '🚫 Yeh ID inactive hai. Library admin se sampark karein.';
+    err.style.display = 'block';
+    document.getElementById('l-mobile').value = '';
+    document.getElementById('l-phone').value = '';
+    return;
+  }
+
+  err.style.display = 'none';
+  selectedStudent = found;
+
+  // ── AUTOFILL FIX: Ensure currentUser has all required fields ──
+  currentUser = Object.assign({}, found);
+  currentUser.name = currentUser.name || found.name || 'Unknown';
+  currentUser.cls = currentUser.cls || found.cls || found.class || found.addr || '—';
+  currentUser.id = currentUser.id || found.id || found.studentId || '';
+  currentUser.studentId = currentUser.studentId || found.studentId || found.id || '';
+  currentUser.mobile = currentUser.mobile || found.mobile || found.phone || '';
+  currentUser.batch = currentUser.batch || found.batch || '1';
+
+  // Also update login form fields for visual feedback (AUTOFILL)
+  var batchEl = document.getElementById('l-batch');
+  if(batchEl && !batchEl.value && currentUser.batch) {
+    batchEl.value = String(currentUser.batch);
+  }
+
+  var batch = document.getElementById('l-batch').value || String(currentUser.batch || '1');
+  SAVE_LAST_LOGIN(currentUser.id || currentUser.studentId || '', batch);
+  SHOW_TOAST('✅ Login successful! Welcome ' + currentUser.name);
+  SHOW_PROFILE(batch);
+  }); // GET_STUDENTS_ASYNC end
+}
+
+function START_OTP_TIMER(secs) {
+  if(otpTimerID) clearInterval(otpTimerID);
+  document.getElementById('btn-resend').disabled = true;
+  document.getElementById('btn-resend').classList.remove('active');
+
+  var remaining = secs;
+  function tick() {
+    var m = Math.floor(remaining/60), s = remaining%60;
+    document.getElementById('otp-timer-txt').textContent = m+':'+pad(s);
+    if(remaining <= 0) {
+      clearInterval(otpTimerID);
+      document.getElementById('otp-timer-txt').textContent = 'Expired!';
+      document.getElementById('btn-resend').disabled = false;
+      document.getElementById('btn-resend').classList.add('active');
+    }
+    remaining--;
+  }
+  tick();
+  otpTimerID = setInterval(tick, 1000);
+}
+
+function OTP_INPUT(idx) {
+  var el = document.getElementById('oi'+idx);
+  var v = el.value.replace(/\D/g,'');
+  el.value = v ? v[v.length-1] : '';
+  if(el.value && idx < 3) document.getElementById('oi'+(idx+1)).focus();
+}
+
+function OTP_KEY(e, idx) {
+  if(e.key==='Backspace' && !document.getElementById('oi'+idx).value && idx > 0) {
+    document.getElementById('oi'+(idx-1)).focus();
+  }
+}
+
+function VERIFY_OTP() {
+  var entered = '';
+  for(var i=0;i<4;i++) entered += (document.getElementById('oi'+i).value || '');
+  var err = document.getElementById('otp-err');
+
+  if(entered.length < 4) { err.textContent='❌ 4 digit OTP daalein!'; err.style.display='block'; return; }
+  if(entered !== currentOTP) { err.textContent='❌ Galat OTP! Dobara try karein.'; err.style.display='block'; for(var j=0;j<4;j++) document.getElementById('oi'+j).value=''; document.getElementById('oi0').focus(); return; }
+
+  err.style.display = 'none';
+  if(otpTimerID) clearInterval(otpTimerID);
+
+  currentUser = selectedStudent;
+  var batch = document.getElementById('l-batch').value || String(currentUser.batch||1);
+  SAVE_LAST_LOGIN(currentUser.id || currentUser.studentId || '', batch);
+  SHOW_TOAST('✅ Login successful! Welcome ' + currentUser.name);
+  SHOW_PROFILE(batch);
+}
+
+function RESEND_OTP() {
+  currentOTP = String(Math.floor(1000 + Math.random() * 9000));
+  document.getElementById('otp-display-val').textContent = currentOTP;
+  for(var i=0;i<4;i++) document.getElementById('oi'+i).value='';
+  document.getElementById('otp-err').style.display='none';
+  document.getElementById('oi0').focus();
+  START_OTP_TIMER(300);
+  SHOW_TOAST('✅ Naya OTP generate hua: ' + currentOTP);
+}
+
+// ============================================================
+// SELFIE + LIVE GPS
+// ============================================================
+var mobStream = null;
+var capturedLocation = null; // {lat, lng, accuracy, mapsLink, capturedAt}
+var _gpsWatchID = null;
+
+// Live GPS lena — selfie modal khulte hi background mein location fetch
+// hoti hai, taaki jab tak student photo capture kare tab tak GPS ready ho.
+function START_LIVE_GPS() {
+  capturedLocation = null;
+  var txt = document.getElementById('sf-gps-txt');
+  if(txt) txt.textContent = 'GPS location le rahe hain... (asli GPS lock hone mein 5-15 sec lagte hain)';
+
+  if(!navigator.geolocation) {
+    if(txt) txt.textContent = 'GPS is device/browser par support nahi hai';
+    return;
+  }
+  // Web Geolocation sirf HTTPS (ya localhost) par kaam karta hai. Agar http://
+  // par khola gaya hai to browser silently network-based (inaccurate) location
+  // de sakta hai ya bilkul deny kar sakta hai.
+  if(location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    console.warn('⚠ GPS accuracy ke liye is page ko HTTPS par host karo. Abhi: ' + location.protocol);
+  }
+
+  if(_gpsWatchID !== null) { navigator.geolocation.clearWatch(_gpsWatchID); _gpsWatchID = null; }
+
+  var bestAccuracy = Infinity;
+  var GOOD_ENOUGH = 30;   // meters — is se behtar mila to turant lock maan lo
+  var MAX_WAIT_MS = 20000; // itni der tak asli GPS chip ka wait karo
+  var startedAt = Date.now();
+
+  function _finish(reason) {
+    if(_gpsWatchID !== null) { navigator.geolocation.clearWatch(_gpsWatchID); _gpsWatchID = null; }
+    if(capturedLocation && txt) {
+      txt.textContent = '📌 Live GPS location mil gayi (±' + capturedLocation.accuracy + 'm)';
+    } else if(txt) {
+      txt.textContent = '⚠ ' + (reason || 'GPS lock nahi hui — settings mein Location ON karo, khuli jagah par jao');
+    }
+  }
+
+  _gpsWatchID = navigator.geolocation.watchPosition(function(pos){
+    var acc = Math.round(pos.coords.accuracy || 999999);
+    // Sirf tab update karo jab yeh fix pichle se zyada accurate (asli GPS ke
+    // kareeb) ho — isse pehla rough network-based fix baad mein sahi GPS se
+    // replace ho jaata hai, purana wapas apply nahi hota.
+    if(acc <= bestAccuracy) {
+      bestAccuracy = acc;
+      capturedLocation = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: acc,
+        mapsLink: 'https://maps.google.com/?q=' + pos.coords.latitude + ',' + pos.coords.longitude,
+        capturedAt: new Date().toISOString()
+      };
+      if(txt) txt.textContent = '📡 GPS refine ho raha hai... (±' + acc + 'm)';
+    }
+    if(acc <= GOOD_ENOUGH || (Date.now() - startedAt) > MAX_WAIT_MS) _finish();
+  }, function(err){
+    console.warn('Geolocation error:', err);
+    if(!capturedLocation) {
+      var msg = 'Location off hai — settings mein GPS ON karo';
+      if(err && err.code === 1) msg = 'Location permission deny hui — allow karke dobara try karo';
+      if(err && err.code === 3) msg = 'GPS lock hone mein time lag raha hai — khuli jagah try karo';
+      if(txt) txt.textContent = '⚠ ' + msg;
+    }
+  }, { enableHighAccuracy:true, timeout:MAX_WAIT_MS, maximumAge:0 });
+
+  // Safety timeout — agar watchPosition callback hi na aaye
+  setTimeout(function(){ if(_gpsWatchID !== null) _finish('GPS timeout ho gaya'); }, MAX_WAIT_MS + 500);
+}
+
+function OPEN_SELFIE_MODAL() {
+  var thumb = document.getElementById('sf-prev-thumb');
+  document.getElementById('sf-stu-name').textContent = currentUser ? currentUser.name : '—';
+  if(capturedSelfie) {
+    thumb.src = capturedSelfie; thumb.style.display='block';
+    document.getElementById('sf-hint').textContent = 'Selfie li ja chuki hai ✅ Dobara lene ke liye retake karo';
+  } else {
+    thumb.style.display='none';
+    document.getElementById('sf-hint').textContent = 'Chehra frame mein rakho aur 📷 dabao';
+  }
+  document.getElementById('mob-preview').style.display='none';
+  document.getElementById('mob-video').style.display='block';
+  document.getElementById('btn-capture').style.display='flex';
+  document.getElementById('btn-retake').style.display='none';
+  document.getElementById('btn-use').style.display='none';
+
+  var m = document.getElementById('selfie-modal-mob');
+  m.style.display='flex';
+
+  START_LIVE_GPS();
+
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false})
+    .then(function(stream){ mobStream=stream; document.getElementById('mob-video').srcObject=stream; })
+    .catch(function(){ SHOW_TOAST('⚠ Camera permission do ya browser settings check karo'); });
+}
+
+function CLOSE_SELFIE_MODAL() {
+  document.getElementById('selfie-modal-mob').style.display='none';
+  STOP_CAM();
+}
+
+function CAPTURE_MOB() {
+  var video = document.getElementById('mob-video');
+  var canvas = document.getElementById('mob-canvas');
+  // FIX: full camera resolution (often 1080p/4K) makes the base64 string too
+  // big for a reliable Firebase write on slow mobile networks — the write was
+  // failing silently, so the selfie never reached the agent/admin panel.
+  // Resize down to a max dimension (same approach as gallery upload) first.
+  var vw = video.videoWidth||320, vh = video.videoHeight||240;
+  var MAX = 380;
+  var w = vw, h = vh;
+  if(w > h) { if(w > MAX){ h = Math.round(h*MAX/w); w = MAX; } }
+  else { if(h > MAX){ w = Math.round(w*MAX/h); h = MAX; } }
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(video,0,0,vw,vh,0,0,w,h);
+  capturedSelfie = canvas.toDataURL('image/jpeg', 0.6);
+  document.getElementById('mob-preview').src = capturedSelfie;
+  document.getElementById('mob-preview').style.display='block';
+  document.getElementById('mob-video').style.display='none';
+  document.getElementById('btn-capture').style.display='none';
+  document.getElementById('btn-retake').style.display='inline-flex';
+  document.getElementById('btn-use').style.display='inline-flex';
+}
+
+function RETAKE_MOB() {
+  capturedSelfie = null;
+  document.getElementById('mob-preview').style.display='none';
+  document.getElementById('mob-video').style.display='block';
+  document.getElementById('btn-capture').style.display='flex';
+  document.getElementById('btn-retake').style.display='none';
+  document.getElementById('btn-use').style.display='none';
+}
+
+function STOP_CAM() {
+  if(mobStream){ mobStream.getTracks().forEach(function(t){t.stop();}); mobStream=null; }
+  if(_gpsWatchID !== null) { navigator.geolocation.clearWatch(_gpsWatchID); _gpsWatchID = null; }
+}
+
+function USE_MOB_SELFIE() {
+  STOP_CAM();
+  document.getElementById('selfie-modal-mob').style.display='none';
+  var batch = document.getElementById('l-batch').value || String(currentUser && currentUser.batch||1);
+
+  if(currentUser) {
+    var today = todayISO();
+    try {
+      var existing = JSON.parse(localStorage.getItem('shri_hari_mob_att')||'[]');
+      existing = existing.filter(function(r){ return !(r.date===today && String(r.batch)===String(batch)); });
+      var selfies = {}; selfies[currentUser.name] = capturedSelfie;
+      var records = {}; records[currentUser.name] = 'Present';
+      existing.push({date:today,batch:batch,records:records,selfies:selfies,markedBy:currentUser.name,savedAt:new Date().toLocaleTimeString()});
+      localStorage.setItem('shri_hari_mob_att', JSON.stringify(existing));
+      localStorage.setItem('shdl_att_records', JSON.stringify(existing));
+      // ── Firebase mein save karo ──
+      MobFB.saveAttendance(existing);
+
+      // ── Selfie Firebase mein save karo (Agent panel ke liye ALL paths) ──
+      if(capturedSelfie) {
+        try {
+          var stuId = currentUser.studentId || currentUser.id || currentUser.name;
+          // Path 1: selfies/{id}/{date} — ab live GPS bhi selfie ke saath save hoti hai
+          FBDB.ref(FB_ROOT + '/selfies/' + stuId + '/' + today).set({
+            selfie: capturedSelfie,
+            name: currentUser.name,
+            batch: batch,
+            time: new Date().toLocaleTimeString('en-IN'),
+            studentId: stuId,
+            lat: capturedLocation ? capturedLocation.lat : null,
+            lng: capturedLocation ? capturedLocation.lng : null,
+            accuracy: capturedLocation ? capturedLocation.accuracy : null,
+            mapsLink: capturedLocation ? capturedLocation.mapsLink : null,
+            locationAt: capturedLocation ? capturedLocation.capturedAt : null
+          }, function(err){
+            if(err) { console.warn('Selfie Firebase save error:', err); SHOW_TOAST('⚠️ Selfie photo sync nahi hui — internet check karo'); }
+            else console.log('✅ Selfie + GPS saved: selfies/' + stuId + '/' + today);
+          });
+          // Path 1b: attendance_locations/{id}/{date} — Agent/Admin panel ke liye
+          // ek alag, seedha-seedha GPS-only node (fast lookup ke liye).
+          if(capturedLocation) {
+            FBDB.ref(FB_ROOT + '/attendance_locations/' + stuId + '/' + today).set({
+              lat: capturedLocation.lat,
+              lng: capturedLocation.lng,
+              accuracy: capturedLocation.accuracy,
+              mapsLink: capturedLocation.mapsLink,
+              name: currentUser.name,
+              batch: batch,
+              time: new Date().toLocaleTimeString('en-IN'),
+              capturedAt: capturedLocation.capturedAt
+            });
+          }
+          // Path 2: student_photos/{id} — profile photo bhi update karo
+          FBDB.ref(FB_ROOT + '/student_photos/' + stuId).set(capturedSelfie, function(err){
+            if(!err) console.log('✅ student_photos/' + stuId + ' updated from selfie');
+          });
+          // Path 3: localStorage bhi update karo
+          try { localStorage.setItem('mob_photo_' + stuId, capturedSelfie); } catch(le){}
+          // Update profile photo display
+          var ph2 = document.getElementById('prof-photo');
+          var pl2 = document.getElementById('prof-placeholder');
+          if(ph2) { ph2.src = capturedSelfie; ph2.style.display = 'block'; }
+          if(pl2) pl2.style.display = 'none';
+        } catch(e2){ console.warn('Selfie save error:', e2); }
+      }
+    } catch(e){}
+  }
+
+  // Update selfie bar button
+  var sb = document.getElementById('btn-selfie-bar');
+  if(sb) { sb.textContent='✅'; sb.classList.add('done'); }
+
+  if(document.getElementById('s-profile').classList.contains('active')) {
+    SHOW_PROFILE(batch);
+  }
+  SHOW_TOAST('✅ Selfie li + Present mark ho gaya!');
+}
+
+function SKIP_SELFIE() { capturedSelfie=null; CLOSE_SELFIE_MODAL(); }
+
+// ============================================================
+// PROFILE
+// ============================================================
+// ══════════════════════════════════════════════════════════════
+//  AGENT MANAGEMENT — real-time Agent info fetch + autofill
+//  Requirement: when a Student ID is selected, fetch the linked
+//  agent (by agentId saved on the student record) from Firebase
+//  and auto-fill Agent Logo / Company Logo / Company Name /
+//  Agent Name / Mobile / UPI ID / QR Code — no manual entry.
+//  Uses FBDB.ref(...).on('value', ...) so if the agent later
+//  updates their logo/QR/company/mobile/UPI, this view updates
+//  live without the student needing to log out/in again.
+// ══════════════════════════════════════════════════════════════
+var _agentInfoRef = null; // holds the active Firebase listener ref so we can detach it later
+var _currentAgentData = null; // holds the currently linked agent's info (for Fee/UPI autofill)
+
+// Sets the top profile photo (prof-photo / prof-placeholder) to the linked
+// Agent's logo/photo, if one is set. Returns true if it applied an agent
+// photo, false if there's no agent logo to show.
+// FIX: this is now only called as a LAST-RESORT fallback — the student's own
+// registration photo (currentUser.photo) or uploaded/captured photo always
+// takes priority and is never overwritten by the agent's logo.
+function APPLY_AGENT_PROFILE_PHOTO() {
+  var ph = document.getElementById('prof-photo');
+  var pl = document.getElementById('prof-placeholder');
+  // FIX: agent record ka actual field naam 'photo' hota hai (Agent_login.html mein
+  // UPLOAD_MY_LOGO / Admin Panel dono isi naam se save karte hain) — pehle sirf
+  // 'logo'/'companyLogo' check ho raha tha jo kabhi exist hi nahi karta, isliye
+  // logo hamesha blank dikhta tha.
+  var logoSrc = _currentAgentData ? (_currentAgentData.logo || _currentAgentData.companyLogo || _currentAgentData.photo || '') : '';
+  if(logoSrc) {
+    if(ph) { ph.src = logoSrc; ph.style.display = 'block'; }
+    if(pl) pl.style.display = 'none';
+    return true;
+  }
+  return false;
+}
+
+function RENDER_AGENT_CARD(agent) {
+  var card = document.getElementById('agent-info-card');
+  _currentAgentData = agent || null;
+  if(!card) { /* still continue below to update topbar/help even without the card */ }
+  if(!agent) {
+    if(card) card.style.display = 'none';
+    return;
+  }
+
+  if(card) card.style.display = 'block';
+
+  // Company Logo (falls back to a placeholder icon if not uploaded)
+  // FIX: Agent_login.html actually stores the uploaded logo/photo under the
+  // 'photo' key (see UPLOAD_MY_LOGO / Admin Panel 'a.photo') — 'logo' and
+  // 'companyLogo' never get written there, so the banner logo was always blank.
+  var logoImg = document.getElementById('agent-logo-img');
+  var logoPh  = document.getElementById('agent-logo-placeholder');
+  var logoSrc = agent.logo || agent.companyLogo || agent.photo || '';
+  if(logoImg && logoPh) {
+    if(logoSrc) { logoImg.src = logoSrc; logoImg.style.display = 'block'; logoPh.style.display = 'none'; }
+    else { logoImg.style.display = 'none'; logoPh.style.display = 'flex'; }
+  }
+
+  // Company Name + Agent Name
+  // FIX: simple (in-app registered) agents never had a 'company' field at all,
+  // so this always fell back to the generic word "Company" — fall back to the
+  // agent/owner's own name first, which is always present.
+  var companyName = agent.company || agent.companyName || agent.name || agent.agentName || 'Company';
+  var compEl = document.getElementById('agent-company-name');
+  if(compEl) compEl.textContent = companyName;
+  var nameEl = document.getElementById('agent-name-text');
+  if(nameEl) nameEl.textContent = (agent.name || agent.agentName || 'Agent') + (agent.agentId ? ' · ' + agent.agentId : '');
+
+  // Mobile Number (tap-to-call)
+  // FIX: simple agents store their number under 'mob' (see ADD_USER/nu-mob),
+  // not 'mobile'/'phone' — added as a fallback so the number isn't blank.
+  var mobileEl = document.getElementById('agent-mobile-text');
+  var callLink = document.getElementById('agent-call-link');
+  var mobile = agent.mobile || agent.phone || agent.mob || '';
+  if(mobileEl) mobileEl.textContent = mobile ? '+91 ' + mobile : '—';
+  if(callLink) callLink.href = mobile ? 'tel:+91' + mobile : 'tel:';
+
+  // Address
+  var address = agent.address || agent.addr || agent.companyAddress || '';
+
+  // UPI ID
+  var upiEl = document.getElementById('agent-upi-text');
+  if(upiEl) upiEl.textContent = agent.upi || agent.upiId || '—';
+
+  // QR Code Image
+  var qrWrap = document.getElementById('agent-qr-wrap');
+  var qrImg  = document.getElementById('agent-qr-img');
+  var qrSrc  = agent.qrCode || agent.qrCodeImage || '';
+  if(qrWrap && qrImg) {
+    if(qrSrc) { qrImg.src = qrSrc; qrWrap.style.display = 'block'; }
+    else { qrWrap.style.display = 'none'; }
+  }
+
+  // ── Topbar + Help screen branding: company name/logo/address/mobile ──
+  // auto-fill karo (ye Agent Login ke registered profile se aata hai)
+  var nameEls2 = [document.getElementById('prof-lib-name'), document.getElementById('help-lib-name')];
+  nameEls2.forEach(function(el){ if(el) el.textContent = companyName; });
+
+  var logoEls2 = [document.getElementById('prof-lib-logo'), document.getElementById('help-lib-logo')];
+  logoEls2.forEach(function(el){
+    if(!el) return;
+    if(logoSrc) { el.src = logoSrc; el.style.display = 'block'; }
+    else { el.style.display = 'none'; }
+  });
+  var logoPh2 = document.getElementById('prof-lib-logo-ph');
+  if(logoPh2) logoPh2.style.display = logoSrc ? 'none' : '';
+
+  var subText = [address, mobile ? ('+91 ' + mobile) : ''].filter(Boolean).join(' · ');
+  var subEls = [document.getElementById('prof-lib-sub'), document.getElementById('help-lib-sub')];
+  subEls.forEach(function(el){ if(el) el.textContent = subText; });
+
+  try { document.title = companyName + ' — Mobile Attendance'; } catch(e){}
+
+  // ── Library Contact card (Help screen) ──
+  var lcPhoneLink = document.getElementById('lc-phone-link');
+  var lcPhoneText = document.getElementById('lc-phone-text');
+  var lcPhoneSub  = document.getElementById('lc-phone-sub');
+  if(lcPhoneLink) lcPhoneLink.href = mobile ? 'tel:+91' + mobile : 'tel:';
+  if(lcPhoneText) lcPhoneText.textContent = mobile ? '+91 ' + mobile : '—';
+  if(lcPhoneSub) lcPhoneSub.textContent = (agent.name || agent.agentName || '') + (companyName ? (' · ' + companyName) : '');
+
+  var lcMapsLink = document.getElementById('lc-maps-link');
+  var lcAddrText = document.getElementById('lc-address-text');
+  if(lcMapsLink) lcMapsLink.href = address ? ('https://maps.google.com/?q=' + encodeURIComponent(companyName + ' ' + address)) : '#';
+  if(lcAddrText) lcAddrText.textContent = address || '—';
+
+  // Profile section: FIX: agent ka logo ab student ki apni photo ko overwrite
+  // nahi karega — sirf tab dikhega jab student ki koi photo bilkul na ho.
+  var _ownPhotoPresent = !!(currentUser && currentUser.photo && currentUser.photo.length > 100);
+  if(!_ownPhotoPresent) APPLY_AGENT_PROFILE_PHOTO();
+}
+
+// Attach a live Firebase listener for the agent linked to agentId.
+// Agents are stored as an array at shdl/agents (same structure the
+// Admin Panel already writes), each item carrying its own agentId
+// (e.g. "AGT001") plus name/company/mobile/upi/qrCode/logo.
+// FIX: previously this ONLY looked at 'shdl/agents' (the rich Admin Panel list).
+// Agents registered through this app's own simple "Add User" flow are stored
+// separately at 'shdl/agent_logins' and were never found here at all — for
+// those agents the banner rendered completely blank (RENDER_AGENT_CARD(null)),
+// no matter what data existed. We now check both paths and merge, admin-panel
+// data taking priority if an agentId exists in both.
+function LOAD_AGENT_INFO_FOR_STUDENT(agentId) {
+  // Detach any previous listeners first (e.g. after switching students/logout)
+  if(_agentInfoRef) {
+    try {
+      if(Array.isArray(_agentInfoRef)) { _agentInfoRef.forEach(function(r){ try{ r.off('value'); }catch(e){} }); }
+      else { _agentInfoRef.off('value'); }
+    } catch(e){}
+    _agentInfoRef = null;
+  }
+
+  if(!agentId) { RENDER_AGENT_CARD(null); return; }
+
+  var richRef   = FBDB.ref(FB_ROOT + '/agents');
+  var simpleRef = FBDB.ref(FB_ROOT + '/agent_logins');
+  _agentInfoRef = [richRef, simpleRef];
+
+  var lastRich = null, lastSimple = null, gotRich = false, gotSimple = false;
+
+  function toList(val) {
+    if(!val) return [];
+    return Array.isArray(val) ? val.filter(Boolean) : Object.values(val).filter(Boolean);
+  }
+
+  function combine() {
+    if(!gotRich || !gotSimple) return; // wait for both sources at least once
+    var richAgent   = (lastRich   || []).find(function(a){ return a && a.agentId === agentId; }) || null;
+    var simpleAgent = (lastSimple || []).find(function(a){ return a && a.agentId === agentId; }) || null;
+    // Merge so missing fields on one source fall back to the other; rich
+    // Admin Panel data (photo/UPI/QR/bank) wins on conflicts.
+    var agent = (richAgent || simpleAgent) ? Object.assign({}, simpleAgent || {}, richAgent || {}) : null;
+    RENDER_AGENT_CARD(agent);
+  }
+
+  richRef.on('value', function(snap){ lastRich = toList(snap.val()); gotRich = true; combine(); },
+    function(err){ console.warn('Agent info (agents) listener error:', err); lastRich = []; gotRich = true; combine(); });
+
+  simpleRef.on('value', function(snap){ lastSimple = toList(snap.val()); gotSimple = true; combine(); },
+    function(err){ console.warn('Agent info (agent_logins) listener error:', err); lastSimple = []; gotSimple = true; combine(); });
+}
+// ══ END AGENT MANAGEMENT BLOCK ══
+
+function SHOW_PROFILE(batch) {
+  if(!currentUser) {
+    console.warn('SHOW_PROFILE: currentUser is null');
+    return;
+  }
+
+  // ── Ensure all currentUser fields have defaults (AUTOFILL FIX) ──
+  currentUser.name = currentUser.name || 'Unknown Student';
+  currentUser.cls = currentUser.cls || currentUser.class || currentUser.addr || '—';
+  currentUser.id = currentUser.id || currentUser.studentId || '';
+  currentUser.studentId = currentUser.studentId || currentUser.id || '';
+  currentUser.mobile = currentUser.mobile || currentUser.phone || '';
+  currentUser.batch = currentUser.batch || batch || '1';
+
+  // ── Photo handling ──
+  // FIX: Student ki apni photo (jo Agent ne "Student Add Karein" form se
+  // upload ki thi — currentUser.photo) ab sabse pehle priority mein dikhegi.
+  // Agent ka company logo sirf tab dikhega jab student ki koi photo bilkul na ho.
+  (function(){
+    var ph = document.getElementById('prof-photo');
+    var pl = document.getElementById('prof-placeholder');
+    var ownPhoto = (currentUser.photo && currentUser.photo.length > 100) ? currentUser.photo : (capturedSelfie || '');
+    if(ownPhoto) {
+      if(ph) { ph.src = ownPhoto; ph.style.display = 'block'; }
+      if(pl) pl.style.display = 'none';
+    } else if(!APPLY_AGENT_PROFILE_PHOTO()) {
+      if(ph) ph.style.display = 'none';
+      if(pl) pl.style.display = 'flex';
+    }
+  })();
+
+  // ── Core Profile Info (AUTOFILL) ──
+  var profName = document.getElementById('prof-name');
+  var profSub = document.getElementById('prof-sub');
+  var profBatch = document.getElementById('prof-batch');
+  var profClass = document.getElementById('prof-class');
+  var profDate = document.getElementById('prof-date');
+
+  if(profName) profName.textContent = currentUser.name;
+  if(profSub) {
+    var subParts = [];
+    if(currentUser.cls && currentUser.cls !== '—') subParts.push(currentUser.cls);
+    if(currentUser.mobile) subParts.push(currentUser.mobile);
+    if(currentUser.id) subParts.push(currentUser.id);
+    profSub.textContent = subParts.join(' · ') || '—';
+  }
+  if(profBatch) profBatch.textContent = BATCH_LBL[batch] || BATCH_LBL[currentUser.batch] || ('Batch ' + (batch || currentUser.batch || '1'));
+  if(profClass) profClass.textContent = currentUser.cls || '—';
+  if(profDate) profDate.textContent = todayStr();
+
+  // ── Live Time Update ──
+  function updateTime(){
+    var t = document.getElementById('prof-time');
+    if(t) t.textContent = new Date().toLocaleTimeString('hi-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  }
+  updateTime();
+  if(window._profTimerID) clearInterval(window._profTimerID);
+  window._profTimerID = setInterval(updateTime, 1000);
+
+  // ── Attendance Status ──
+  var today = todayISO();
+  var savedStatus = GET_MY_SAVED_ATT(currentUser.name, today);
+  UPDATE_PROFILE_STATUS(savedStatus);
+  RENDER_HIST();
+
+  // ── Fee Due Check ──
+  setTimeout(function(){ CHECK_MOB_FEE_DUE(); }, 500);
+
+  // ── Load Saved Photo ──
+  setTimeout(function(){ LOAD_SAVED_MOB_PHOTO(); }, 300);
+
+  // ══ AGENT MANAGEMENT: fetch + auto-fill the linked agent's info (real-time) ══
+  LOAD_AGENT_INFO_FOR_STUDENT(currentUser.agentId || '');
+
+  SHOW_SCREEN('s-profile');
+  console.log('✅ SHOW_PROFILE: Profile loaded for', currentUser.name);
+}
+
+function RENDER_HIST() {
+  var dates = getLast7Dates();
+  var today = todayISO();
+  var html = '';
+  dates.forEach(function(iso){
+    var status = GET_MY_SAVED_ATT(currentUser.name, iso);
+    var cls = status==='Present' ? 'p' : (status?'a':'none');
+    var lbl = status==='Present' ? 'P' : (status?'A':'·');
+    var isToday = iso===today ? ' today' : '';
+    html += '<div class="hist-day">';
+    html += '<div class="hist-day-lbl">'+getDayLabel(iso)+'</div>';
+    html += '<div class="hist-dot '+cls+isToday+'">'+lbl+'</div>';
+    html += '<div style="font-size:8px;color:rgba(255,255,255,.25);text-align:center;margin-top:3px">'+isoToDisplay(iso)+'</div>';
+    html += '</div>';
+  });
+  document.getElementById('hist-grid').innerHTML = html;
+}
+
+function GET_MY_SAVED_ATT(name, date) {
+  try {
+    var raw = localStorage.getItem('shri_hari_mob_att');
+    if(!raw) return null;
+    var arr = JSON.parse(raw);
+    for(var i=0;i<arr.length;i++){
+      if(arr[i].date===date && arr[i].records && arr[i].records[name]) return arr[i].records[name];
+    }
+  } catch(e){}
+  return null;
+}
+
+function UPDATE_PROFILE_STATUS(status) {
+  var card = document.getElementById('prof-status-card');
+  var icon = document.getElementById('prof-status-icon');
+  var txt  = document.getElementById('prof-status-text');
+  var sub  = document.getElementById('prof-status-sub');
+  var pb = document.getElementById('prof-present-btn');
+  var ub = document.getElementById('prof-undo-btn');
+
+  card.className = 'status-card '+(status==='Present'?'present':status?'absent':'none');
+  if(status==='Present'){
+    icon.textContent='✅'; txt.textContent='Aaj Present Ho! ✓'; sub.textContent='Attendance save ho gayi — Admin panel mein dikhegi';
+    pb.style.display='none'; ub.style.display='block';
+  } else if(status){
+    icon.textContent='❌'; txt.textContent='Aaj Absent Ho'; sub.textContent='Present karne ke liye neeche dabao';
+    pb.style.display='block'; ub.style.display='none';
+  } else {
+    icon.textContent='📋'; txt.textContent='Aaj Attendance Nahi Di'; sub.textContent='Selfie lo aur Present mark karo';
+    pb.style.display='block'; ub.style.display='none';
+  }
+}
+
+function MARK_SELF_PRESENT() {
+  if(!currentUser) return;
+  if(!capturedSelfie) {
+    SHOW_TOAST('📷 Pehle selfie lo — tabhi Present mark hoga!');
+    setTimeout(function(){ OPEN_SELFIE_MODAL(); }, 700);
+    return;
+  }
+  var today = todayISO();
+  var batch = document.getElementById('l-batch').value || String(currentUser.batch||1);
+  try {
+    var existing = JSON.parse(localStorage.getItem('shri_hari_mob_att')||'[]');
+    existing = existing.filter(function(r){ return !(r.date===today && String(r.batch)===String(batch)); });
+    var selfies = {}; selfies[currentUser.name] = capturedSelfie;
+    var records = {}; records[currentUser.name] = 'Present';
+    existing.push({date:today,batch:batch,records:records,selfies:selfies,markedBy:currentUser.name,savedAt:new Date().toLocaleTimeString()});
+    localStorage.setItem('shri_hari_mob_att', JSON.stringify(existing));
+    localStorage.setItem('shdl_att_records', JSON.stringify(existing));
+    // ── Firebase mein save karo ──
+    MobFB.saveAttendance(existing);
+  } catch(e){}
+  UPDATE_PROFILE_STATUS('Present');
+  RENDER_HIST();
+  SHOW_TOAST('✅ Present mark ho gaya!');
+}
+
+function UNDO_SELF_ATT() {
+  if(!currentUser) return;
+  var today = todayISO();
+  var batch = document.getElementById('l-batch').value || String(currentUser.batch||1);
+  try {
+    var existing = JSON.parse(localStorage.getItem('shri_hari_mob_att')||'[]');
+    existing = existing.filter(function(r){ return !(r.date===today && String(r.batch)===String(batch)); });
+    localStorage.setItem('shri_hari_mob_att', JSON.stringify(existing));
+  } catch(e){}
+  UPDATE_PROFILE_STATUS(null);
+  RENDER_HIST();
+  SHOW_TOAST('↩ Attendance hata di');
+}
+
+
+// ============================================================
+// FIX #3: Real dynamic UPI QR generator
+// ============================================================
+var _qrInstance = null;
+function UPDATE_QR_AMOUNT() {
+  var agentUpi = _currentAgentData ? (_currentAgentData.upi || _currentAgentData.upiId || '') : '';
+  if(!agentUpi) return;
+  var payName = (_currentAgentData && (_currentAgentData.company || _currentAgentData.companyName)) || 'Library';
+  GEN_UPI_QR(agentUpi, document.getElementById('fee-amount-input').value, payName);
+}
+function GEN_UPI_QR(upiId, amount, name) {
+  var container = document.getElementById('real-qr-canvas');
+  if(!container) return;
+  container.innerHTML = ''; // clear old QR
+  // Build UPI deep link
+  var upiLink = 'upi://pay?pa=' + encodeURIComponent(upiId)
+    + '&pn=' + encodeURIComponent(name || 'Library')
+    + '&cu=INR';
+  if(amount && parseFloat(amount) > 0) {
+    upiLink += '&am=' + parseFloat(amount).toFixed(2);
+  }
+  try {
+    _qrInstance = new QRCode(container, {
+      text: upiLink,
+      width: 120,
+      height: 120,
+      colorDark: '#5f259f',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch(e) {
+    container.innerHTML = '<div style="font-size:10px;color:#A32D2D;text-align:center;padding:10px">QR load nahi hua.<br>UPI ID copy karein.</div>';
+  }
+}
+
+// ============================================================
+// EXPORT CSV — Profile
+// ============================================================
+function EXPORT_MY_ATT_CSV() {
+  if(!currentUser) return;
+  var dates = getLast7Dates();
+  var rows = [['Date','Day','Student Name','Class','Batch','Status']];
+  dates.forEach(function(iso){
+    var s = GET_MY_SAVED_ATT(currentUser.name, iso)||'No Data';
+    rows.push([iso, getDayLabel(iso), currentUser.name, currentUser.cls||'', BATCH_LBL[currentUser.batch]||'', s]);
+  });
+  DOWNLOAD_CSV(rows, 'my_attendance_'+currentUser.id+'_'+todayISO()+'.csv');
+  SHOW_TOAST('📊 CSV download ho raha hai!');
+}
+
+// ============================================================
+// ATT SCREEN
+// ============================================================
+function SHOW_ATT(batch) {
+  document.getElementById('m-user').textContent = currentUser.name;
+  document.getElementById('m-batch-lbl').textContent = BATCH_LBL[batch]||'All Batches';
+  document.getElementById('m-date').textContent = todayStr();
+  document.getElementById('f-batch').value = batch;
+  SHOW_SCREEN('s-main');
+  // ── Firebase se students load karo (fresh data) ──
+  MobFB.loadStudents(function(fbStudents) {
+    allStu = fbStudents && fbStudents.length ? fbStudents.map(function(s){
+      var sid = s.studentId || s.id || '';
+      return Object.assign({}, s, {
+        id: sid, studentId: sid,
+        cls: s.cls || s.addr || '',
+        batch: String(s.batch||'1'),
+        status: s.status || 'active'
+      });
+    }) : GET_STUDENTS();
+    APPLY_FILTER();
+  });
+  SHOW_TOAST('Welcome! ' + currentUser.name + ' 👋');
+}
+
+function APPLY_FILTER() {
+  var b = document.getElementById('f-batch').value;
+  visibleStu = allStu.filter(function(s){ return !b || String(s.batch)===b; });
+  RENDER(visibleStu); UPDATE_STATS();
+}
+
+function FILTER_BY_NAME(q) {
+  var b = document.getElementById('f-batch').value;
+  var base = allStu.filter(function(s){ return !b || String(s.batch)===b; });
+  if(!q){ visibleStu=base; RENDER(base); UPDATE_STATS(); return; }
+  var ql = q.toLowerCase();
+  visibleStu = base.filter(function(s){ return s.name.toLowerCase().includes(ql); });
+  RENDER(visibleStu); UPDATE_STATS();
+}
+
+function RENDER(list) {
+  var c = document.getElementById('stu-list');
+  if(!list||list.length===0){
+    c.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><div class="empty-t">Koi Student Nahi Mila</div></div>';
+    return;
+  }
+  var h = '';
+  list.forEach(function(s){
+    var st = att[s.name]||'';
+    var ini = s.name.split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();
+    h += '<div class="srow '+st+'" id="sr-'+CSS_ID(s.name)+'">';
+    h += '<div class="savt">'+ini+'</div>';
+    h += '<div class="sinfo"><div class="sname">'+s.name+'</div>';
+    h += '<div class="ssub">'+s.cls+' · '+(BATCH_LBL[s.batch]||'')+'</div></div>';
+    h += '<div class="att-btns"><button class="ab'+(st==='P'?' ap':'')+'" onclick="TOGGLE_PRESENT(\''+s.name+'\')">'+(st==='P'?'✓ Present':'Present')+'</button></div>';
+    h += '</div>';
+  });
+  c.innerHTML = h;
+}
+
+function CSS_ID(name){ return name.replace(/[^a-zA-Z0-9]/g,'_'); }
+
+function TOGGLE_PRESENT(name) {
+  if(att[name]==='P'){ delete att[name]; } else { att[name]='P'; }
+  var row = document.getElementById('sr-'+CSS_ID(name));
+  if(row){
+    row.className='srow'+(att[name]==='P'?' P':'');
+    var btn = row.querySelector('.ab');
+    if(btn){ btn.className='ab'+(att[name]==='P'?' ap':''); btn.textContent=att[name]==='P'?'✓ Present':'Present'; }
+  }
+  UPDATE_STATS();
+}
+
+function MARK_ALL_P() {
+  visibleStu.forEach(function(s){ att[s.name]='P'; });
+  RENDER(visibleStu); UPDATE_STATS(); SHOW_TOAST('✅ Sab Present!');
+}
+
+function UPDATE_STATS() {
+  var tot=visibleStu.length;
+  var p=visibleStu.filter(function(s){ return att[s.name]==='P'; }).length;
+  var a=visibleStu.filter(function(s){ return att[s.name]==='A'; }).length;
+  var l=visibleStu.filter(function(s){ return att[s.name]==='L'; }).length;
+  document.getElementById('st-tot').textContent=tot;
+  document.getElementById('st-p').textContent=p;
+  document.getElementById('st-a').textContent=a;
+  document.getElementById('st-l').textContent=l;
+}
+
+// ============================================================
+// SAVE
+// ============================================================
+function SAVE_ATT() {
+  var batch = document.getElementById('f-batch').value;
+  var marked = Object.keys(att).length;
+  if(marked===0){ SHOW_TOAST('⚠️ Pehle kuch mark karein!'); return; }
+
+  var records = {};
+  visibleStu.forEach(function(s){
+    if(att[s.name]) records[s.name] = att[s.name]==='P'?'Present':att[s.name]==='A'?'Absent':'Late';
+  });
+
+  var today = todayISO();
+  try {
+    var existing = JSON.parse(localStorage.getItem('shri_hari_mob_att')||'[]');
+    existing = existing.filter(function(r){ return !(r.date===today && String(r.batch)===String(batch)); });
+    var selfies = {};
+    if(capturedSelfie && currentUser && currentUser.name) selfies[currentUser.name] = capturedSelfie;
+    existing.push({date:today,batch:batch,records:records,selfies:selfies,markedBy:currentUser.name,savedAt:new Date().toLocaleTimeString()});
+    localStorage.setItem('shri_hari_mob_att', JSON.stringify(existing));
+    // FIX #1: Also write to unified shdl_att_records key (library desktop auto-syncs this)
+    localStorage.setItem('shdl_att_records', JSON.stringify(existing));
+  } catch(e){ console.error('Save error:',e); }
+
+  var p=Object.values(records).filter(function(v){return v==='Present';}).length;
+  var a=Object.values(records).filter(function(v){return v==='Absent';}).length;
+  var l=Object.values(records).filter(function(v){return v==='Late';}).length;
+
+  document.getElementById('d-p').textContent=p;
+  document.getElementById('d-a').textContent=a;
+  document.getElementById('d-l').textContent=l;
+  document.getElementById('d-info').textContent=todayStr()+' · '+(BATCH_LBL[batch]||'All');
+
+  // Store summary for share/export
+  lastSavedSummary = {date:today, batch:batch, batchLbl:BATCH_LBL[batch]||('Batch '+batch), records:records, p:p, a:a, l:l};
+
+  SHOW_SCREEN('s-done');
+}
+
+// ============================================================
+// EXCEL (CSV) EXPORT — Done screen
+// ============================================================
+function EXPORT_CSV() {
+  if(!lastSavedSummary) { SHOW_TOAST('⚠ Pehle attendance save karo!'); return; }
+  var s = lastSavedSummary;
+  var rows = [
+    [(_currentAgentData && (_currentAgentData.company || _currentAgentData.companyName)) || 'Attendance Report'],
+    ['Date', s.date, 'Batch', s.batchLbl],
+    [],
+    ['Student Name', 'Status', 'Marked By', 'Save Time']
+  ];
+  Object.entries(s.records).forEach(function(kv){
+    rows.push([kv[0], kv[1], currentUser?currentUser.name:'—', new Date().toLocaleTimeString()]);
+  });
+  rows.push([]);
+  rows.push(['Total', Object.keys(s.records).length, 'Present', s.p, 'Absent', s.a, 'Leave', s.l]);
+  DOWNLOAD_CSV(rows, 'attendance_'+s.date+'_batch'+s.batch+'.csv');
+  SHOW_TOAST('📊 CSV download ho raha hai!');
+}
+
+function DOWNLOAD_CSV(rows, filename) {
+  var csv = rows.map(function(row){
+    return row.map(function(cell){
+      var c = String(cell===null||cell===undefined?'':cell);
+      if(c.includes(',') || c.includes('"') || c.includes('\n')) c = '"'+c.replace(/"/g,'""')+'"';
+      return c;
+    }).join(',');
+  }).join('\r\n');
+
+  var BOM = '\uFEFF'; // UTF-8 BOM for Excel
+  var blob = new Blob([BOM+csv], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+
+// ============================================================
+// NAV
+// ============================================================
+function LOGOUT_CONFIRM() {
+  if(!confirm('Logout karna chahte hain?')) return;
+  currentUser=null; selectedStudent=null; capturedSelfie=null; att={}; lastSavedSummary=null;
+  if(otpTimerID) clearInterval(otpTimerID);
+  // ══ AGENT MANAGEMENT: detach the live agent listener on logout ══
+  if(_agentInfoRef) { try { _agentInfoRef.off('value'); } catch(e){} _agentInfoRef = null; }
+  // 🆕 CRITICAL LOGOUT FIX: pehle yeh sirf login screen wapas dikhata tha
+  // (isi page par) — koi session/localStorage clear nahi hota tha aur
+  // homepage par kabhi redirect nahi hota tha. Ab poora localStorage/
+  // sessionStorage clear hokar seedha main homepage (index.html) par
+  // bhej diya jaata hai.
+  try { localStorage.clear(); } catch(e){}
+  try { sessionStorage.clear(); } catch(e){}
+  window.location.replace(SHDL_HOME_URL); /* 🆕 replace() so the login page never re-enters the browser back/forward history — prevents any back-button bounce into a stale session, and avoids Netlify 404s on refresh */
+}
+
+function GO_BACK() { SHOW_SCREEN('s-login'); }
+
+function RESET() {
+  STOP_CAM(); att={}; lastSavedSummary=null; capturedSelfie=null; currentUser=null; selectedStudent=null;
+  var mf=document.getElementById('l-mobile'); if(mf) mf.value='';
+  document.getElementById('l-err').style.display='none';
+  document.getElementById('selected-student').style.display='none';
+  document.getElementById('name-suggestions').style.display='none';
+  CHECK_DEMO_NOTICE();
+  SHOW_SCREEN('s-login');
+}
+
+function CHECK_DEMO_NOTICE() {
+  var notice = document.getElementById('demo-notice');
+  if (!notice) return;
+  // Pehle localStorage check karo (fast path)
+  if (HAS_REAL_STUDENTS()) { notice.style.display = 'none'; return; }
+  // Agar localStorage khali hai, Firebase se check karo
+  notice.style.display = 'none'; // flash na ho loading ke time
+  MobFB.loadStudents(function(students) {
+    if (students && students.length > 0) {
+      notice.style.display = 'none';
+      try { SETUP_AUTOCOMPLETE(); } catch(e){}
+    } else {
+      notice.style.display = 'block';
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  // Page load pe Firebase se students load karo — demo notice sahi dikhne ke liye
+  MobFB.loadStudents(function(students) {
+    if (students && students.length > 0) {
+      try { SETUP_AUTOCOMPLETE(); } catch(e){}
+    }
+    setTimeout(CHECK_DEMO_NOTICE, 200);
+  });
+
+  // ── AUTOFILL: Login fields ko auto-fill karo ──
+  setTimeout(AUTOFILL_LOGIN_FIELDS, 500);
+});
+
+function SHOW_SCREEN(id) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if(el) el.classList.add('active');
+}
+
+function SHOW_TOAST(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2800);
+}
+
+// ══════════════════════════════════════════════════
+// ★ MOBILE FEATURE 1: NOTIFICATION SYSTEM
+// ══════════════════════════════════════════════════
+var MOB_NOTIFICATIONS = [];
+
+function MOB_ADD_NOTIF(msg, type, sub) {
+  var icons = { fee:'💰', att:'📋', student:'🎓', warning:'⚠️', info:'ℹ️' };
+  var colors = { fee:'rgba(15,110,86,.2)', att:'rgba(83,74,183,.2)', student:'rgba(13,30,61,.4)', warning:'rgba(201,162,39,.15)', info:'rgba(255,255,255,.08)' };
+  MOB_NOTIFICATIONS.unshift({
+    id: Date.now(),
+    msg: msg, sub: sub || '', type: type || 'info',
+    icon: icons[type] || 'ℹ️', color: colors[type] || 'rgba(255,255,255,.08)',
+    unread: true,
+    time: new Date().toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})
+  });
+  if(MOB_NOTIFICATIONS.length > 20) MOB_NOTIFICATIONS.pop();
+  RENDER_MOB_NOTIFS();
+}
+
+function RENDER_MOB_NOTIFS() {
+  var list = document.getElementById('mob-notif-list');
+  var badge = document.getElementById('mob-notif-badge');
+  if(!list) return;
+  var unread = MOB_NOTIFICATIONS.filter(function(n){ return n.unread; }).length;
+  if(badge) {
+    badge.textContent = unread > 9 ? '9+' : unread;
+    badge.className = 'mob-notif-badge' + (unread === 0 ? ' hidden' : '');
+  }
+  if(MOB_NOTIFICATIONS.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;font-size:12px;color:rgba(255,255,255,.3)">Koi notification nahi 🎉</div>';
+    return;
+  }
+  list.innerHTML = MOB_NOTIFICATIONS.map(function(n) {
+    return '<div class="mob-notif-item' + (n.unread ? ' unread' : '') + '" onclick="MOB_MARK_READ(' + n.id + ')">'
+      + '<div class="mob-notif-icon" style="background:' + n.color + '">' + n.icon + '</div>'
+      + '<div style="flex:1">'
+        + '<div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:2px">' + n.msg + '</div>'
+        + (n.sub ? '<div style="font-size:10px;color:rgba(255,255,255,.4)">' + n.sub + '</div>' : '')
+        + '<div style="font-size:10px;color:#c9a227;margin-top:2px">' + n.time + '</div>'
+      + '</div></div>';
+  }).join('');
+}
+
+function MOB_MARK_READ(id) {
+  MOB_NOTIFICATIONS.forEach(function(n){ if(n.id === id) n.unread = false; });
+  RENDER_MOB_NOTIFS();
+}
+
+function TOGGLE_MOB_NOTIF() {
+  var panel = document.getElementById('mob-notif-panel');
+  if(!panel) return;
+  var isOpen = panel.classList.contains('open');
+  panel.classList.toggle('open');
+  if(!isOpen) {
+    MOB_NOTIFICATIONS.forEach(function(n){ n.unread = false; });
+    RENDER_MOB_NOTIFS();
+  }
+}
+
+function CLOSE_MOB_NOTIF() {
+  var panel = document.getElementById('mob-notif-panel');
+  if(panel) panel.classList.remove('open');
+}
+
+function CLEAR_MOB_NOTIFS() {
+  MOB_NOTIFICATIONS = [];
+  RENDER_MOB_NOTIFS();
+  CLOSE_MOB_NOTIF();
+}
+
+// ══════════════════════════════════════════════════
+// ★ MOBILE FEATURE 2: FEE DUE REMINDER (Firebase + localStorage)
+// ══════════════════════════════════════════════════
+function CHECK_MOB_FEE_DUE() {
+  if(!currentUser) return;
+  var banner = document.getElementById('mob-fee-banner');
+  var msg = document.getElementById('mob-fee-msg');
+  if(!banner || !msg) return;
+
+  var now = new Date();
+  var monthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function _checkPayments(payments) {
+    var myPayments = (payments||[]).filter(function(p){ return p && p.studentId === currentUser.id && p.monthKey === monthKey; });
+    if(myPayments.length === 0) {
+      msg.textContent = '⚠️ ' + monthNames[now.getMonth()] + ' ' + now.getFullYear() + ' ki fee abhi nahi di!';
+      banner.style.display = 'flex';
+      MOB_ADD_NOTIF('Is month ki fee baki hai!', 'fee', monthNames[now.getMonth()] + ' ' + now.getFullYear());
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  // Firebase se check karo pehle
+  try {
+    MobFB.loadFeePayments(function(payments) {
+      _checkPayments(payments || []);
+    });
+  } catch(e) {
+    // Fallback: localStorage
+    try {
+      var payments = JSON.parse(localStorage.getItem('shri_hari_fee_payments') || '[]');
+      _checkPayments(payments);
+    } catch(e2) {
+      banner.style.display = 'flex';
+      msg.textContent = '💰 Is month ki fee status check karein';
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════
+// ★ MOBILE FEATURE 3: PHOTO UPLOAD FROM GALLERY
+// ══════════════════════════════════════════════════
+function UPLOAD_MOB_PHOTO(input) {
+  if(!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  // Resize image before saving (max 300x300) to avoid Firebase size limits
+  var img = new Image();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    img.onload = function() {
+      var canvas = document.createElement('canvas');
+      var MAX = 300;
+      var w = img.width, h = img.height;
+      if(w > h) { if(w > MAX){ h = Math.round(h*MAX/w); w = MAX; } }
+      else { if(h > MAX){ w = Math.round(w*MAX/h); h = MAX; } }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      SAVE_STUDENT_PHOTO(dataUrl, file.name);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function SAVE_STUDENT_PHOTO(dataUrl, fileName) {
+  // Show in profile immediately
+  var profPhoto = document.getElementById('prof-photo');
+  var placeholder = document.getElementById('prof-placeholder');
+  if(profPhoto) { profPhoto.src = dataUrl; profPhoto.style.display = 'block'; }
+  if(placeholder) placeholder.style.display = 'none';
+  var prompt = document.getElementById('mob-photo-prompt');
+  if(prompt) prompt.style.display = 'none';
+  // Update selfie camera preview button too
+  var sfThumb = document.getElementById('sf-prev-thumb');
+  if(sfThumb) { sfThumb.src = dataUrl; sfThumb.style.display = 'block'; }
+
+  if(!currentUser) { SHOW_TOAST('✅ Photo upload ho gayi!'); return; }
+
+  var stuId = currentUser.studentId || currentUser.id || currentUser.name;
+  var photoKey = 'mob_photo_' + stuId;
+
+  // Save to localStorage
+  try { localStorage.setItem(photoKey, dataUrl); } catch(e){}
+
+  // Save to Firebase — THREE paths (agent panel sab jagah dhundta hai)
+  try {
+    // Path 1: student_photos/{id}  ← profile photo
+    FBDB.ref(FB_ROOT + '/student_photos/' + stuId).set(dataUrl, function(err){
+      if(err) console.warn('student_photos save error:', err);
+      else console.log('✅ student_photos/' + stuId + ' saved');
+    });
+    // Path 2: students/{id}/photo  ← student record mein bhi
+    FBDB.ref(FB_ROOT + '/students').once('value', function(snap) {
+      var val = snap.val();
+      if(!val) return;
+      var arr = Array.isArray(val) ? val : Object.values(val);
+      for(var i=0; i<arr.length; i++) {
+        var s = arr[i];
+        if(s && (s.studentId||s.id) === stuId) {
+          var ref = Array.isArray(val) ? FBDB.ref(FB_ROOT+'/students/'+i+'/photo') : FBDB.ref(FB_ROOT+'/students/'+Object.keys(val)[i]+'/photo');
+          ref.set(dataUrl);
+          break;
+        }
+      }
+    });
+    // Path 3: selfies/{id}/profile  ← agent panel selfies section mein bhi
+    FBDB.ref(FB_ROOT + '/selfies/' + stuId + '/profile').set({
+      selfie: dataUrl,
+      name: currentUser.name,
+      studentId: stuId,
+      type: 'gallery_upload',
+      time: new Date().toLocaleTimeString('en-IN'),
+      date: todayISO()
+    });
+  } catch(e2){ console.warn('Photo Firebase save error:', e2); }
+
+  SHOW_TOAST('✅ Photo upload ho gayi aur save ho gayi!');
+  if(typeof MOB_ADD_NOTIF === 'function') MOB_ADD_NOTIF('Profile photo update ho gayi', 'student', fileName||'photo');
+}
+
+function LOAD_SAVED_MOB_PHOTO() {
+  if(!currentUser) return;
+  var stuId = currentUser.studentId || currentUser.id || currentUser.name;
+  var photoKey = 'mob_photo_' + stuId;
+
+  function _applyPhoto(dataUrl) {
+    // Cache locally regardless (student ka apna record maintain rehta hai)
+    try { localStorage.setItem(photoKey, dataUrl); } catch(e){}
+    // FIX: Student ki apni photo ab hamesha dikhegi — agent ka logo isko
+    // ab override nahi karega (pehle yahan se return ho jaata tha).
+    var profPhoto = document.getElementById('prof-photo');
+    var placeholder = document.getElementById('prof-placeholder');
+    var prompt = document.getElementById('mob-photo-prompt');
+    if(profPhoto) { profPhoto.src = dataUrl; profPhoto.style.display = 'block'; }
+    if(placeholder) placeholder.style.display = 'none';
+    if(prompt) prompt.style.display = 'none';
+  }
+
+  function _showPrompt() {
+    // Student ki koi bhi photo kahin nahi mili — ab agent ka logo dikhado
+    // (last-resort fallback), warna upload prompt dikhado.
+    if(APPLY_AGENT_PROFILE_PHOTO()) return;
+    var prompt = document.getElementById('mob-photo-prompt');
+    if(prompt) prompt.style.display = 'block';
+  }
+
+  try {
+    // 1. Student Add Karein form waali original photo (students/{id}/photo) -- top priority
+    var addedPhoto = currentUser.photo;
+    if(addedPhoto && addedPhoto.length > 100) { _applyPhoto(addedPhoto); return; }
+
+    // 2. localStorage se try (fastest fallback)
+    var saved = localStorage.getItem(photoKey);
+    if(saved && saved.length > 100) { _applyPhoto(saved); return; }
+
+    // 3. Firebase student_photos path
+    FBDB.ref(FB_ROOT + '/student_photos/' + stuId).once('value', function(snap) {
+      var fbPhoto = snap.val();
+      if(fbPhoto && fbPhoto.length > 100) {
+        _applyPhoto(fbPhoto);
+      } else {
+        // 4. Fallback: selfies/{id}/profile path
+        FBDB.ref(FB_ROOT + '/selfies/' + stuId + '/profile').once('value', function(snap2) {
+          var profSnap = snap2.val();
+          var selfiePhoto = profSnap && (profSnap.selfie || (typeof profSnap === 'string' ? profSnap : null));
+          if(selfiePhoto && selfiePhoto.length > 100) {
+            _applyPhoto(selfiePhoto);
+            // Isko student_photos mein bhi save kar do agle baar ke liye
+            FBDB.ref(FB_ROOT + '/student_photos/' + stuId).set(selfiePhoto);
+          } else {
+            // 5. selfies/{id}/latest date se check karo
+            FBDB.ref(FB_ROOT + '/selfies/' + stuId).orderByKey().limitToLast(1).once('value', function(snap3) {
+              var val3 = snap3.val();
+              if(val3) {
+                var keys = Object.keys(val3);
+                var latest = val3[keys[0]];
+                var latestPhoto = latest && (latest.selfie || (typeof latest === 'string' ? latest : null));
+                if(latestPhoto && latestPhoto.length > 100) {
+                  _applyPhoto(latestPhoto);
+                  FBDB.ref(FB_ROOT + '/student_photos/' + stuId).set(latestPhoto);
+                } else { _showPrompt(); }
+              } else { _showPrompt(); }
+            }, function(){ _showPrompt(); });
+          }
+        }, function(){ _showPrompt(); });
+      }
+    }, function() { _showPrompt(); });
+  } catch(e){ _showPrompt(); }
+}
+
+// Hook into login success — run after profile loads
+var _origShowScreen = SHOW_SCREEN;
+SHOW_SCREEN = function(id) {
+  _origShowScreen(id);
+  if(id === 's-profile') {
+    setTimeout(function(){
+      LOAD_SAVED_MOB_PHOTO();
+      CHECK_MOB_FEE_DUE();
+      MOB_ADD_NOTIF('Welcome back, ' + (currentUser ? currentUser.name.split(' ')[0] : 'Student') + '!', 'info', new Date().toLocaleDateString('en-IN'));
+    }, 300);
+  }
+};
+
+</script>
+<script>
+// Security
+document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+document.addEventListener('keydown', function(e){
+  if(e.key==='F12'){ e.preventDefault(); return false; }
+  if(e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key.toUpperCase())){ e.preventDefault(); return false; }
+  if(e.ctrlKey && e.key.toUpperCase()==='U'){ e.preventDefault(); return false; }
+  if(e.ctrlKey && e.key.toUpperCase()==='S'){ e.preventDefault(); return false; }
+});
+(function(){
+  var threshold=160;
+  setInterval(function(){
+    if(window.outerWidth-window.innerWidth>threshold||window.outerHeight-window.innerHeight>threshold){
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#070f1e;color:#c9a227;font-family:serif;font-size:22px;text-align:center;padding:20px;">⚠️ Unauthorized Access Detected.<br><span style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:12px;display:block;">Anmol Digital Library</span></div>';
+  }},1000);
+})();
+</script>
+
+<!-- ══ SECURITY: Block copy/paste/cut/right-click on Login ID & Password fields ══ -->
+<script>
+(function(){
+  var protectedIds = ['l-mobile', 'l-phone'];
+  function blockEvent(e){
+    e.preventDefault();
+    var el = e.target;
+    el.setAttribute('data-blocked','1');
+    el.style.outline = '1px solid #e04b4b';
+    setTimeout(function(){ el.style.outline=''; }, 400);
+    return false;
+  }
+  function attachGuards(el){
+    if(!el || el.getAttribute('data-paste-guarded')) return;
+    el.setAttribute('data-paste-guarded','1');
+    ['paste','copy','cut','contextmenu','drop'].forEach(function(evt){
+      el.addEventListener(evt, blockEvent);
+    });
+  }
+  function init(){
+    protectedIds.forEach(function(id){
+      attachGuards(document.getElementById(id));
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  // Re-attach if these fields get re-rendered dynamically later
+  var observer = new MutationObserver(init);
+  observer.observe(document.documentElement, {childList:true, subtree:true});
+})();
+</script>
+</body>
+</html>
