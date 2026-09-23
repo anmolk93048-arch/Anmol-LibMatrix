@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<title>PFMS Portal — Accountant Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+// ══════════════════════════════════════════════════════════════════
+// 💳 PFMS (Accountant) PORTAL
+//   Login (username+password, Admin-issued) → Pending HR-Approved
+//   payout requests → "Pay Now" (wallet debit + ledger + status update,
+//   server-side atomic) → Paid history.
+//   Backend: server.js ke /api/pfms/* routes (Postgres).
+// ══════════════════════════════════════════════════════════════════
+const API_BASE = window.SHDL_API_BASE || 'https://library-backend-4efk.onrender.com/api';
+// 🆕 This page can be served either statically on Netlify or dynamically
+// from Render via /api/pages/<slug> — a relative redirect would 404 in the
+// second case, so Logout always sends the browser to the real, absolute
+// Netlify homepage URL instead.
+// 🆕 CRITICAL FIX: an absolute 'https://digitallibraryanmollive.netlify.app/'
+// was hardcoded here, guessing at the live site's subdomain. If the real
+// Netlify site has a different name or a custom domain, that guess is wrong
+// and every logout hits Netlify's own "Site not found" 404 page. A plain
+// relative path always resolves against whatever domain is actually
+// serving this page (Netlify subdomain, custom domain, or deploy preview),
+// so it can never point at the wrong site.
+const SHDL_HOME_URL = window.SHDL_HOME_URL || 'index.html';
+let AUTH_TOKEN = null;
+try { AUTH_TOKEN = sessionStorage.getItem('pfms_auth_token') || null; } catch (e) {}
+
+function apiFetch(path, opts) {
+  opts = opts || {};
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+  return fetch(API_BASE + path, Object.assign({}, opts, { headers: headers }))
+    .then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) { throw new Error(data.error || ('Server error (' + res.status + ')')); }
+        return data;
+      });
+    });
+}
+const API = {
+  get: function (path) { return apiFetch(path, { method: 'GET' }); },
+  post: function (path, body) { return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) }); },
+  put: function (path, body) { return apiFetch(path, { method: 'PUT', body: JSON.stringify(body || {}) }); }
+};
+function pollRestData(fetchFn, intervalMs) {
+  fetchFn();
+  return setInterval(fetchFn, intervalMs || 12000);
+}
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;font-family:'Nunito','Hind',Arial,sans-serif}
+:root{
+  --nv:#0d1e3d;--nv2:#1a3a6b;--gd:#c9a227;--gd2:#e8c04a;
+  --gr:#0F6E56;--rd:#A32D2D;--pu:#534AB7;--or:#d97706;
+  --bg:#f0f4fa;--wh:#fff;--bd:#dde3ef;
+  --t1:#0d1e3d;--t2:#4a5568;--t3:#8896a8;
+  --transition:.22s cubic-bezier(.4,0,.2,1);
+}
+html,body{min-height:100%;background:var(--bg);color:var(--t1)}
+body{min-height:100vh}
+
+/* ══ LOGIN SCREEN ══ */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;
+  background:linear-gradient(160deg,var(--nv) 0%,var(--nv2) 55%,#0a1730 100%)}
+#login-screen::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(circle at 20% 20%,rgba(201,162,39,.12),transparent 45%),radial-gradient(circle at 85% 80%,rgba(201,162,39,.08),transparent 45%)}
+.particles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.login-card{width:100%;max-width:420px;position:relative;z-index:1;animation:slideUp .5s cubic-bezier(.4,0,.2,1);
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:28px 24px 44px;backdrop-filter:blur(6px);margin:20px 0 40px;
+  max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;color:#fff}
+.login-badge{width:72px;height:72px;border-radius:50%;background:#fff;
+  display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 8px 24px rgba(201,162,39,.35);
+  overflow:hidden;border:2px solid var(--gd)}
+.login-badge img{width:100%;height:100%;object-fit:cover}
+.login-title{text-align:center;font-size:21px;font-weight:900;letter-spacing:.02em}
+.login-sub{text-align:center;font-size:12.5px;color:rgba(255,255,255,.55);margin-top:4px;margin-bottom:22px}
+.fl{font-size:11px;font-weight:700;color:rgba(255,255,255,.55);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.fr{margin-bottom:14px}
+.finp{width:100%;padding:11px 14px;border:1.5px solid rgba(255,255,255,.14);border-radius:10px;font-size:14px;
+  background:rgba(255,255,255,.05);color:#fff;outline:none;transition:.2s;box-sizing:border-box}
+.finp:focus{border-color:var(--gd);background:rgba(255,255,255,.08)}
+.finp::placeholder{color:rgba(255,255,255,.3)}
+.login-btn{width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,var(--gd),var(--gd2));
+  color:var(--nv);font-weight:900;font-size:14.5px;cursor:pointer;transition:.2s;margin-top:4px}
+.login-btn:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.login-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.login-err{display:none;background:rgba(163,45,45,.18);border:1px solid rgba(163,45,45,.4);color:#ffb4b4;
+  padding:9px 12px;border-radius:8px;font-size:12.5px;margin-top:12px;text-align:center}
+.login-hint{text-align:center;font-size:11px;color:rgba(255,255,255,.35);margin-top:16px}
+.captcha-box{background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.15);border-radius:10px;padding:11px 13px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.captcha-code{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:900;letter-spacing:4px;color:var(--gd);
+  background:rgba(0,0,0,.2);padding:6px 14px;border-radius:7px;user-select:none;white-space:nowrap}
+.captcha-refresh{background:none;border:none;color:rgba(255,255,255,.55);font-size:17px;cursor:pointer;padding:4px 8px;transition:.2s}
+.captcha-refresh:hover{color:var(--gd);transform:rotate(90deg)}
+
+/* ══ APP SHELL ══ */
+#app-shell{display:none;min-height:100vh;background:var(--bg)}
+#app-shell.visible{display:block}
+.topbar{background:var(--nv);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 10px rgba(0,0,0,.15);position:sticky;top:0;z-index:20}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-badge{width:38px;height:38px;border-radius:10px;background:#fff;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.topbar-badge img{width:100%;height:100%;object-fit:cover}
+.topbar-title{font-weight:900;font-size:16px}
+.topbar-sub{font-size:10.5px;color:rgba(255,255,255,.55)}
+.logout-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:8px 16px;
+  border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.2s}
+.logout-btn:hover{background:rgba(255,255,255,.15)}
+
+.ct{max-width:1100px;margin:0 auto;padding:22px 16px 60px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--wh);border:1px solid var(--bd);border-radius:14px;padding:18px;box-shadow:0 2px 8px rgba(13,30,61,.04)}
+.stat-label{font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.stat-value{font-size:24px;font-weight:900;color:var(--t1)}
+.stat-value.gd{color:#a5820f}
+.stat-value.gr{color:var(--gr)}
+
+.tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:2px solid var(--bd);overflow-x:auto}
+.tab-btn{padding:10px 18px;border:none;background:none;font-weight:800;font-size:13.5px;color:var(--t3);cursor:pointer;
+  border-bottom:3px solid transparent;white-space:nowrap;transition:.2s}
+.tab-btn.on{color:var(--nv);border-bottom-color:var(--gd)}
+
+.card{background:var(--wh);border:1px solid var(--bd);border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(13,30,61,.04);margin-bottom:18px}
+.card-title{font-size:15px;font-weight:900;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:#f4f6fb}
+th{padding:10px 12px;text-align:left;font-size:11px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid var(--bd)}
+td{padding:11px 12px;border-bottom:1px solid var(--bd);color:var(--t1)}
+tbody tr:hover{background:#f9fafc}
+
+.badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800}
+.badge.pending{background:#fef3c7;color:#92400e}
+.badge.approved{background:#dbeafe;color:#1e40af}
+.badge.paid{background:#d1fae5;color:#065f46}
+.badge.rejected{background:#fee2e2;color:#991b1b}
+
+.be{padding:7px 14px;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;transition:.2s}
+.be.pay{background:var(--gr);color:#fff}
+.be.pay:hover{filter:brightness(1.08)}
+.be.pay:disabled{opacity:.5;cursor:not-allowed}
+.empty-state{text-align:center;padding:40px 20px;color:var(--t3);font-size:13.5px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--nv);color:#fff;
+  padding:12px 22px;border-radius:10px;font-size:13.5px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25);
+  z-index:999;opacity:0;pointer-events:none;transition:.3s}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+.refresh-note{font-size:11px;color:var(--t3);text-align:right;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN SCREEN ══════════════ -->
+<div id="login-screen">
+  <div class="particles" id="particles"></div>
+  <div class="login-card">
+    <div class="login-badge"><img src="data:image/png;base64,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" alt="LibraryBook.co.in Logo"></div>
+    <div class="login-title">PFMS Portal</div>
+    <div class="login-sub">Accountant Login — Payout Processing System</div>
+
+    <div class="fr">
+      <label class="fl">Username</label>
+      <input type="text" class="finp" id="l-user" placeholder="PFMS username" autocomplete="username">
+    </div>
+    <div class="fr">
+      <label class="fl">Password</label>
+      <input type="password" class="finp" id="l-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="fr">
+      <label class="fl">Enter Captcha</label>
+      <div class="captcha-box">
+        <span class="captcha-code" id="l-captcha-code">0+0</span>
+        <button type="button" class="captcha-refresh" onclick="GEN_CAPTCHA()" title="Naya captcha">&#8635;</button>
+      </div>
+      <input type="text" class="finp" id="l-captcha" placeholder="Yahan answer likhein" inputmode="numeric" autocomplete="off">
+    </div>
+    <button class="login-btn" type="button" id="l-submit-btn" onclick="DO_LOGIN()">🔐 Login</button>
+    <div class="login-err" id="l-err"></div>
+    <div class="login-hint">Developed by <b style="color:rgba(255,255,255,.5)">Anmol Kumar</b></div>
+  </div>
+</div>
+
+<!-- ══════════════ APP SHELL ══════════════ -->
+<div id="app-shell">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-badge"><img src="data:image/png;base64,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" alt="Logo"></div>
+      <div>
+        <div class="topbar-title">PFMS Portal</div>
+        <div class="topbar-sub" id="tb-username">—</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="DO_LOGOUT()">↩ Logout</button>
+  </div>
+
+  <div class="ct">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">⏳ Pending (HR-Approved)</div>
+        <div class="stat-value gd" id="st-pending-count">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">💰 Pending Amount</div>
+        <div class="stat-value" id="st-pending-amount">₹0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">✅ Paid Today</div>
+        <div class="stat-value gr" id="st-paid-today">₹0</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn on" id="tab-pending-btn" onclick="SWITCH_TAB('pending')">⏳ Pending Payouts</button>
+      <button class="tab-btn" id="tab-processing-btn" onclick="SWITCH_TAB('processing')">🔄 Processing (Bank)</button>
+      <button class="tab-btn" id="tab-paid-btn" onclick="SWITCH_TAB('paid')">📜 Paid History</button>
+    </div>
+
+    <div id="pg-pending">
+      <div class="refresh-note">Auto-refresh har 10 second mein</div>
+      <div class="card">
+        <div class="card-title">⏳ HR-Approved Payout Requests</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Request ID</th><th>Agent / Employee</th><th>Amount</th><th>Bank Details</th><th>Reason</th><th>HR Approved By</th><th>Action</th></tr></thead>
+            <tbody id="tb-pending"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="pg-processing" style="display:none">
+      <div class="card">
+        <div class="card-title">🔄 Processing — Bank Transfer Chal Raha Hai</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:10px">Yeh payments RazorpayX ko bhej di gayi hain; bank confirmation aate hi automatically "Paid" ho jaayengi. Agar bahut der ho gayi ho to "Check Status" dabayein.</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Request ID</th><th>Agent / Employee</th><th>Amount</th><th>RazorpayX Status</th><th>Sent At</th><th>Action</th></tr></thead>
+            <tbody id="tb-processing"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="pg-paid" style="display:none">
+      <div class="card">
+        <div class="card-title">📜 Paid History</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Request ID</th><th>Agent</th><th>Amount</th><th>Paid By</th><th>Paid On</th><th>Status</th></tr></thead>
+            <tbody id="tb-paid"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:18px 10px 6px;color:var(--t3);font-size:11.5px">
+      Developed by <b style="color:var(--t1)">Anmol Kumar</b> &nbsp;|&nbsp; Help: <b style="color:var(--t1)">6202119756</b>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════════════════════════════════
+var currentUser = null;
+
+// 🆕 MATH CAPTCHA: chhota sa random addition sawaal (jaise "7 + 4"),
+// jiska sahi jawaab dena login ke liye zaroori hai — automated/bot
+// login attempts ko rokta hai.
+var _captchaAnswer = 0;
+function GEN_CAPTCHA(){
+  var a = Math.floor(Math.random()*9)+1;
+  var b = Math.floor(Math.random()*9)+1;
+  _captchaAnswer = a+b;
+  var codeEl = document.getElementById('l-captcha-code');
+  if (codeEl) codeEl.textContent = a+' + '+b;
+  var inputEl = document.getElementById('l-captcha');
+  if (inputEl) inputEl.value = '';
+}
+GEN_CAPTCHA(); // pehla captcha page load hote hi ban jaaye
+
+function DO_LOGIN(){
+  var u = document.getElementById('l-user').value.trim();
+  var p = document.getElementById('l-pass').value.trim();
+  var cap = document.getElementById('l-captcha').value.trim();
+  var err = document.getElementById('l-err');
+  if(!u||!p){ err.textContent='⚠️ Username aur password dono bharein!'; err.style.display='block'; return; }
+  if(!cap){ err.textContent='⚠️ Captcha ka answer bharein!'; err.style.display='block'; return; }
+  if(Number(cap) !== _captchaAnswer){
+    err.textContent='❌ Captcha galat hai! Naya captcha try karein.';
+    err.style.display='block';
+    GEN_CAPTCHA();
+    return;
+  }
+  err.style.display='none';
+  var btn = document.getElementById('l-submit-btn');
+  btn.disabled = true; btn.textContent = 'Logging in...';
+
+  // 🆕 RENDER COLD-START NOTICE: free-tier backend sleeps after ~15 min
+  // idle; the first request after that can take 20-50s to wake up. If the
+  // login call hasn't resolved in 4s, swap in a reassuring message instead
+  // of leaving the button frozen with no explanation.
+  var stopWakeupWatch = (function(){
+    var timer = setTimeout(function(){
+      err.textContent = '⏳ Server is waking up, please wait 30s... (free-tier backend sleeps when idle)';
+      err.style.display = 'block';
+    }, 4000);
+    return function(){ clearTimeout(timer); };
+  })();
+
+  API.post('/auth/login', { role: 'pfms', username: u, password: p })
+    .then(function(result){
+      stopWakeupWatch();
+      AUTH_TOKEN = result.token;
+      try { sessionStorage.setItem('pfms_auth_token', AUTH_TOKEN); } catch(e){}
+      currentUser = { username: u };
+      ENTER_APP();
+    })
+    .catch(function(e){
+      stopWakeupWatch();
+      btn.disabled = false; btn.textContent = '🔐 Login';
+      err.textContent = '❌ ' + (e.message || 'Galat username ya password!');
+      err.style.display = 'block';
+      GEN_CAPTCHA(); // failed attempt ke baad naya captcha (security)
+    });
+}
+
+function DO_LOGOUT(){
+  AUTH_TOKEN = null;
+  currentUser = null;
+  // 🆕 CRITICAL LOGOUT FIX: pehle yeh function sirf token clear karke wapas
+  // isi page ke login screen par le jaata tha — homepage par kabhi redirect
+  // hi nahi hota tha. Ab poora localStorage/sessionStorage clear hokar
+  // seedha main homepage (index.html) par bhej diya jaata hai.
+  try { localStorage.clear(); } catch(e){}
+  try { sessionStorage.clear(); } catch(e){}
+  window.location.replace(SHDL_HOME_URL); /* 🆕 replace() so the login page never re-enters the browser back/forward history — prevents any back-button bounce into a stale session, and avoids Netlify 404s on refresh */
+}
+
+function ENTER_APP(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').classList.add('visible');
+  document.getElementById('tb-username').textContent = '👤 ' + (currentUser ? currentUser.username : '—');
+  LOAD_PENDING();
+  LOAD_PROCESSING();
+  LOAD_PAID();
+  pollRestData(LOAD_PENDING, 10000);
+  pollRestData(LOAD_PROCESSING, 15000);
+}
+
+// Session restore (agar token pehle se save hai)
+(function TRY_RESTORE_SESSION(){
+  if (!AUTH_TOKEN) return;
+  // Token ka role/username decode karne ka koi seedha tarika nahi (JWT
+  // client-side verify nahi karte) — isliye seedha ek halka API call
+  // se check karte hain ki token abhi bhi valid hai.
+  API.get('/pfms/payout-requests').then(function(){
+    try {
+      var payload = JSON.parse(atob(AUTH_TOKEN.split('.')[1]));
+      currentUser = { username: payload.username || '—' };
+    } catch(e) { currentUser = { username: '—' }; }
+    ENTER_APP();
+  }).catch(function(){
+    AUTH_TOKEN = null;
+    try { sessionStorage.removeItem('pfms_auth_token'); } catch(e){}
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════════════
+function SWITCH_TAB(tab){
+  document.getElementById('tab-pending-btn').classList.toggle('on', tab==='pending');
+  document.getElementById('tab-processing-btn').classList.toggle('on', tab==='processing');
+  document.getElementById('tab-paid-btn').classList.toggle('on', tab==='paid');
+  document.getElementById('pg-pending').style.display = tab==='pending' ? 'block' : 'none';
+  document.getElementById('pg-processing').style.display = tab==='processing' ? 'block' : 'none';
+  document.getElementById('pg-paid').style.display = tab==='paid' ? 'block' : 'none';
+  if (tab==='paid') LOAD_PAID();
+  if (tab==='processing') LOAD_PROCESSING();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DATA LOAD
+// ══════════════════════════════════════════════════════════════════
+function FMT_MONEY(n){ return '₹' + Number(n||0).toLocaleString('en-IN', {maximumFractionDigits:2}); }
+function FMT_DATE(d){ if(!d) return '—'; try{ return new Date(d).toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return d; } }
+
+function LOAD_PENDING(){
+  API.get('/pfms/payout-requests').then(function(list){
+    list = list || [];
+    document.getElementById('st-pending-count').textContent = list.length;
+    var totalAmt = list.reduce(function(s,r){ return s + Number(r.amount||0); }, 0);
+    document.getElementById('st-pending-amount').textContent = FMT_MONEY(totalAmt);
+
+    var tbody = document.getElementById('tb-pending');
+    if (!list.length){
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">🎉 Koi pending payout nahi hai — sab clear!</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function(r){
+      var isSalary = r.type === 'employee_salary';
+      var typeTag = isSalary
+        ? '<span style="background:#dbeafe;color:#1e40af;padding:3px 9px;border-radius:12px;font-size:10.5px;font-weight:800">👤 Employee Salary</span>'
+        : '<span style="background:#fef3c7;color:#92400e;padding:3px 9px;border-radius:12px;font-size:10.5px;font-weight:800">🏢 Agent Payout</span>';
+      var bankCell = isSalary
+        ? '<div style="font-size:11.5px"><b>'+(r.bankName||'—')+'</b><br>A/C: '+(r.accountNo||'—')+'<br>IFSC: '+(r.ifsc||'—')+'</div>'
+        : '<span style="color:var(--t3);font-size:11px">— (Wallet debit)</span>';
+      return '<tr id="row-'+r.id+'">'
+        + '<td style="font-family:monospace;font-size:11.5px">'+r.id+'<br>'+typeTag+'</td>'
+        + '<td><b>'+(r.agentName||r.agentId)+'</b>'+(isSalary ? '<br><span style="font-size:11px;color:var(--t3)">Emp ID: '+r.employeeId+'</span>' : '<br><span style="font-size:11px;color:var(--t3)">'+r.agentId+'</span>')+'</td>'
+        + '<td style="font-weight:900">'+FMT_MONEY(r.amount)+'</td>'
+        + '<td>'+bankCell+'</td>'
+        + '<td>'+(r.reason||'—')+'</td>'
+        + '<td>'+(r.hr_approved_by||'—')+'<br><span style="font-size:10.5px;color:var(--t3)">'+FMT_DATE(r.hr_approved_at)+'</span></td>'
+        + '<td><button class="be pay" id="pay-btn-'+r.id+'" onclick="PAY_NOW(\''+r.id+'\')">💸 Pay Now</button></td>'
+        + '</tr>';
+    }).join('');
+  }).catch(function(e){ console.warn('Pending load error:', e); });
+}
+
+function LOAD_PROCESSING(){
+  API.get('/pfms/payout-requests/processing').then(function(list){
+    list = list || [];
+    var tbody = document.getElementById('tb-processing');
+    if (!list.length){
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Abhi koi bank transfer processing mein nahi hai.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function(r){
+      var isSalary = r.type === 'employee_salary';
+      var rzpSt = r.rzp_payout_status || 'queued';
+      return '<tr>'
+        + '<td style="font-family:monospace;font-size:11.5px">'+r.id+'</td>'
+        + '<td><b>'+(r.agentName||r.agentId)+'</b>'+(isSalary?' <span style="font-size:10px;color:var(--t3)">(Salary)</span>':'')+'</td>'
+        + '<td style="font-weight:900">'+FMT_MONEY(r.amount)+'</td>'
+        + '<td><span style="background:#dbeafe;color:#1e40af;padding:3px 9px;border-radius:12px;font-size:10.5px;font-weight:800">'+rzpSt+'</span></td>'
+        + '<td style="font-size:11px">'+FMT_DATE(r.pfms_paid_at)+'</td>'
+        + '<td><button class="be pay" style="background:#1e40af" onclick="CHECK_STATUS(\''+r.id+'\')">🔄 Check Status</button></td>'
+        + '</tr>';
+    }).join('');
+  }).catch(function(e){ console.warn('Processing load error:', e); });
+}
+function CHECK_STATUS(id){
+  API.get('/pfms/payout-requests/'+id+'/check-status').then(function(result){
+    if (result.status === 'Paid') SHOW_TOAST('✅ Payment confirm ho gayi — Paid!');
+    else if (result.status === 'HR_Approved') SHOW_TOAST('❌ Payment fail/reverse ho gayi — dobara Pending mein bhej di gayi.');
+    else SHOW_TOAST('ℹ️ Abhi bhi processing mein hai (' + result.rzpStatus + ')');
+    LOAD_PROCESSING();
+    LOAD_PENDING();
+    LOAD_PAID();
+  }).catch(function(e){ SHOW_TOAST('❌ ' + (e.message || 'Status check nahi ho paya.')); });
+}
+function LOAD_PAID(){
+  API.get('/pfms/payout-requests/paid').then(function(list){
+    list = list || [];
+    var today = new Date().toDateString();
+    var paidToday = list.filter(function(r){ return r.pfms_paid_at && new Date(r.pfms_paid_at).toDateString()===today; })
+                         .reduce(function(s,r){ return s + Number(r.amount||0); }, 0);
+    document.getElementById('st-paid-today').textContent = FMT_MONEY(paidToday);
+
+    var tbody = document.getElementById('tb-paid');
+    if (!list.length){
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Abhi tak koi payout nahi kiya gaya.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(function(r){
+      var isSalary = r.type === 'employee_salary';
+      var typeTag = isSalary ? '👤 Salary' : '🏢 Agent';
+      return '<tr>'
+        + '<td style="font-family:monospace;font-size:11.5px">'+r.id+'<br><span style="font-size:10px;color:var(--t3)">'+typeTag+'</span></td>'
+        + '<td><b>'+(r.agentName||r.agentId)+'</b></td>'
+        + '<td style="font-weight:900">'+FMT_MONEY(r.amount)+'</td>'
+        + '<td>'+(r.pfms_paid_by||'—')+'</td>'
+        + '<td>'+FMT_DATE(r.pfms_paid_at)+'</td>'
+        + '<td><span class="badge paid">✅ Paid</span></td>'
+        + '</tr>';
+    }).join('');
+  }).catch(function(e){ console.warn('Paid history load error:', e); });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PAY NOW — server route atomic hai (status guard), isliye double-click
+// / do PFMS users ek saath try karein to bhi sirf EK hi baar deduct hoga.
+// ══════════════════════════════════════════════════════════════════
+function PAY_NOW(id){
+  if (!confirm('Payout confirm karein?\n\nRequest ID: '+id+'\n\nYeh action bank transfer shuru kar dega aur wapas nahi liya ja sakta.')) return;
+  var btn = document.getElementById('pay-btn-'+id);
+  if (btn){ btn.disabled = true; btn.textContent = '⏳ Processing...'; }
+
+  API.post('/pfms/payout-requests/'+id+'/pay', {}).then(function(result){
+    if (result.status === 'Processing'){
+      SHOW_TOAST('🔄 Bank transfer shuru ho gaya — RazorpayX confirmation ka wait hai (Processing tab mein dekhein).');
+    } else {
+      SHOW_TOAST('✅ Payout successful!');
+    }
+    LOAD_PENDING();
+    LOAD_PROCESSING();
+    LOAD_PAID();
+  }).catch(function(e){
+    SHOW_TOAST('❌ ' + (e.message || 'Payment fail ho gaya, dobara try karein.'));
+    if (btn){ btn.disabled = false; btn.textContent = '💸 Pay Now'; }
+    LOAD_PENDING(); // list refresh karo — shayad already paid ho chuki ho
+  });
+}
+
+function SHOW_TOAST(msg){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3200);
+}
+</script>
+</body>
+</html>

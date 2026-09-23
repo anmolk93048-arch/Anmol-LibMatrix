@@ -1,0 +1,2287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANMOL | Material Procured Details Entry</title>
+<!-- Razorpay Checkout — Generate Invoice se pehle mandatory payment ke liye -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    --gov-navy:#0b2545;
+    --gov-blue:#13315c;
+    --gov-saffron:#ff9933;
+    --gov-green:#138808;
+    --gov-gold:#b8860b;
+    --paper:#fbfaf7;
+  }
+  body{ font-family:'Segoe UI', Tahoma, Verdana, sans-serif; background:var(--paper); }
+  .tricolor-strip{ height:5px; background:linear-gradient(to right, var(--gov-saffron) 0%, var(--gov-saffron) 33%, #ffffff 33%, #ffffff 66%, var(--gov-green) 66%); }
+  .gov-card{ border:1px solid #d8d2c2; box-shadow:0 1px 3px rgba(11,37,69,0.08); }
+  .section-title{
+    background:var(--gov-blue); color:#fff; letter-spacing:.03em;
+    font-weight:600; font-size:.8rem; text-transform:uppercase;
+  }
+  input[readonly], select[disabled]{ background:#eef1f5 !important; color:#3a4a5c; cursor:not-allowed; }
+  input:focus, select:focus, textarea:focus{ outline:2px solid var(--gov-blue); outline-offset:1px; }
+  table.mat-table th{ background:#e9edf3; color:var(--gov-navy); font-size:.72rem; text-transform:uppercase; letter-spacing:.02em; }
+  table.mat-table td, table.mat-table th{ border:1px solid #cbd3de; padding:6px 8px; }
+  .badge-seal{
+    width:64px;height:64px;border:2px solid var(--gov-navy); border-radius:50%;
+    display:flex;align-items:center;justify-content:center; font-size:10px; text-align:center;
+    color:var(--gov-navy); font-weight:700; line-height:1.1;
+  }
+  .stamp{
+    font-family: 'Georgia', serif;
+    border:3px double var(--gov-navy);
+  }
+  ::-webkit-scrollbar{ height:8px; width:8px; }
+  ::-webkit-scrollbar-thumb{ background:#b7c0cd; border-radius:4px; }
+
+  /* ---- LOGIN GATE OVERLAY ---- */
+  #loginGate{
+    position:fixed; inset:0; z-index:9999;
+    background:linear-gradient(135deg, #0a1c3d 0%, #12305e 45%, #0b2545 75%, #081a33 100%);
+    display:flex; align-items:center; justify-content:center;
+    padding:16px;
+  }
+  #loginGate::before{
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(184,134,11,0.22) 0%, transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(184,134,11,0.14) 0%, transparent 50%);
+    pointer-events:none;
+  }
+  .login-card{
+    position:relative; z-index:1;
+    background:#fbfaf7; width:100%; max-width:400px;
+    border-radius:6px; border:1px solid #d8d2c2;
+    box-shadow:0 10px 40px rgba(0,0,0,0.35);
+    overflow-y:auto; max-height:92vh;
+  }
+  .login-card-header{
+    background:var(--gov-navy); color:#fff; text-align:center; padding:18px 16px 14px;
+  }
+  .captcha-box{
+    background:#eef1f5; border:1px solid #cbd3de; border-radius:4px;
+    letter-spacing:6px; font-weight:800; font-size:1.2rem; text-align:center;
+    padding:8px 6px; user-select:none; -webkit-user-select:none;
+    color:var(--gov-navy); font-family:'Georgia', serif;
+    background-image: repeating-linear-gradient(45deg, rgba(11,37,69,0.06) 0 2px, transparent 2px 8px);
+    position:relative;
+  }
+  .login-error{
+    display:none; background:#fdecec; border:1px solid #f3b4b4; color:#a41414;
+    font-size:.78rem; padding:6px 10px; border-radius:4px;
+  }
+  body.locked{ overflow:hidden; }
+
+  /* ---- LOGGED-IN USER LIVE PHOTO BADGE ---- */
+  .liu-photo-wrap{
+    position:relative; width:44px; height:44px; flex-shrink:0;
+  }
+  .liu-photo-wrap img, .liu-photo-wrap .liu-photo-ph{
+    width:44px; height:44px; border-radius:50%; object-fit:cover;
+    border:2px solid var(--gov-blue); background:#dfe7f2;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; color:var(--gov-blue);
+  }
+  .liu-live-dot{
+    position:absolute; bottom:0; right:0; width:13px; height:13px;
+    background:#1fbf3f; border:2px solid #fff; border-radius:50%;
+    box-shadow:0 0 0 rgba(31,191,63,0.6);
+    animation: liuPulse 1.6s infinite;
+  }
+  @keyframes liuPulse{
+    0%{ box-shadow:0 0 0 0 rgba(31,191,63,0.55); }
+    70%{ box-shadow:0 0 0 7px rgba(31,191,63,0); }
+    100%{ box-shadow:0 0 0 0 rgba(31,191,63,0); }
+  }
+  .liu-live-tag{
+    display:inline-flex; align-items:center; gap:4px;
+    background:#e8fbee; color:#0f7a28; border:1px solid #b6ebc4;
+    font-size:10px; font-weight:800; letter-spacing:.04em;
+    padding:1px 7px; border-radius:9999px;
+  }
+  .liu-live-tag .dot{
+    width:6px; height:6px; background:#1fbf3f; border-radius:50%;
+    animation: liuPulse 1.6s infinite;
+  }
+
+  /* ---- PREMIUM PORTAL HEADER (screen only) ---- */
+  .portal-header{
+    position:relative;
+    background:linear-gradient(135deg, #0a1c3d 0%, #12305e 45%, #0b2545 75%, #081a33 100%);
+    overflow:hidden;
+  }
+  .portal-header::before{
+    content:'';
+    position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(184,134,11,0.22) 0%, transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(184,134,11,0.14) 0%, transparent 50%);
+    pointer-events:none;
+  }
+  .portal-header-inner{ position:relative; z-index:1; }
+  .portal-logo-ring{
+    box-shadow:0 0 0 2px var(--gov-gold), 0 0 14px rgba(184,134,11,0.55);
+  }
+  .portal-title{
+    background:linear-gradient(90deg, #ffffff 0%, #ffe9b0 55%, #d9a94a 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    letter-spacing:.01em;
+  }
+  .portal-subtitle{
+    color:#cfe0ff; letter-spacing:.12em; text-transform:uppercase;
+  }
+  .portal-eyebrow{
+    color:var(--gov-gold); letter-spacing:.25em;
+  }
+  .portal-gold-bar{
+    background:linear-gradient(90deg, #8a6206 0%, var(--gov-gold) 50%, #8a6206 100%);
+  }
+
+  /* ==========================================================================
+     INVOICE PRINT LAYOUT — pure <table> structure, deliberately NOT dependent
+     on Tailwind utility classes (grid/flex) for box structure. Tailwind's own
+     `border-collapse` utility can be reset by other rules that load after it,
+     which is what was causing the boxes/columns to break apart on generate /
+     print. Everything below is scoped to #invoiceArea and uses plain CSS with
+     !important on the structural rules so it can never be overridden.
+     ========================================================================== */
+  #invoiceArea{
+    font-family:'Segoe UI', Tahoma, Verdana, sans-serif;
+    color:#000 !important;
+    background:#fff !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #invoiceArea *{ box-sizing:border-box; }
+  #invoiceArea table{
+    width:100% !important;
+    border-collapse:collapse !important;
+    border-spacing:0 !important;
+    table-layout:fixed;
+    empty-cells:show;
+  }
+  #invoiceArea td, #invoiceArea th{
+    border:1px solid #000 !important;
+    padding:4px 6px;
+    vertical-align:top;
+    text-align:left;
+    word-wrap:break-word;
+    overflow-wrap:break-word;
+  }
+  #invoiceArea th{ text-align:center; background:#f2f2f2; font-weight:700; }
+  #invoiceArea .inv-block{ margin-top:-1px; } /* merges borders between stacked tables, no double lines */
+  #invoiceArea .inv-title{ text-align:center; font-weight:700; font-size:15px; letter-spacing:.04em; margin:0 0 4px; }
+  #invoiceArea .inv-right{ text-align:right; }
+  #invoiceArea .inv-center{ text-align:center; }
+  #invoiceArea .inv-bold{ font-weight:700; }
+  #invoiceArea .inv-nowrap{ white-space:nowrap; }
+  #invoiceArea .inv-label{ font-size:10.5px; color:#333; display:block; margin-bottom:1px; }
+  #invoiceArea .inv-value{ font-size:12px; font-weight:600; min-height:14px; }
+  #invoiceArea .inv-vendor-name{ color:#c0392b; font-size:19px; font-weight:800; text-align:center; margin:0; }
+  #invoiceArea .inv-vendor-sub{ color:#c0392b; font-size:10.5px; font-weight:700; text-align:center; margin:1px 0 3px; }
+  #invoiceArea .inv-vendor-addr{ color:#1f4e8c; font-size:11px; text-align:center; margin:1px 0; }
+  #invoiceArea .inv-vendor-gst{ color:#1f4e8c; font-size:11px; font-weight:700; text-align:center; margin:1px 0 0; }
+  #invoiceArea .inv-meta-table td{ font-size:11px; padding:5px 8px; }
+  #invoiceArea .inv-noborder{ border:none !important; }
+  #invoiceArea .inv-sig-box{ height:70px; }
+  #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
+  #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
+  #invoiceArea .inv-items td.inv-num{ text-align:right; }
+  #invoiceArea .inv-items tbody tr td{ height:16px; } /* keeps empty rows from collapsing to 0 height */
+  #invoiceArea .hidden{ display:none !important; }
+
+  /* ---- PRINT: A4 OR Letter — always a single page ---- */
+  @media print{
+    /* size intentionally NOT hard-coded to A4, so the user's own choice of
+       A4 / Letter in the browser's print dialog is respected. We only fix
+       the margin; the JS auto-scale (fitInvoiceToSinglePage) then shrinks
+       the whole invoice to fit within whichever paper size is selected. */
+    @page{ margin: 5mm; }
+    html, body{
+      width:100% !important; height:100% !important;
+      margin:0 !important; padding:0 !important;
+      font-size:11px; /* compact base font so content stays dense */
+    }
+    body *{ visibility:hidden; }
+    #invoiceArea, #invoiceArea *{ visibility:visible; }
+    #invoiceArea{
+      position:absolute; left:0; top:0;
+      margin:0 !important; padding:6px !important;
+      font-size:9.5px !important; line-height:1.25 !important;
+      transform-origin: top left;
+    }
+    #invoiceArea table{ border-collapse:collapse !important; }
+    .no-print{ display:none !important; }
+    /* Explicit dedicated rule (in addition to .no-print) for the developer
+       credit / helping-number block — guarantees it never appears on the
+       printed bill or the saved PDF, however the page is restructured later. */
+    #devCredit{ display:none !important; }
+    /* Never allow an internal page break — combined with the JS auto-scale
+       below, this guarantees the whole bill (table + tax box + bank details
+       + signature/seal boxes) always lands on a single printed page. */
+    *{
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      page-break-before: avoid !important;
+      page-break-after: avoid !important;
+    }
+  }
+</style>
+</head>
+<body class="min-h-screen locked">
+
+<!-- ============ LOGIN GATE (screen only) ============ -->
+<div id="loginGate" class="no-print">
+  <div class="login-card">
+    <div class="login-card-header">
+      <div class="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden bg-white flex items-center justify-center portal-logo-ring">
+        <img src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCABuAG4DASIAAhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAcFBgMECAEC/8QAPRAAAgEDAwIEAwYCCAcBAAAAAQIDBAURAAYSITEHE0FhFCJRCBUjMnGBcpEWFyQ0QmKCoSYzUpKxwdKT/8QAGgEAAwEBAQEAAAAAAAAAAAAAAwQFAAYBAv/EADARAAEDAwIDBwQCAwEAAAAAAAECAxEABCEFMRJBUWFxgZGx0fATFCKhweEGMvFi/9oADAMBAAIRAxEAPwDsrRo0a1ajRo1r3GtpLdRS1tdUR09NEvJ5JDgAa8JAEmvQCTArY1hqammplDVNRFCCcDzHC5/TOlruPflfV1JorWk1ChxhVQGrcHsW5fLAp9OQZyOoXS+8dbrcdmeE817pnEF1uFfDRvXpI71EETq7NiVyWDHhxyoXHI4A0sLnjVCB4/P6pk23AJWc9Pn91cvEL7QWzNo7insIp6661lLJ5VV8KECRPj8mWI5MPUDoO2c9NaW3ftHbUr61ae62q42pH7THjMq/xBfmH7A65i8M/Cm4eIlVX3iC+y0FIkmHleMzSSysOTHJP0IyTk5OpbcPgvv/AG45+6Ql/pD15QFUlH6q/wD6J18G9aC+AqzR02CyjiA+d1dr2Td21b48Mdn3Haq+ScExxQVSO7YGT8oOeg79OmpzXEf2ZqTcP9c/wqUq2+roqaVa01FOxenjwMlfTmxKrlugDH6jXUVj31GlQ9He5Iikb8DXRKUVDkqPOjPWPJGA4yh+o7aMbhCYnY8+Xz9Ut9uokgbjlz+fur1o14CGAIIIPUEeuvdHpejRo0a1ajRo0a1asdTPDS00tTUSrFDEheR2OAqgZJOkrvrcddeamCSGY0plqEgoVZA3wXNSyTuh7zMoLKD0RSD3I1bvF6+U9HSrQ1PNqSKL4yuRF5NKoYLFDjIzzkIyMj5UbSce8gVBea33o1Hx0ddKWoRl5BHxOfxP8Wc+2cai6hdwsIEx3E+nT17qsafbgDjV8H9+nfW/tehuEd1to++1kNY5dQaOLMpBwxZsZJz6nqdT3j1aE3N4OS2WfJgq6lS06IA8LRgupUAYySMfpyHTORWLDcljuNoK0V5JoHbjmgA58mJOfxOnfTt2zbaO5WKWir4JZqeYqWjlTgRjsQQcg9O4OgWIkEIEGN4IzJ6jpFeur4VJU8JA5Y7enhXK+39o36Kx2Wzx1FNEYEgQtDJJTmmiePm9QeMgJYPlSwzkj0xjVruG5t9GyWmz26Gqil5xIbkkqTS1cLSNEsp5IRGCQGZiDgFfrqXtUoWqqNlST0M1zs1RIsPnUyzpVQocHgW68gM5wfzKQex1uST1U0tO9SlNdlZvIojHzjmllOcxxBcN3xyJOAB1zjIEVKmFJmD+6qloEFSFYIx3fOtbP2f7O8lZvLdtbUTPfZ65bW0jovAJGqDkMYBZmHzHAHyDAGtXddFeYrtHdKe+00LLFJJgW6PkIxIVdSf8SnHVexz20zbTZqbZezYLdCskjxu09S0cfLzJSQzEdR0z0HsPrpRX68rVzmMUt3U+RJTf3HOQ8nPP5+/po94rgShJGR0BOwMbdsVKb/MrU2cnaaY3hju1YJFtVV+FSecKcRliwo5j+VVY94X/AMJJJVsofQ6auuVKG6UkF1jnqo70KUPUJWotB0eKUryH5+hTgGB9CoPprovYdzmuViCVcqy1tHIaaokXtIVAKyD2dCrf6tNaddcY4CI8CPDPmPHpQ9StkoVxIM9fnr4VYNGjRqrUqjRo0v8Axbr5rVJQXOjuLwVFOjl4El4s6Er84Xs3EjBBz0b20vdXAt2i6RMchWqk+LEslwqbqE+Y1FTLFH8wH93jSNV6ntylmP6jWgtE9ZNUGEKS9RC6kOvZQMnv7ar5WK8RpDOIZ3j80xAxjAdm5SP1zgMevfuep0w7BYrU9Q5gt0EUa1SRKPICkqwznt09Nc1bXP3aiUKxMwRnkTz2kdOtVkPtuNSBtHsPWsG8NyWXw4tLXq5Uk9wnuNyPwVNAyqZCFJJLHsoHfueo6aUW+/H/AHZd7c1ussdFt+kqMxvJBl5+JB6CVscT6ZCgj0Ovn7W1z/44sm3aYx+RbLZ50iKMcJZ3z19PyIn89KfZFKu491QWOUyRwzzgzyLjMUeMuxz0wMZ6/X3129laMW9sHVjYeg9hUR5xx576aOZ9aeW1W2juHwcpLrVzz0N826RTOKXIllYABJEYdVJQrybt0PIHodfMG8J/Dyo27umiaovsVZFVUtZDdJPxICkikLHJjCkqT8wBD8SD2GKv4H7lprPUbrtMxjlp7hZapYC6d5Y1biQD2yvL+Q1u72qopfBC322QL5lu3DwhyOvlSQSOR+nLnqeptpvVUNxhYJ9PfpVZKnXNJWsk/goDwg426gc+dP8A2N4o7Q8QqoWyheopLl5XnfCVKAGRQQW4MCVbGO3fHXGsN/28BTyrEqg4j6dOvGcv/wCNcyeENlvabiot1U1ytlregnjmpoa2Qp8SvLLLkflVkYrnr37a7DM9mvkR8hIhMVLCKVBlh9Rjo37HRNRskhY4eUGp9ncyJNKY081LXqZgvFZ6ZwSwI4rI5f1+hH66u3hDO0dxaAn5KiiIHUHJp5mjU/8A5PEP21gvdhswRjPQ00kydZAIlCxj/Mx6Dp1x1PtqD2ruvbNh3VbqGPjI7tLDBHbvxsvMU6YAGR+GDke+R66lW1i/9b6iRO2w6Y6nlNPvXLMK4jBV89QKeGjRo1XqfRpc/aBVRsqORaITzmpEUcuSPJ5A5PQE4OAMdu2mNpceP16htmzXpjEktRMVkhUyEPlGU5RQCWx6jp0J65xpS+CTbrCuYo9sgOOpSoSJzSK2lDRSQNHXRI0sbFHKFsA56ZzgnpjTA2vHRfekkk1TJFSUkRqqmUysQqKCSe/oATpQLuCVLhNO9DVjzlHLjBIACOmSeP0xq17M3Law9RQ3OWnFJcKeSlqCKgBxHIpVuhAOcE6PYuMrtkmAFRnblXxd2zjFwpKZ4ZxST35fqvdu77tuZ5I4RcKkyRxtlnjhACxr9OiKo799O3wH2nZtvW+nvUMjz11zpoJppJSCAjDlhR6DPQ+6aXUfgZvietNHQXKwTUPLjFXNXcQ6ejFOJcHHpjUP4v2m/bBvlJsubczVtJBSJVLFTckjgMrOTGrElyvTPUgZY9Bp2/aTeshhlcewr40977N4vPInf91aftEXxIfEa2pTTcpKel4yuGJwGc5U/wCgn+eoncU09zu1NZVOaIcayox7BlUfuGI/fS0nUSU7GMgkfMp99TdTdrhT3GaWGcIpSMYZQ2cIP39ToDOmJZ1C1KjIQlU9u38qp13UlO6XdpSIK1Ijs3/hNMUE5Jzj/bW1Z9z3WzXKD7prSMPykiZiYsDuxHoR6MMHOqxsKtr70XuFZb2lt1DMiVc0A83y+QYqXhB5lPl6le31Gmvbdnbd3LYSsdyDUTDFNU0syNNGmcmLnj8SP6cwGXt11d1P/IbJlQZdSVA7np/f/a5rTf8AHbx9JdaUARsOv9e0VU73u69XxVmus80dG6+bSxYKpKuSDKf+pmYMcn9sadn2dNkCgoxu+6U3K51sQNGkgx8NTsfzfxuOv8OB6nVP21YNu/1nXF73Q01xsNvsFOsIn5OIJUcRqGUdGLgPgHP5D76bSeKGy4FEU9xnhEuBhKWQ+UMY6lR+mpD+soXaIabARxZOw7t/k9lUUaO43drWuVEYH81fwQRkHI17qM25JQtaKaWhrxW004LwzeZyDg5PTUnpJhalthSxB5iZg9JphaQlRAo0qvEuki3vDPDZ9u3CtqqB5aWC6NXijpo5eQEig8uUgDJg4QjIIB76r28tyb6pbxV2q6XmegljYukdDEkUckJPySI5VnI9D1BBBB9MxNir6i5/Z/uzzTSS1dnv0sjM7lnJaUSZJPU/849dRX9YYcLrIQZQCSDie7/lXLbSH0/Se4gErUACMxPzrWal8O6q0UkFJuWvsVPVuk03N7nXTu8a/McIhiHyr9O+pK2eCVBdY47vHu+pFLVRK8QpKd0UAjuDLI7dffUlvbd1qvlft42W6w1PmSvR1qRDJAniICk4+oPQfTVIsq3issQo7RTX6SR7LP8AeEUkcnl8lfMPl56ZOAAF9/fSKr1tt0pQ2FJG3kOeZ3+RVNvTnnWQtx0oUd52GVcsRsI7wOdXym8HNvW/i9RvvdXVuK8rlFGufoMJ/tnWvf8AwV8J7jdnrNx19bXXDisbyVl5YPhV6AgEdlH8tRu5tq3JrRZqS17VqZFltJaSQIHkSqbDMr+Y2I+vUsBy9Bqw7B2tVNuCvr9y2QIkttpo45ZyrMH8kJMBgkg+hOmmtQfS6ENtBO2cxtJ5DupJ6wt/ol1x/iicYncAYk99VLenhR4E7T2zUXueyTViQwrOsEF2lMksbOF5KDIMjJ79tRmz9ieCG6rhcaGt2lfLDW0NMlVMlyuEsY8hgOMnLzCMYx3x3GstPte6bq2FvCmtTxXOWFI7TapPMVVkjScSMQzYHbH/AI1FReE2+pLPfPhrLS2qCohowbW1zFQ9a8MgZsyH8oIz8pOM4Guj0m4Zu7T6r6ghZMDOwx2889mMkVzetNu2N4WGZUgAE43OfTHbvTC294ReFtnoJbvtq+19to52XnV0l7zExXOMsxK5GT/PVf3N4XbCrfEO22Jb1uOK9XGkeujraYUyoyJn5pHRFLkkdznP11DzeHe7EnjvtTs+Oezvfpa6TakNRGeETRcEbuEJB9B6arty8NfEenobav3bWyLb7K3nQQSEmSN6tnajV1OeXBgenoCBpxuztVKJLoz3e+Yx2Gd6nr1C6SAAg47/AGxPn2U6Y/CqtpLSbbR7go5IGfzJPPoplknbGMySRToWIAwMjAHQADVZrPCPcybjgr1W31lrTAmoILxVQNLgHqC4YgkkH83pqx3ve11scltodu7aqI7XBQM/w89uqPMleMD+zoVGEIXrzbIJ6fXUe3jDIuzoLvVU9LDWC5CJ4oHJE1MsbSPIgcBgPkePOPzKcanKsC/CuCfWqCNVLEpCo9Ku20rlS2trXter21X2JuDpb/PlSoilKgsyrKrsefHk2HwSAcZwdXLXPXibv6bcCbTktSXCy1MV0rDKvmqJUaKII2GUkEfj4/mCNTeyr54nXqaamst1oqtKZB5812pgUjY4KoGiClnI6kEHAxnuNIHUWmrv7MpPHE4GPH50qinT3XbMXoI4CYyc1vfaCuNEKiz24rD8VD5lW8rdGjjKmMJn6OxJx6+V7DSi2h4h2rYsu4aO4203igukqTCGNomBYLxZWV2GR0XqM9j010duTw72duS9i8XyzLXVflLFmSeTgVUkgFAwU9z3HrqTs+1ts2cAWrb1qoSOxgpEQ/zAzpV7SXXb1VyVgCIiOXbtzpxrVGG7AWpQSZmZjPZg0hNueM1dcfONp2PHt62xukZrKiEiPm2eA+RVUZwRnkcZ/fVk2rui9bk3PWWi+XZqWGnplmjWi5QGRixDBmLMcAY6Ajv1zpieJ9hvu5LDFa7LXUFKrzq1V8VGziRF6hRx/wAwU++MaVV38I/EGgb73se5LXUXAIUeIUZTmnfALOQTkZ64/XSGqWGocRFqfxjuz2RmpiHQ5cJnCee3hv8AurFfLlt+2XeK21DXms8yHzDIt0qCOZbCJ+cDLYY9SPy++tA3/aJXm1gu7xYGHkqXIOSR1zKcdj1P09xpfY8QnqXoKndUNFc170lbSJSE/wALsGU/uQPfWjcJPEi3zrBcrtWUUrdVWRI15+6nhhh7qSNc4pnUm08S1DG/5K/eMeNMXSmbZX5qUBy/ER5zTho4drf0feti24IpBBPKkIMirlCwCnr0LYHp9dQtHfdsSSCKp2lWwSSPwiRJJASQik5ywx8xZQfYH10szPvk9f6S1AP6p/8AGvhqrfSgkbmqMDvlk/8AjS4cu8guJ81e1KnULIxC1eQ96aZ3NsiJ+P3deYiMZ41My4yB0H4oyRnGB16E9tWKxPZb1SPU0VZfaNFIXL3GYHJUN0Bc9sjSTt8HiPdeFXBc/NggORW1IhSCI/XzHQDPsuT7akbPD4oXeq+7rDuSG7Op4zSR24Cmj/WQlf8AcD2B0z9tqa0j6asn/wBKz3CJp20+k/Kgo8I5lIA85irR/WJuO23O7UiXWjnoLbO0az1cLF2QAHLMrAEgkjouTgdzqMv3jpWWmvS37s8PZKmKWnjmWZcFCki5AIlRRni3UcjjJH11N0Xgpu2GikM+5rNUVFSWkqUkopOLOxyfmD/+h7adVjp6+Ow0dLe56esrkgVKmWOPEcjgdSFP111emWN6niFwrkI28ds+dIh0cauMSJxttXKd63ZbN3bypLvb6GO1UFJTOqQuYwZJpH5SPhCR1wvXOT110D4HVlJUbFjpadY1loqiSGcr3dieYkP1LK6kn6k6l7zsLZV4B+8tq2edj3kNIiv/ANwAP++suztnbd2hFVRbeoGo0qnV5VM8kgJAwMc2OB1PQaatNMeYvFXClhQUIOPLrVO71G3fskWyEFJQZGZ335Cp/Ro0atVFo0aNGtWqPvlltN8pPhbvb6esi9BIuSvup7qfcaoty8N6+hpXh2vegaNjlrZdUFRTt7AkHH64J99MrRoDts27lQz12PnRm7hxsQDjocjyrnm9WF7cxF72xd7K2cfEWz+10rf6GJK/9w/TW5YdqXavKtZdpGJT2uG4Wzj3WAAKP3Vv10+tGp6dGZSvj/gT5x6Qe2sFMA8YaTxeMeW1L63eGVLUTR1e7btV3+oQfLE58unj9lQHt7Zx7avdHS01FTJTUdPFTwIMJHEgVVHsB01m0apNMNtf6CPnWvHX3Hf9z7eVGjRo0WhUaNGjWrV//9k=" alt="LibraryBook.co.in Logo" class="w-full h-full object-cover">
+      </div>
+      <p class="text-[10px] tracking-[0.25em]" style="color:var(--gov-gold);">SECURE ACCESS</p>
+      <h2 class="text-lg font-extrabold mt-1 tracking-wide">ANMOL DIGITAL MATERIAL PORTAL</h2>
+      <p class="text-[11px] text-blue-200 mt-0.5">Please enter your login details</p>
+    </div>
+    <div class="p-5 space-y-3">
+      <div id="loginError" class="login-error"></div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">User ID <span class="text-red-600">*</span></label>
+        <input id="loginUserId" type="text" autocomplete="username"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Enter User ID">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile Number / Password <span class="text-red-600">*</span></label>
+        <input id="loginMobile" type="text" maxlength="15" autocomplete="tel"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Mobile Number or Admin Provided Password">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Captcha <span class="text-red-600">*</span></label>
+        <div class="flex items-center gap-2">
+          <div id="captchaDisplay" class="captcha-box flex-1"></div>
+          <button type="button" onclick="refreshCaptcha()" title="Refresh Captcha"
+            class="shrink-0 border border-gray-300 rounded px-2.5 py-2 text-sm hover:bg-gray-100" aria-label="Refresh captcha">&#8635;</button>
+        </div>
+        <input id="loginCaptcha" type="text" autocomplete="off"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm mt-2" placeholder="Enter the code shown above">
+      </div>
+
+      <button type="button" onclick="attemptLogin()"
+        class="w-full bg-[var(--gov-blue)] text-white font-semibold text-sm rounded py-2.5 hover:opacity-90">
+        Login
+      </button>
+      <p class="text-[10px] text-gray-400 text-center leading-relaxed">Authorized access only. Contact admin for registration.</p>
+
+      <button type="button" onclick="toggleRegPanel()" id="regToggleBtn"
+        class="w-full text-center text-xs font-semibold text-[var(--gov-blue)] underline pt-1">
+        New User? Register Here
+      </button>
+
+      <!-- ============ SELF REGISTRATION PANEL (new user registration request) ============ -->
+      <div id="regPanel" style="display:none;" class="pt-2 border-t border-gray-200 space-y-3">
+        <p class="text-xs text-center text-gray-500 leading-relaxed">Fill the form — your request will go to the admin for verification. Once verified, you will receive your User ID and Password.</p>
+        <div id="regError" class="login-error"></div>
+        <div id="regSuccess" class="login-error" style="display:none;background:#eaf7ec;border-color:#bfe3c5;color:#1e7a34;"></div>
+
+        <div class="w-20 h-20 mx-auto rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer relative"
+          onclick="document.getElementById('regPhotoInput').click()" id="regPhotoCircle">
+          <span id="regPhotoPh" class="text-2xl">📷</span>
+          <img id="regPhotoPreview" style="display:none;width:100%;height:100%;object-fit:cover" src="" alt="">
+        </div>
+        <input type="file" id="regPhotoInput" accept="image/*" style="display:none" onchange="previewRegPhoto(this)">
+        <p class="text-[10px] text-gray-400 text-center -mt-2">Upload Photo (Click to Upload)</p>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Full Name <span class="text-red-600">*</span></label>
+          <input id="regName" type="text" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Your Full Name">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Village <span class="text-red-600">*</span></label>
+          <input id="regVillage" type="text" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Village / Panchayat">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Address <span class="text-red-600">*</span></label>
+          <textarea id="regAddress" rows="2" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Full Address"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Email ID <span class="text-red-600">*</span></label>
+          <input id="regEmail" type="email" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="you@example.com">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile Number <span class="text-red-600">*</span></label>
+          <input id="regMobile" type="tel" maxlength="10" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="10-digit Mobile Number">
+        </div>
+
+        <button type="button" onclick="submitRegistrationRequest()" id="regSubmitBtn"
+          class="w-full bg-emerald-600 text-white font-semibold text-sm rounded py-2.5 hover:opacity-90">
+          Submit Registration Request
+        </button>
+        <button type="button" onclick="toggleRegPanel()" class="w-full text-center text-xs text-gray-400">Back to Login</button>
+      </div>
+    </div>
+    <div class="border-t border-gray-200 bg-gray-50 py-2.5 px-4 text-center">
+      <p class="text-[11px] font-semibold text-gray-500">Developer: Anmol Kumar</p>
+      <p class="text-[10px] text-gray-400 mt-0.5">LibraryBook.co.in &copy; 2026</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ HEADER ============ -->
+<header class="no-print">
+  <div class="tricolor-strip"></div>
+  <div class="portal-header text-white">
+    <div class="portal-header-inner max-w-6xl mx-auto px-4 py-4 flex items-center gap-4">
+      <div class="shrink-0 rounded-full overflow-hidden bg-white portal-logo-ring" style="width:64px;height:64px;">
+        <img src="data:image/jpeg;base64,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" alt="Portal Logo" class="w-full h-full object-cover">
+      </div>
+      <div class="flex-1">
+        <p class="portal-eyebrow text-[10px] md:text-[11px] font-semibold">DIGITAL GOVERNANCE • MATERIAL &amp; BILLING</p>
+        <h1 class="portal-title text-xl md:text-2xl font-extrabold leading-tight tracking-wide">ANMOL DIGITAL MATERIAL PORTAL</h1>
+        <p class="portal-subtitle text-[10px] md:text-xs font-medium mt-0.5">Advanced Material &amp; Billing Management System</p>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 shrink-0 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 backdrop-blur-sm">
+        <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm overflow-hidden shrink-0" style="position:relative;">
+          <img id="topHeaderPhotoImg" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%;" src="" alt="User Photo">
+          <span id="topHeaderPhotoPh">👤</span>
+        </div>
+        <div class="text-right leading-tight">
+          <p class="text-white text-[13px] md:text-sm font-bold" id="topHeaderName">—</p>
+          <p class="text-blue-200 text-[11px] md:text-xs font-medium tracking-wide" id="topHeaderMobile">📱 —</p>
+        </div>
+      </div>
+    </div>
+    <div class="portal-gold-bar text-[var(--gov-navy)] text-center text-[11px] md:text-xs font-bold tracking-widest py-1.5 px-3 relative z-10">
+      TRUSTED &bull; TRANSPARENT &bull; PAPERLESS BILLING
+    </div>
+  </div>
+  <div class="tricolor-strip"></div>
+</header>
+
+<!-- ============ LOGGED-IN USER STATUS BAR ============ -->
+<div id="loggedInUserBar" class="no-print" style="display:none;align-items:center;justify-content:space-between;gap:10px;background:#eef3fb;border-bottom:1px solid #d8e0ee;padding:7px 16px;">
+  <span style="font-size:12px;font-weight:700;color:var(--gov-navy)">👤 Logged in</span>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button onclick="openChangeMobileModal()" style="font-size:11px;font-weight:700;color:var(--gov-blue);background:#eaf1fb;border:1px solid #cfe0f5;border-radius:5px;padding:4px 10px;cursor:pointer">📱 Change Mobile Number</button>
+    <button onclick="logoutPortal()" style="font-size:11px;font-weight:700;color:#a41414;background:#fdecec;border:1px solid #f3b4b4;border-radius:5px;padding:4px 10px;cursor:pointer">🚪 Logout</button>
+  </div>
+</div>
+
+<!-- ============ CHANGE MOBILE NUMBER MODAL ============ -->
+<div id="changeMobileModal" class="no-print" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(11,37,69,0.55);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fbfaf7;width:100%;max-width:380px;border-radius:6px;border:1px solid #d8d2c2;box-shadow:0 10px 40px rgba(0,0,0,0.35);overflow:hidden;">
+    <div class="login-card-header" style="padding:14px 16px;">
+      <h3 style="font-size:14px;font-weight:800;letter-spacing:.02em;">📱 Change Mobile Number</h3>
+      <p style="font-size:11px;color:#cfe0ff;margin-top:2px;">Updating will automatically log you out</p>
+    </div>
+    <div style="padding:16px;">
+      <div id="cmError" class="login-error" style="margin-bottom:10px;"></div>
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">New Mobile Number</label>
+      <input type="tel" id="cmNewMobile" maxlength="10" placeholder="10-digit mobile number"
+        style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;letter-spacing:1px;margin-bottom:12px;"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)">
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">Confirm Mobile Number</label>
+      <input type="tel" id="cmConfirmMobile" maxlength="10" placeholder="Re-enter mobile number"
+        style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;letter-spacing:1px;margin-bottom:16px;"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)">
+      <div style="display:flex;gap:8px;">
+        <button onclick="closeChangeMobileModal()" style="flex:1;padding:9px;border-radius:4px;border:1px solid #cbd3de;background:#fff;color:var(--gov-navy);font-weight:700;font-size:12.5px;cursor:pointer">Cancel</button>
+        <button id="cmSubmitBtn" onclick="submitChangeMobile()" style="flex:1.4;padding:9px;border-radius:4px;border:none;background:var(--gov-blue);color:#fff;font-weight:700;font-size:12.5px;cursor:pointer">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ LOGGED-IN USER LIVE PHOTO ROW (ID से जॉइन होने के बाद फोटो + लाइव इंडिकेटर) ============ -->
+<div id="liuPhotoRow" class="no-print" style="display:none;align-items:center;gap:10px;background:#f7faff;border-bottom:1px solid #d8e0ee;padding:8px 16px;">
+  <div class="liu-photo-wrap">
+    <img id="liuPhotoImg" style="display:none;" src="" alt="User Photo">
+    <div id="liuPhotoPh" class="liu-photo-ph">👤</div>
+    <span class="liu-live-dot" title="Live"></span>
+  </div>
+  <div>
+    <div style="font-size:12.5px;font-weight:700;color:var(--gov-navy);" class="liu-name2">—</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+      <span class="liu-live-tag"><span class="dot"></span>LIVE</span>
+      <span class="liu-village" style="display:none;font-size:11px;font-weight:600;color:var(--gov-blue);background:#eaf1fb;border:1px solid #cfe0f5;border-radius:10px;padding:1px 8px;">🏡 —</span>
+    </div>
+  </div>
+</div>
+
+<main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
+
+  <!-- ============ METADATA (LOCKED) ============ -->
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2">Section A — Location &amp; Scheme Metadata</div>
+    <div class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">State <span class="text-red-600">*</span></label>
+        <input id="stateField" type="text" value="BIHAR" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-medium">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">District <span class="text-red-600">*</span></label>
+        <input id="districtField" type="text" value="BEGUSARAI" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-medium">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Block <span class="text-red-600">*</span></label>
+        <input id="blockField" type="text" value="Chhaurahi" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-medium">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Gram Panchayat <span class="text-red-600">*</span></label>
+        <input id="panchayatField" type="text" value="" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-medium">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Financial Year <span class="text-red-600">*</span></label>
+        <input id="fyField" type="text" value="2026-2027" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-medium">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Work Category <span class="text-red-600">*</span></label>
+        <select id="workCategory" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" onchange="onWorkCategoryChange()">
+          <option value="">-- Select Category --</option>
+          <option value="material">Material Supply</option>
+          <option value="plantation">Plantation</option>
+        </select>
+      </div>
+      <div class="col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Work Code <span class="text-red-600">*</span></label>
+        <input id="workCode" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div class="col-span-2 sm:col-span-3 lg:col-span-5">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Work Name</label>
+        <input id="customerName" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VENDOR & FORM ENTRY ============ -->
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2">Section B — Vendor &amp; Bill Details</div>
+    <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="lg:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Vendor / Business Name <span class="text-red-600">*</span></label>
+        <input id="businessName" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Vendor Name (GSTIN / TIN / Identity No.) <span class="text-red-600">*</span></label>
+        <input id="vendorName" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Vendor Address</label>
+        <input id="vendorAddress" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">GSTIN</label>
+        <input id="vendorGstin" type="text" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm uppercase">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile No.</label>
+        <input id="vendorMobile" type="text" maxlength="10" placeholder=""
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Bill No. <span class="text-red-600">*</span></label>
+        <input id="billNo" type="text" placeholder="Bill / Invoice No."
+          class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Bill Date <span class="text-red-600">*</span></label>
+        <input id="billDate" type="date" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Transportation Mode</label>
+        <input id="transportMode" type="text" placeholder="" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Vehicle No.</label>
+        <input id="vehicleNo" type="text" placeholder="" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Tax Mode</label>
+        <select id="taxMode" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+          <option>Regular (GST Invoice)</option>
+          <option>Composition Scheme</option>
+          <option>Unregistered Dealer</option>
+          <option>Exempt</option>
+        </select>
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-2">Is TDS deduction on GST applicable? <span class="text-red-600">*</span></label>
+        <div class="flex items-center gap-6">
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="radio" name="tdsApplicable" value="yes" class="accent-[var(--gov-blue)]" onchange="toggleTDS()"> YES
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="radio" name="tdsApplicable" value="no" class="accent-[var(--gov-blue)]" checked onchange="toggleTDS()"> NO
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MATERIAL ENTRY TABLE ============ -->
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2 flex items-center justify-between">
+      <span>Section C — Dynamic Material Entry</span>
+      <button onclick="addRow()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-2.5 py-1 rounded hover:bg-blue-50">+ ADD MATERIAL ROW</button>
+    </div>
+    <div class="p-3 overflow-x-auto">
+      <table class="mat-table w-full text-sm border-collapse min-w-[900px]">
+        <thead>
+          <tr>
+            <th class="w-10">S.No.</th>
+            <th class="min-w-[220px]">Material Name / Code</th>
+            <th class="w-20">Unit</th>
+            <th class="w-28">Price (₹)</th>
+            <th class="w-24">Quantity</th>
+            <th class="w-28">Amount (₹)</th>
+            <th class="w-24">GST Slab</th>
+            <th class="w-10 no-print"></th>
+          </tr>
+        </thead>
+        <tbody id="materialBody"></tbody>
+        <tfoot>
+          <tr class="bg-blue-50 font-bold">
+            <td colspan="5" class="text-right">Total Bill Amount (Taxable Value)</td>
+            <td id="totalBillAmount">₹0.00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TAX ENTRY & CALCULATION ============ -->
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2">Section D — Tax Entry &amp; Calculation</div>
+    <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <table class="mat-table w-full text-sm border-collapse">
+        <thead><tr><th>Component</th><th>Amount (₹)</th></tr></thead>
+        <tbody>
+          <tr><td>Central GST (CGST)</td><td id="cgstAmt" class="text-right">0.00</td></tr>
+          <tr><td>State GST (SGST)</td><td id="sgstAmt" class="text-right">0.00</td></tr>
+          <tr id="tdsCgstRow" class="hidden bg-red-50">
+            <td>TDS on CGST (1%)</td><td id="tdsCgstAmt" class="text-right">0.00</td>
+          </tr>
+          <tr id="tdsSgstRow" class="hidden bg-red-50">
+            <td>TDS on SGST (1%)</td><td id="tdsSgstAmt" class="text-right">0.00</td>
+          </tr>
+          <tr>
+            <td>Royalty (if applicable)</td>
+            <td><input id="royaltyInput" type="number" min="0" value="0" oninput="calculateAll()"
+              class="w-28 border border-gray-300 rounded px-2 py-1 text-right text-sm"></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="bg-blue-50 font-bold">
+            <td>Total Tax Payable</td><td id="totalTax" class="text-right">0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="bg-slate-50 border border-slate-200 rounded p-4 space-y-2 text-sm h-fit">
+        <div class="flex justify-between"><span>Taxable Value</span><span id="sumTaxable" class="font-semibold">₹0.00</span></div>
+        <div class="flex justify-between"><span>Add: Total Tax</span><span id="sumTax" class="font-semibold">₹0.00</span></div>
+        <div class="flex justify-between text-red-700"><span>Less: Total TDS Deducted</span><span id="sumTds" class="font-semibold">-₹0.00</span></div>
+        <hr class="border-slate-300">
+        <div class="flex justify-between text-base"><span class="font-bold text-[var(--gov-navy)]">Net Payable to Vendor</span><span id="netPayable" class="font-extrabold text-[var(--gov-navy)]">₹0.00</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAYMENT & VENDOR ACCOUNT ============ -->
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2">Section E — Payment &amp; Vendor Account Details</div>
+    <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="lg:col-span-4">
+        <label class="block text-xs font-semibold text-gray-600 mb-2">Payment Mode <span class="text-red-600">*</span></label>
+        <div class="flex flex-wrap gap-6">
+          <label class="inline-flex items-center gap-2 text-sm"><input type="radio" name="payMode" value="EFMS" class="accent-[var(--gov-blue)]" checked> EFMS</label>
+          <label class="inline-flex items-center gap-2 text-sm"><input type="radio" name="payMode" value="Cheque" class="accent-[var(--gov-blue)]"> Cheque</label>
+          <label class="inline-flex items-center gap-2 text-sm"><input type="radio" name="payMode" value="EFMS Pay Later" class="accent-[var(--gov-blue)]"> EFMS Pay Later</label>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Bank Name</label>
+        <input id="bankName" type="text" placeholder="" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Vendor A/C No. <span class="text-red-600">*</span></label>
+        <input id="acNo" type="text" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-600 mb-1">IFSC Code <span class="text-red-600">*</span></label>
+        <input id="ifsc" type="text" maxlength="11" placeholder="" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm uppercase">
+      </div>
+      <div class="lg:col-span-2">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">Bank Holder Name <span class="text-red-600">*</span></label>
+        <input id="branchName" type="text" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+      </div>
+      <div class="lg:col-span-4 flex items-start gap-2 pt-2 border-t border-gray-200 mt-2">
+        <input id="confirmCheck" type="checkbox" class="mt-1 accent-[var(--gov-blue)]">
+        <label for="confirmCheck" class="text-sm text-gray-700">
+          I confirm that the material has been procured by adhering to the prescribed tendering / procurement mechanism as per Scheme guidelines, and that the details furnished above are true and correct to the best of my knowledge.
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ACTION BAR ============ -->
+  <section class="flex flex-col sm:flex-row justify-end gap-3">
+    <button onclick="toggleSidebar()" class="px-5 py-2.5 rounded border border-gray-400 text-gray-700 text-sm font-semibold hover:bg-gray-100">
+      ☁️ Cloud Bills (<span id="savedCount">0</span>)
+    </button>
+    <button onclick="resetForm()" class="px-5 py-2.5 rounded border border-gray-400 text-gray-700 text-sm font-semibold hover:bg-gray-100">Reset Form</button>
+    <button id="saveBillBtn" onclick="saveCurrentBill(true)" class="px-5 py-2.5 rounded border border-[var(--gov-blue)] text-[var(--gov-blue)] text-sm font-bold hover:bg-blue-50">☁️ Save to Cloud</button>
+    <button onclick="generateInvoice()" class="px-6 py-2.5 rounded bg-[var(--gov-green)] text-white text-sm font-bold shadow hover:bg-green-700">
+      🖨️ Generate Invoice &amp; Print / Save as PDF
+    </button>
+  </section>
+
+  <!-- ============ DEVELOPER CREDIT (SCREEN ONLY — HIDDEN ON PRINT) ============ -->
+  <section id="devCredit" class="no-print text-center py-2">
+    <p class="text-[11px] text-gray-400">
+      Developer: <span class="font-semibold text-gray-500">Anmol Kumar</span>
+      &nbsp;|&nbsp;
+      Helping Number: <span class="font-semibold text-gray-500">6202119756</span>
+    </p>
+  </section>
+
+
+</main>
+
+
+<!-- ============ SAVED BILLS SIDEBAR ============ -->
+<div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40" onclick="toggleSidebar()"></div>
+<aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
+  <div class="bg-[var(--gov-navy)] text-white px-4 py-3 flex items-center justify-between sticky top-0">
+    <h2 class="font-bold text-sm">☁️ Saved Bills (Google Cloud Firestore)</h2>
+    <button onclick="toggleSidebar()" class="text-white text-xl leading-none">&times;</button>
+  </div>
+  <div id="savedBillsList" class="p-3 space-y-2 text-sm"></div>
+</aside>
+
+<!-- ============ PRINT-ONLY INVOICE (hidden on screen) ============ -->
+<!-- Pure <table> structure throughout — every box below is a real <td>, so
+     nothing can drift, overlap, or collapse on "Generate Invoice" or print. -->
+<div id="invoiceArea" class="hidden max-w-4xl mx-auto bg-white p-3 text-black">
+
+  <p class="inv-title">TAX INVOICE</p>
+
+  <!-- Row 1: Vendor block | Invoice meta block -->
+  <table class="inv-block">
+    <colgroup><col style="width:58%"><col style="width:42%"></colgroup>
+    <tr>
+      <td>
+        <p class="inv-vendor-name" id="inv-businessName">&nbsp;</p>
+        <p class="inv-vendor-sub" id="inv-vendorAddress">&nbsp;</p>
+        <p class="inv-vendor-gst">GSTIN :- <span id="inv-gstin"></span>&nbsp;&nbsp;&nbsp;Mob :- <span id="inv-mobile"></span></p>
+      </td>
+      <td class="inv-meta-table" style="padding:0;">
+        <table>
+          <tr><td>Invoice No :- <span id="inv-billNo"></span></td></tr>
+          <tr><td>Invoice Date :- <span id="inv-billDate"></span></td></tr>
+          <tr><td>Transportation Mode :- <span id="inv-transportMode"></span></td></tr>
+          <tr><td>Vehicle No :- <span id="inv-vehicleNo"></span></td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Row 2: Customer / work description -->
+  <table class="inv-block">
+    <tr>
+      <td style="font-size:11px;">Work Name :- <span id="inv-customerName"></span></td>
+    </tr>
+  </table>
+
+  <!-- Row 3: Work Code (label updated from old "Scheme Name") -->
+  <table class="inv-block">
+    <tr>
+      <td style="font-size:11px;">Work Code :- <span id="inv-scheme"></span></td>
+    </tr>
+  </table>
+
+  <!-- Row 4: Panchayat | Block | District -->
+  <table class="inv-block">
+    <colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
+    <tr>
+      <td style="font-size:11px;">Panchayat :- <span id="inv-panchayat"></span></td>
+      <td style="font-size:11px;">Block :- <span id="inv-block"></span></td>
+      <td style="font-size:11px;">District :- <span id="inv-district"></span></td>
+    </tr>
+  </table>
+
+  <!-- Row 5: Materials / items table -->
+  <table class="inv-block inv-items">
+    <colgroup>
+      <col style="width:5%"><col style="width:20%"><col style="width:9%"><col style="width:6%">
+      <col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:9%">
+      <col style="width:6%"><col style="width:9%"><col style="width:11%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Sl.<br>No.</th>
+        <th>Particulars</th>
+        <th>Quantity</th>
+        <th>Unit</th>
+        <th>Rate</th>
+        <th>Taxable<br>Amount</th>
+        <th>CGST</th>
+        <th>CGST<br>Amount</th>
+        <th>SGST</th>
+        <th>SGST<br>Amount</th>
+        <th>Total<br>Amount</th>
+      </tr>
+    </thead>
+    <tbody id="inv-materialRows"></tbody>
+    <tfoot>
+      <tr class="inv-bold">
+        <td colspan="5" class="inv-right">Total :-</td>
+        <td id="inv-totalTaxable" class="inv-num"></td>
+        <td></td>
+        <td id="inv-cgst" class="inv-num"></td>
+        <td></td>
+        <td id="inv-sgst" class="inv-num"></td>
+        <td id="inv-grandTotal" class="inv-num"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Row 6: Bank details (left) | Tax summary (right) -->
+  <table class="inv-block">
+    <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+    <tr>
+      <td style="vertical-align:top; font-size:10.5px;">
+        <p class="inv-bold inv-center"><span id="inv-businessName3"></span></p>
+        <p class="inv-center">Bank Name :- <span id="inv-bankName"></span></p>
+        <p class="inv-center">Bank Holder Name :- <span id="inv-branch"></span></p>
+        <p class="inv-center">IFSC :- <span id="inv-ifsc"></span></p>
+        <p class="inv-center">A/C No. :- <span id="inv-acNo"></span></p>
+      </td>
+      <td style="padding:0; vertical-align:top;">
+        <table>
+          <tr><td>Taxable Amount :-</td><td class="inv-num" id="inv-boxTaxable"></td></tr>
+          <tr><td>CGST :-</td><td class="inv-num" id="inv-boxCgst"></td></tr>
+          <tr><td>SGST :-</td><td class="inv-num" id="inv-boxSgst"></td></tr>
+          <tr id="inv-boxTdsCgstRow" class="hidden"><td>TDS on CGST :-</td><td class="inv-num" id="inv-boxTdsCgst"></td></tr>
+          <tr id="inv-boxTdsSgstRow" class="hidden"><td>TDS on SGST :-</td><td class="inv-num" id="inv-boxTdsSgst"></td></tr>
+          <tr><td>Royalty &amp; SF :-</td><td class="inv-num" id="inv-boxRoyalty"></td></tr>
+          <tr><td>Total Amount :-</td><td class="inv-num" id="inv-boxTotal"></td></tr>
+          <tr><td>Round off :-</td><td class="inv-num" id="inv-boxRound"></td></tr>
+          <tr class="inv-bold"><td>INVOICE TOTAL</td><td class="inv-num" id="inv-boxGrand"></td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Row 7: Amount in words (left) | Signature box (right) -->
+  <table class="inv-block">
+    <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+    <tr>
+      <td style="vertical-align:top; font-size:10.5px;">
+        <span class="inv-bold">Amount in Word :-</span> <span id="inv-amountWords"></span>
+      </td>
+      <td class="inv-center inv-sig-box" style="vertical-align:top;">
+        <p style="color:#1f4e8c; font-size:12px; margin:2px 0 0;">For <span id="inv-businessName2"></span></p>
+        <p style="margin-top:38px; font-size:10.5px;">Authorized Signature</p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- On-screen only signee strip (never printed) -->
+  <div class="grid grid-cols-4 gap-x-2 gap-y-1 text-[8px] no-print" style="margin-top:6px;">
+    <div class="border border-gray-400 rounded-sm p-1 text-center">
+      <div class="h-8 border border-dashed border-gray-400 flex items-center justify-center text-gray-400 text-[7.5px] mb-1">Seal</div>
+      <p class="border-t border-gray-500 pt-0.5 font-semibold">Signature</p>
+      <p class="text-gray-600 leading-tight">Vendor / Authorized Signatory</p>
+    </div>
+    <div class="border border-gray-400 rounded-sm p-1 text-center">
+      <div class="h-8 border border-dashed border-gray-400 flex items-center justify-center text-gray-400 text-[7.5px] mb-1">Seal</div>
+      <p class="border-t border-gray-500 pt-0.5 font-semibold">Signature</p>
+      <p class="text-gray-600 leading-tight">Accountant</p>
+    </div>
+    <div class="border border-gray-400 rounded-sm p-1 text-center">
+      <div class="h-8 border border-dashed border-gray-400 flex items-center justify-center text-gray-400 text-[7.5px] mb-1">Seal</div>
+      <p class="border-t border-gray-500 pt-0.5 font-semibold">Signature</p>
+      <p class="text-gray-600 leading-tight">Gram Rozgar Sevak (GRS)</p>
+    </div>
+    <div class="border border-gray-400 rounded-sm p-1 text-center">
+      <div class="h-8 border border-dashed border-gray-400 flex items-center justify-center text-gray-400 text-[7.5px] mb-1">Seal</div>
+      <p class="border-t border-gray-500 pt-0.5 font-semibold">Signature</p>
+      <p class="text-gray-600 leading-tight">Programme Officer</p>
+    </div>
+  </div>
+  <p class="text-center text-[7.5px] text-gray-400 mt-1 no-print">Document generated electronically on <span id="inv-genDate"></span> — ANMOL Material Procured Details Entry System</p>
+</div>
+
+
+<script>
+/* ============ GOOGLE CLOUD BACKEND (Cloud Run + MySQL) ============
+   यह पोर्टल अब सीधे Firestore नहीं, बल्कि उसी नए Cloud Run बैकएंड से जुड़ता
+   है जो Admin Panel / Agent Login / HRMS / Student Attendance पहले से
+   इस्तेमाल कर रहे हैं — ताकि सारा डेटा (Users, Bills) एक ही MySQL डेटाबेस
+   में रहे। */
+const API_BASE = window.SHDL_API_BASE || 'https://library-backend-4efk.onrender.com/api';
+let AUTH_TOKEN = null;
+try { AUTH_TOKEN = sessionStorage.getItem('anmol_auth_token') || null; } catch(e){}
+// This page is often served straight from the Render backend at
+// /api/pages/<slug> rather than from Netlify, so Logout must always use the
+// full, absolute Netlify homepage URL — a relative 'index.html' would try
+// (and fail) to find index.html on Render's own domain.
+// 🆕 CRITICAL FIX: an absolute 'https://digitallibraryanmollive.netlify.app/'
+// was hardcoded here, guessing at the live site's subdomain. If the real
+// Netlify site has a different name or a custom domain, that guess is wrong
+// and every logout hits Netlify's own "Site not found" 404 page. A plain
+// relative path always resolves against whatever domain is actually
+// serving this page (Netlify subdomain, custom domain, or deploy preview),
+// so it can never point at the wrong site.
+const SHDL_HOME_URL = window.SHDL_HOME_URL || 'index.html';
+
+async function apiFetch(path, options){
+  options = options || {};
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+  if(AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+  const res = await fetch(API_BASE + path, Object.assign({}, options, { headers: headers }));
+  let data = null;
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok) throw new Error((data && data.error) || ('Server error (' + res.status + ')'));
+  return data;
+}
+const API = {
+  get:  function(path){ return apiFetch(path, { method:'GET' }); },
+  post: function(path, body){ return apiFetch(path, { method:'POST', body: JSON.stringify(body || {}) }); },
+  put:  function(path, body){ return apiFetch(path, { method:'PUT', body: JSON.stringify(body || {}) }); },
+  del:  function(path){ return apiFetch(path, { method:'DELETE' }); }
+};
+
+let cloudBillsCache = [];   // बैकएंड डेटा का लोकल mirror (सिर्फ लॉगिन-इन यूज़र के बिल)
+let cloudSyncOK = false;    // Backend से कनेक्शन बना हुआ है या नहीं
+let loggedInUser = null;    // { userId, name, village, mobile }
+let _billsSyncTimer = null;
+// 🆕 EDIT FEATURE: jab bhi koi saved bill "Edit" button se load hota hai,
+// uska database ID yahan store ho jaata hai। Save dabane par agar yeh
+// set hai, to seedhe usi record ko UPDATE (PUT) kiya jaata hai — bina Bill
+// No match par depend kiye (jaise ki pehle tha), taaki Edit karte waqt agar
+// Bill No bhi badal diya jaaye to bhi duplicate na bane, wahi purana record
+// hi update ho।
+let currentEditingBillId = null;
+
+/* Polling sync: लॉगिन के बाद सिर्फ इसी यूज़र (ownerUserId) के बिल लोड होंगे —
+   ताकि User A का डेटा User B को कभी न दिखे। Admin Panel में सभी यूज़र्स का
+   डेटा अलग-अलग दिखता है। हर 10 सेकंड में fresh डेटा खींचा जाता है (Firebase
+   .onSnapshot() की जगह ab REST polling — data source ab MySQL है)। */
+function startBillsSync(){
+  if(_billsSyncTimer) clearInterval(_billsSyncTimer);
+  if(!loggedInUser) return;
+  function _pull(){
+    API.get('/material/bills?ownerUserId=' + encodeURIComponent(loggedInUser.userId))
+      .then(function(rows){
+        cloudSyncOK = true;
+        cloudBillsCache = rows || [];
+        cloudBillsCache.sort((a,b) => (b.savedAt||'') < (a.savedAt||'') ? -1 : 1);
+        renderSidebar();
+      })
+      .catch(function(err){
+        cloudSyncOK = false;
+        console.error('Backend sync error:', err.message);
+        renderSidebar();
+      });
+  }
+  _pull();
+  _billsSyncTimer = setInterval(_pull, 10000);
+}
+
+/* ---------------- Material catalogues (Work-Category driven) ----------------
+   🆕 DYNAMIC ADMIN LINKAGE: Yeh categories/materials ab HARDCODE nahi hain —
+   Admin Panel ke "Material & Category Manager" se jo bhi Work Category aur
+   Material Name/Code add/edit/delete kiya jaata hai, wahi yahan backend
+   ('/blob/material_categories') se load hoke Section A ke dropdown aur
+   Section C ki material list mein turant reflect hota hai.
+   Neeche wali do arrays (FALLBACK_MATERIALS_SUPPLY / FALLBACK_MATERIALS_PLANTATION)
+   sirf OFFLINE / backend-unreachable situation ke liye ek safety-net hain,
+   taaki backend down hone par bhi form kaam karta rahe — jaise hi backend
+   se fresh data mil jaata hai, yeh fallback turant replace ho jaata hai. */
+
+/* Fallback Category 1: Material Supply — general construction material list */
+const FALLBACK_MATERIALS_SUPPLY = [
+  { name: "0002-Hire charges of Concrete Mixer 0.25 to 0.40 cum with Hopper", unit: "Day", gst: 18 },
+  { name: "0012-Vibrator (Needle type 40 mm)", unit: "Day", gst: 18 },
+  { name: "0295-Stone Aggregate(single size):20 mm nominal size", unit: "Cu.m", gst: 5 },
+  { name: "0297-Stone Aggregate(single size): 10 mm nominal size", unit: "Cu.m", gst: 5 },
+  { name: "0367-Portland Cement", unit: "Bag (50kg)", gst: 28 },
+  { name: "0810-Moorum", unit: "Cu.m", gst: 5 },
+  { name: "0823-Pink primer (for wood)", unit: "Litre", gst: 18 },
+  { name: "0851-Water proofing cement paint", unit: "Kg", gst: 18 },
+  { name: "0982-Coarse sand (zone III)", unit: "Cu.m", gst: 5 },
+  { name: "1004-Average rate of mild steel round bars for reinforcements", unit: "Quintal", gst: 18 },
+  { name: "1007-Structural steel such as tees, angles, channels and R.S. joists", unit: "Quintal", gst: 18 },
+  { name: "1008-Flats up to 10 mm in thickness", unit: "Quintal", gst: 18 },
+  { name: "1013-Mild steel sheets for tanks", unit: "Kg", gst: 18 },
+  { name: "1019-Mild steel hooks", unit: "Kg", gst: 18 },
+  { name: "1036-Iron pintels including weldded pin", unit: "Kg", gst: 18 },
+  { name: "10-Miscellaneous / Contingencies charges", unit: "LS", gst: 18 },
+  { name: "1222-Mild steel sheets with bolts and nuts to rest on pintels", unit: "Kg", gst: 18 },
+  { name: "1648-G.I. Union 80 mm nominal bore", unit: "Nos", gst: 18 },
+  { name: "2205-Steel", unit: "Quintal", gst: 18 },
+  { name: "2602-Common burnt clay F.P.S. (non modular) bricks class designation 7.5", unit: "Nos (1000)", gst: 12 },
+  { name: "3-Display Board / CIB", unit: "Nos", gst: 18 },
+  { name: "4202-Red oxide Zinc chromate primer", unit: "Litre", gst: 18 },
+  { name: "4-Conveyance", unit: "LS", gst: 0 },
+  { name: "5-GST", unit: "LS", gst: 0 },
+  { name: "6501-Sand zone V (Jamuna)", unit: "Cu.m", gst: 5 },
+  { name: "7331-Wall form panel 1250x450xmm", unit: "Nos", gst: 18 },
+  { name: "7332-Corner angle 45x45x5 mm 2.50 long", unit: "Nos", gst: 18 },
+  { name: "7333-Column clamp 450x1070 mm", unit: "Nos", gst: 18 },
+  { name: "7334-Prop 2 m (2-3.5m)", unit: "Nos", gst: 18 },
+  { name: "7335-Binding wire", unit: "Kg", gst: 18 },
+  { name: "9999-Sundries", unit: "LS", gst: 0 },
+  { name: "MR2403-Ready mix paint for steel work", unit: "Litre", gst: 18 },
+  { name: "MR2407-TMTC 500 8 MM", unit: "Quintal", gst: 18 },
+  { name: "MR2408-TMTC 500 10 MM", unit: "Quintal", gst: 18 },
+  { name: "MR2409-TMTC 500 12 MM", unit: "Quintal", gst: 18 },
+  { name: "Other (Specify Manually)", unit: "", gst: 18 }
+];
+
+/* Fallback Category 2: Plantation — plantation-related material list */
+const FALLBACK_MATERIALS_PLANTATION = [
+  { name: "0002-Hire charges of Concrete Mixer 0.25 to 0.40 cum with Hopper", unit: "Day", gst: 18 },
+  { name: "0012-Vibrator (Needle type 40 mm)", unit: "Day", gst: 18 },
+  { name: "0295-Stone Aggregate(single size):20 mm nominal size", unit: "Cu.m", gst: 5 },
+  { name: "0297-Stone Aggregate(single size): 10 mm nominal size", unit: "Cu.m", gst: 5 },
+  { name: "0367-Portland Cement", unit: "Bag (50kg)", gst: 28 },
+  { name: "0982-Coarse sand (zone III)", unit: "Cu.m", gst: 5 },
+  { name: "1028-Straining bolts", unit: "Nos", gst: 18 },
+  { name: "1030-Galvanised steel turn buckles", unit: "Nos", gst: 18 },
+  { name: "10-Miscellaneous / Contingencies charges", unit: "LS", gst: 18 },
+  { name: "3-Display Board / CIB", unit: "Nos", gst: 18 },
+  { name: "4-Conveyance", unit: "LS", gst: 0 },
+  { name: "5-GST", unit: "LS", gst: 0 },
+  { name: "7319-Wall form panel 1250x500 mm", unit: "Nos", gst: 18 },
+  { name: "7326-Corner angle 45x45x5 mm 1.50 m long", unit: "Nos", gst: 18 },
+  { name: "7327-100 mm channel shoulder 2.5 m long", unit: "Nos", gst: 18 },
+  { name: "7328-Double clip (bridge clip)", unit: "Nos", gst: 18 },
+  { name: "7329-Single clip", unit: "Nos", gst: 18 },
+  { name: "7330-M.S. Tube 40 mm dia", unit: "Metre", gst: 18 },
+  { name: "7335-Binding wire", unit: "Kg", gst: 18 },
+  { name: "9977-Carriage", unit: "LS", gst: 0 },
+  { name: "9999-Sundries", unit: "LS", gst: 0 },
+  { name: "MR2417-Mild steel wire road 6 MM", unit: "Kg", gst: 18 },
+  { name: "MR2420-Plantation - Gabion", unit: "Nos", gst: 5 },
+  { name: "MR2421-Plantation - cost of large plant", unit: "Nos", gst: 5 },
+  { name: "MR2423-Cost of pesticide", unit: "Litre", gst: 18 },
+  { name: "MR2424-Hand pump comp job", unit: "Nos", gst: 18 },
+  { name: "MR2430-Cost of plants from forest department", unit: "Nos", gst: 5 },
+  { name: "MR2431-Cost of carriage of plants from forest dept. nursery upto 30 km", unit: "Trip", gst: 18 },
+  { name: "MR2443-Supply of GI Barbed Wire", unit: "Kg", gst: 18 },
+  { name: "Other (Specify Manually)", unit: "", gst: 18 }
+];
+
+/* Fallback catalogue shape — istemal hota hai jab tak backend se fresh
+   'material_categories' nahi mil jaata, ya backend unreachable ho. */
+const FALLBACK_WORK_CATEGORIES = [
+  { id: 'material', name: 'Material Supply', items: FALLBACK_MATERIALS_SUPPLY },
+  { id: 'plantation', name: 'Plantation', items: FALLBACK_MATERIALS_PLANTATION }
+];
+
+/* 🆕 DYNAMIC: yeh array Admin Panel se live data aane ke baad update hoti
+   hai — Section A ke "Work Category" dropdown ka source-of-truth. Jab tak
+   backend se data nahi aata, fallback list se shuru hoti hai taaki form
+   turant istemal-yogya rahe. */
+let WORK_CATEGORIES = FALLBACK_WORK_CATEGORIES;
+
+const GST_SLABS = [0, 5, 12, 18, 28];
+let rowCounter = 0;
+
+/* Active catalogue — switches based on selected Work Category */
+let ACTIVE_CATALOG = WORK_CATEGORIES[0].items;
+
+/* Work Category <select> ke andar ki <option> list ko WORK_CATEGORIES se
+   (re)build karta hai. Agar pehle se koi category selected thi aur woh
+   nayi list mein bhi maujood hai, to selection bilkul waisi hi rehti hai
+   (form reset nahi hota) — sirf naye/renamed/deleted categories hi update
+   hoti hain. */
+function renderWorkCategoryOptions(){
+  const sel = document.getElementById('workCategory');
+  if(!sel) return;
+  const prevVal = sel.value;
+  let opts = '<option value="">-- Select Category --</option>';
+  opts += WORK_CATEGORIES.map(function(c){
+    return '<option value="' + c.id + '">' + c.name + '</option>';
+  }).join('');
+  sel.innerHTML = opts;
+  // Purani selection restore karo agar wo category ab bhi list mein hai
+  if(prevVal && WORK_CATEGORIES.some(function(c){ return c.id === prevVal; })){
+    sel.value = prevVal;
+  }
+}
+
+/* 🆕 Admin Panel ke "Material & Category Manager" se Work Categories +
+   unke andar ki Material lists backend se fetch karta hai (public-read
+   route — login se pehle bhi kaam karta hai) aur dropdown ko turant
+   update kar deta hai। Backend unreachable/error hone par purani
+   WORK_CATEGORIES (ya fallback list) hi istemal hoti rehti hai, form
+   kabhi nahi tootta। */
+function loadMaterialCategories(){
+  return API.get('/blob/material_categories').then(function(data){
+    if(Array.isArray(data) && data.length){
+      // Safety: har category ke paas kam-se-kam id/name/items array zaroor ho
+      const clean = data.filter(function(c){ return c && c.id && c.name; })
+        .map(function(c){ return { id: String(c.id), name: String(c.name), items: Array.isArray(c.items) ? c.items : [] }; });
+      if(clean.length) WORK_CATEGORIES = clean;
+    }
+    renderWorkCategoryOptions();
+    // Agar currently selected category ka catalogue badal gaya ho (Admin ne
+    // materials add/edit/delete kiye hon), to Section C ki dropdown list bhi
+    // turant refresh karo — lekin already-filled rows (price/qty) ko chhedo
+    // mat, sirf material-name dropdown ki options refresh karo.
+    const sel = document.getElementById('workCategory');
+    const curId = sel ? sel.value : '';
+    if(curId){
+      const cat = WORK_CATEGORIES.find(function(c){ return c.id === curId; });
+      if(cat){
+        ACTIVE_CATALOG = cat.items;
+        document.querySelectorAll('#materialBody .mat-select').forEach(function(matSel){
+          const curIdx = parseInt(matSel.value, 10) || 0;
+          matSel.innerHTML = materialOptions(curIdx);
+        });
+      }
+    }
+  }).catch(function(err){
+    console.warn('Material categories load error (fallback list istemal ho raha hai):', err.message);
+  });
+}
+
+function onWorkCategoryChange(){
+  const cat = document.getElementById('workCategory').value;
+  const found = WORK_CATEGORIES.find(function(c){ return c.id === cat; });
+  ACTIVE_CATALOG = found ? found.items : WORK_CATEGORIES[0].items;
+  // Reset the material rows so the newly loaded list matches the chosen category
+  document.getElementById('materialBody').innerHTML = '';
+  rowCounter = 0;
+  addRow();
+}
+
+function materialOptions(selectedIdx){
+  return ACTIVE_CATALOG.map((m,i)=>`<option value="${i}" ${i===selectedIdx?'selected':''}>${m.name}</option>`).join('');
+}
+function gstOptions(selectedVal){
+  let opts = GST_SLABS.map(g=>`<option value="${g}" ${g===selectedVal?'selected':''}>${g}%</option>`).join('');
+  opts += `<option value="custom">Other (Edit) ✎</option>`;
+  return opts;
+}
+
+/* GST cell ko select ya editable input ke roop me banata hai, gstVal ke hisaab se */
+function gstCellHTML(gstVal){
+  const num = Number(gstVal);
+  if(GST_SLABS.includes(num)){
+    return `<select class="gst-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm" onchange="onGstChange(this)">${gstOptions(num)}</select>`;
+  }
+  return `<div class="flex items-center gap-0.5">
+      <input type="number" min="0" step="0.01" class="gst-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${num}" oninput="calculateAll()">
+      <span class="text-[10px]">%</span>
+      <button type="button" onclick="resetGstToSlab(this)" title="Select from slab list" class="text-[10px] text-blue-700 underline shrink-0">list</button>
+    </div>`;
+}
+
+function onGstChange(sel){
+  const tr = sel.closest('tr');
+  const gstTd = tr.children[6];
+  if(sel.value === 'custom'){
+    gstTd.innerHTML = gstCellHTML(0.001); // 0.001 forces the "not in slab" (custom) branch even if 0%
+    const input = gstTd.querySelector('input.gst-select');
+    input.value = 0;
+    input.focus();
+  }
+  calculateAll();
+}
+
+function resetGstToSlab(btn){
+  const tr = btn.closest('tr');
+  tr.children[6].innerHTML = gstCellHTML(GST_SLABS[0]);
+  calculateAll();
+}
+
+function addRow(prefill){
+  rowCounter++;
+  const tbody = document.getElementById('materialBody');
+  const tr = document.createElement('tr');
+  tr.dataset.rowId = rowCounter;
+  const matIdx = prefill ? prefill.matIdx : 0;
+  tr.innerHTML = `
+    <td class="text-center">${rowCounter}</td>
+    <td>
+      <select class="mat-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm" onchange="onMaterialChange(this)">
+        ${materialOptions(matIdx)}
+      </select>
+    </td>
+    <td><input type="text" class="unit-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm bg-gray-50" value="${ACTIVE_CATALOG[matIdx].unit}" readonly></td>
+    <td><input type="number" min="0" step="0.01" class="price-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="0" oninput="calculateAll()"></td>
+    <td><input type="number" min="0" step="0.01" class="qty-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="0" oninput="calculateAll()"></td>
+    <td class="amount-field text-right font-semibold">0.00</td>
+    <td>
+      ${gstCellHTML(ACTIVE_CATALOG[matIdx].gst)}
+    </td>
+    <td class="no-print text-center">
+      <button onclick="removeRow(this)" class="text-red-600 font-bold hover:text-red-800" title="Remove row">✕</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  calculateAll();
+}
+
+function onMaterialChange(sel){
+  const idx = parseInt(sel.value,10);
+  const tr = sel.closest('tr');
+  tr.querySelector('.unit-field').value = ACTIVE_CATALOG[idx].unit;
+  tr.children[6].innerHTML = gstCellHTML(ACTIVE_CATALOG[idx].gst);
+  calculateAll();
+}
+
+function removeRow(btn){
+  const tbody = document.getElementById('materialBody');
+  if(tbody.children.length <= 1){ alert('At least one material row is required.'); return; }
+  btn.closest('tr').remove();
+  renumberRows();
+  calculateAll();
+}
+function renumberRows(){
+  document.querySelectorAll('#materialBody tr').forEach((tr,i)=>{
+    tr.children[0].textContent = i+1;
+  });
+}
+
+function toggleTDS(){
+  calculateAll();
+}
+
+function fmt(n){
+  return '₹' + n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtPlain(n){
+  return n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function calculateAll(){
+  let totalTaxable = 0;
+  let totalGST = 0;
+  document.querySelectorAll('#materialBody tr').forEach(tr=>{
+    const price = parseFloat(tr.querySelector('.price-field').value) || 0;
+    const qty = parseFloat(tr.querySelector('.qty-field').value) || 0;
+    const gstPct = parseFloat(tr.querySelector('.gst-select').value) || 0;
+    const amount = price * qty;
+    tr.querySelector('.amount-field').textContent = fmtPlain(amount);
+    totalTaxable += amount;
+    totalGST += amount * (gstPct/100);
+  });
+
+  const cgst = totalGST/2;
+  const sgst = totalGST/2;
+  const tdsApplicable = document.querySelector('input[name="tdsApplicable"]:checked').value === 'yes';
+  // सरकारी GST-TDS नियम (Sec. 51, CGST Act): कुल TDS = Taxable Value का 2%,
+  // जो CGST व SGST में बराबर-बराबर (50%-50%) बँटता है।
+  const totalTdsAmount = tdsApplicable ? totalTaxable * 0.02 : 0;
+  const tdsCgst = totalTdsAmount * 0.5; // TDS on CGST = 50% of Total TDS amount
+  const tdsSgst = totalTdsAmount * 0.5; // TDS on SGST = 50% of Total TDS amount
+  const royalty = parseFloat(document.getElementById('royaltyInput').value) || 0;
+
+  document.getElementById('tdsCgstRow').classList.toggle('hidden', !tdsApplicable);
+  document.getElementById('tdsSgstRow').classList.toggle('hidden', !tdsApplicable);
+
+  const totalTax = cgst + sgst + royalty;      // Add: Total Tax (CGST + SGST + Royalty)
+  const totalTds = totalTdsAmount;             // Less: Total TDS Deducted (TDS-CGST + TDS-SGST)
+  const netPayable = totalTaxable + totalTax - totalTds; // Net Payable = Taxable + Total Tax - Total TDS
+
+  document.getElementById('totalBillAmount').textContent = fmt(totalTaxable);
+  document.getElementById('cgstAmt').textContent = fmtPlain(cgst);
+  document.getElementById('sgstAmt').textContent = fmtPlain(sgst);
+  document.getElementById('tdsCgstAmt').textContent = fmtPlain(tdsCgst);
+  document.getElementById('tdsSgstAmt').textContent = fmtPlain(tdsSgst);
+  document.getElementById('totalTax').textContent = fmtPlain(totalTax);
+
+  document.getElementById('sumTaxable').textContent = fmt(totalTaxable);
+  document.getElementById('sumTax').textContent = fmt(totalTax);
+  document.getElementById('sumTds').textContent = '-' + fmt(totalTds);
+  document.getElementById('netPayable').textContent = fmt(netPayable);
+
+  return { totalTaxable, cgst, sgst, tdsCgst, tdsSgst, totalTdsAmount, royalty, totalTax, totalTds, netPayable, tdsApplicable };
+}
+
+function resetForm(){
+  if(!confirm('Reset all entered data on this form?')) return;
+  // 🆕 EDIT FEATURE: form reset hote hi edit-mode bhi band ho jaana chahiye,
+  // warna agla Save galti se purane bill ko overwrite kar dega.
+  currentEditingBillId = null;
+  const editBanner = document.getElementById('editModeBanner');
+  if(editBanner) editBanner.style.display = 'none';
+  document.getElementById('workCategory').value = '';
+  document.getElementById('workCode').value = '';
+  document.getElementById('customerName').value = '';
+  document.getElementById('businessName').value = '';
+  document.getElementById('vendorName').value = '';
+  document.getElementById('vendorAddress').value = '';
+  document.getElementById('vendorGstin').value = '';
+  document.getElementById('vendorMobile').value = '';
+  document.getElementById('billNo').value = '';
+  document.getElementById('billDate').value = '';
+  document.getElementById('transportMode').value = '';
+  document.getElementById('vehicleNo').value = '';
+  document.getElementById('taxMode').value = 'Regular (GST Invoice)';
+  document.querySelector('input[name="tdsApplicable"][value="no"]').checked = true;
+  document.getElementById('royaltyInput').value = 0;
+  document.getElementById('bankName').value = '';
+  document.getElementById('acNo').value = '';
+  document.getElementById('ifsc').value = '';
+  document.getElementById('branchName').value = '';
+  document.getElementById('confirmCheck').checked = false;
+  document.getElementById('materialBody').innerHTML = '';
+  rowCounter = 0;
+  addRow();
+}
+
+function numberToWordsIndian(num){
+  num = Math.round(num);
+  if(num === 0) return 'Zero';
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
+    'Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function twoDigits(n){
+    if(n < 20) return ones[n];
+    return (tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '')).trim();
+  }
+  function threeDigits(n){
+    let str = '';
+    if(n >= 100){ str += ones[Math.floor(n/100)] + ' Hundred '; n = n%100; }
+    if(n > 0) str += twoDigits(n);
+    return str.trim();
+  }
+  let crore = Math.floor(num / 10000000); num %= 10000000;
+  let lakh = Math.floor(num / 100000); num %= 100000;
+  let thousand = Math.floor(num / 1000); num %= 1000;
+  let hundred = num;
+  let parts = [];
+  if(crore) parts.push(threeDigits(crore) + ' Crore');
+  if(lakh) parts.push(threeDigits(lakh) + ' Lakh');
+  if(thousand) parts.push(threeDigits(thousand) + ' Thousand');
+  if(hundred) parts.push(threeDigits(hundred));
+  return parts.join(' ').trim();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 💳 PAYMENT-GATED INVOICE GENERATION
+//   "Generate Invoice" dabane par sabse pehle validation, phir Razorpay
+//   payment (jab tak Admin ne is user ko exempt na kiya ho) — payment
+//   VERIFY (backend-signature-checked) hone ke baad hi asli invoice
+//   render/save/print hoti hai. Fail/Cancel hone par yeh poori tarah
+//   ruk jaata hai — koi PDF/print nahi khulta.
+// ══════════════════════════════════════════════════════════════════
+let _invoiceUnlockToken = null; // payment verify hone ke baad short-lived token
+
+function generateInvoice(){
+  // Basic validation (pehle jaisa hi — yeh payment se pehle hi hona chahiye,
+  // taaki galat/adhoora form bharne par bekaar mein payment na ho jaaye)
+  const required = [
+    ['stateField','State'], ['districtField','District'], ['blockField','Block'],
+    ['panchayatField','Gram Panchayat'], ['fyField','Financial Year'],
+    ['workCategory','Work Category'], ['workCode','Work Code'],
+    ['businessName','Vendor / Business Name'], ['vendorName','Vendor Name'], ['billNo','Bill No.'], ['billDate','Bill Date'],
+    ['acNo','Vendor A/C No.'], ['ifsc','IFSC Code'], ['branchName','Bank Holder Name']
+  ];
+  for(const [id,label] of required){
+    if(!document.getElementById(id).value.trim()){
+      alert('Please fill required field: ' + label);
+      document.getElementById(id).focus();
+      return;
+    }
+  }
+  if(!document.getElementById('confirmCheck').checked){
+    alert('Please confirm the tendering / procurement declaration checkbox before generating the invoice.');
+    return;
+  }
+
+  const btn = document.querySelector('button[onclick="generateInvoice()"]');
+  const originalText = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Checking payment status...'; }
+
+  API.get('/material/invoice-payment/config').then(function(cfg){
+    if (!cfg.paymentRequired){
+      // Admin ne is user ke liye exempt kiya hai, ya payment feature hi
+      // band hai — seedha invoice generate ho jaayegi.
+      if(btn){ btn.disabled=false; btn.textContent=originalText; }
+      _renderAndPrintInvoice();
+      return;
+    }
+    if (typeof Razorpay === 'undefined'){
+      if(btn){ btn.disabled=false; btn.textContent=originalText; }
+      alert('⚠️ Payment gateway load nahi ho paya. Internet connection check karke page refresh karein.');
+      return;
+    }
+    API.post('/material/invoice-payment/order', {}).then(function(order){
+      if(btn){ btn.disabled=false; btn.textContent=originalText; }
+      const rzp = new Razorpay({
+        key: order.key,
+        amount: order.amount,
+        currency: order.currency,
+        order_id: order.orderId,
+        name: 'Anmol Digital Material Portal',
+        description: 'Invoice Generation Charge — Bill No. ' + document.getElementById('billNo').value,
+        theme: { color: '#0f6e56' },
+        handler: function(response){
+          // ══ STRICT SUCCESS VALIDATION ══
+          // Razorpay ka "handler" callback hi tabhi chalta hai jab payment
+          // safal ho — lekin yeh CLIENT-SIDE claim hai, isliye ise kabhi
+          // seedha trust nahi karte. Backend par signature verify hone ke
+          // baad hi asli invoice generation chalti hai — verify fail ho
+          // ya yeh call kabhi ho hi na (fraud attempt), invoice kabhi
+          // generate nahi hogi.
+          if(btn){ btn.disabled=true; btn.textContent='⏳ Verifying payment...'; }
+          API.post('/material/invoice-payment/verify', {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature
+          }).then(function(result){
+            if(btn){ btn.disabled=false; btn.textContent=originalText; }
+            _invoiceUnlockToken = result.unlockToken;
+            alert('✅ Payment safal! Invoice generate ho rahi hai...');
+            _renderAndPrintInvoice();
+          }).catch(function(err){
+            if(btn){ btn.disabled=false; btn.textContent=originalText; }
+            alert('❌ Payment verify nahi ho paya: ' + err.message + '\n\nInvoice generate NAHI hogi. Agar paise kat gaye hain to woh 5-7 din mein refund ho jaayenge, ya support se sampark karein.');
+          });
+        },
+        modal: {
+          // ══ FAIL/CANCEL BLOCK ══ — user ne Razorpay window band kar di
+          // (cancel) — invoice generate hone se poori tarah ruk jaati hai.
+          ondismiss: function(){
+            if(btn){ btn.disabled=false; btn.textContent=originalText; }
+            alert('⚠️ Payment cancel ho gaya. Invoice generate karne ke liye payment complete karna zaroori hai.');
+          }
+        }
+      });
+      rzp.on('payment.failed', function(resp){
+        // ══ FAIL BLOCK ══ — payment fail hua (card decline, insufficient
+        // funds, etc.) — invoice yahan bhi generate NAHI hoti.
+        if(btn){ btn.disabled=false; btn.textContent=originalText; }
+        alert('❌ Payment fail ho gaya: ' + (resp.error && resp.error.description ? resp.error.description : 'Unknown error') + '\n\nInvoice generate nahi hogi. Dobara try karein.');
+      });
+      rzp.open();
+    }).catch(function(err){
+      if(btn){ btn.disabled=false; btn.textContent=originalText; }
+      alert('❌ Payment shuru nahi ho paya: ' + err.message);
+    });
+  }).catch(function(err){
+    if(btn){ btn.disabled=false; btn.textContent=originalText; }
+    alert('❌ Payment settings load nahi ho payi: ' + err.message + '\n\nDobara try karein.');
+  });
+}
+
+// असli invoice render + save + print — sirf payment verify (ya exempt)
+// hone ke baad hi yahan pahunchte hain.
+function _renderAndPrintInvoice(){
+  const calc = calculateAll();
+
+  document.getElementById('inv-businessName').textContent = document.getElementById('businessName').value;
+  document.getElementById('inv-businessName2').textContent = document.getElementById('businessName').value;
+  document.getElementById('inv-businessName3').textContent = document.getElementById('businessName').value;
+  document.getElementById('inv-vendorAddress').textContent = document.getElementById('vendorAddress').value;
+  document.getElementById('inv-gstin').textContent = document.getElementById('vendorGstin').value.toUpperCase();
+  document.getElementById('inv-mobile').textContent = document.getElementById('vendorMobile').value;
+  document.getElementById('inv-billNo').textContent = document.getElementById('billNo').value;
+  document.getElementById('inv-billDate').textContent = document.getElementById('billDate').value;
+  document.getElementById('inv-transportMode').textContent = document.getElementById('transportMode').value;
+  document.getElementById('inv-vehicleNo').textContent = document.getElementById('vehicleNo').value;
+  document.getElementById('inv-customerName').textContent = document.getElementById('customerName').value;
+
+  // Invoice label is now "Work Code :-" and prints the Work Code value
+  // (previously labelled "Scheme Name" — label-only change, value source unchanged).
+  document.getElementById('inv-scheme').textContent = document.getElementById('workCode').value;
+
+  document.getElementById('inv-panchayat').textContent = document.getElementById('panchayatField').value;
+  document.getElementById('inv-block').textContent = document.getElementById('blockField').value;
+  document.getElementById('inv-district').textContent = document.getElementById('districtField').value;
+
+  const invBody = document.getElementById('inv-materialRows');
+  invBody.innerHTML = '';
+  document.querySelectorAll('#materialBody tr').forEach((tr,i)=>{
+    const matName = tr.querySelector('.mat-select option:checked').textContent;
+    const unit = tr.querySelector('.unit-field').value;
+    const price = parseFloat(tr.querySelector('.price-field').value) || 0;
+    const qty = parseFloat(tr.querySelector('.qty-field').value) || 0;
+    const gst = parseFloat(tr.querySelector('.gst-select').value) || 0;
+    const amount = price*qty;
+    const halfPct = gst/2;
+    const cgstAmt = amount * halfPct/100;
+    const sgstAmt = amount * halfPct/100;
+    const rowTotal = amount + cgstAmt + sgstAmt;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${i+1}</td>
+      <td class="inv-particulars">${matName}</td>
+      <td>${qty}</td>
+      <td>${unit}</td>
+      <td class="inv-num">${fmtPlain(price)}</td>
+      <td class="inv-num">${fmtPlain(amount)}</td>
+      <td>${halfPct}%</td>
+      <td class="inv-num">${fmtPlain(cgstAmt)}</td>
+      <td>${halfPct}%</td>
+      <td class="inv-num">${fmtPlain(sgstAmt)}</td>
+      <td class="inv-num">${fmtPlain(rowTotal)}</td>
+    `;
+    invBody.appendChild(row);
+  });
+
+  const grandTotalRow = calc.totalTaxable + calc.cgst + calc.sgst;
+  document.getElementById('inv-totalTaxable').textContent = fmtPlain(calc.totalTaxable);
+  document.getElementById('inv-cgst').textContent = fmtPlain(calc.cgst);
+  document.getElementById('inv-sgst').textContent = fmtPlain(calc.sgst);
+  document.getElementById('inv-grandTotal').textContent = fmtPlain(grandTotalRow);
+
+  document.getElementById('inv-bankName').textContent = document.getElementById('bankName').value;
+  document.getElementById('inv-acNo').textContent = document.getElementById('acNo').value;
+  document.getElementById('inv-ifsc').textContent = document.getElementById('ifsc').value.toUpperCase();
+  document.getElementById('inv-branch').textContent = document.getElementById('branchName').value;
+
+  // Tax calculation box (right side)
+  const totalAmount = calc.totalTaxable + calc.totalTax; // Taxable + CGST + SGST + Royalty
+  document.getElementById('inv-boxTaxable').textContent = fmtPlain(calc.totalTaxable);
+  document.getElementById('inv-boxCgst').textContent = fmtPlain(calc.cgst);
+  document.getElementById('inv-boxSgst').textContent = fmtPlain(calc.sgst);
+  document.getElementById('inv-boxTdsCgstRow').classList.toggle('hidden', !calc.tdsApplicable);
+  document.getElementById('inv-boxTdsSgstRow').classList.toggle('hidden', !calc.tdsApplicable);
+  document.getElementById('inv-boxTdsCgst').textContent = '-' + fmtPlain(calc.tdsCgst);
+  document.getElementById('inv-boxTdsSgst').textContent = '-' + fmtPlain(calc.tdsSgst);
+  document.getElementById('inv-boxRoyalty').textContent = fmtPlain(calc.royalty);
+  document.getElementById('inv-boxTotal').textContent = fmtPlain(totalAmount);
+
+  const preRound = totalAmount - calc.totalTds;
+  const invoiceTotal = Math.round(preRound);
+  const roundOff = invoiceTotal - preRound;
+  document.getElementById('inv-boxRound').textContent = (roundOff>=0?'':'') + roundOff.toFixed(2);
+  document.getElementById('inv-boxGrand').textContent = invoiceTotal.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('inv-amountWords').textContent = numberToWordsIndian(invoiceTotal) + ' Only';
+
+  document.getElementById('inv-genDate').textContent = new Date().toLocaleString('en-IN');
+
+  saveCurrentBill(false);
+
+  printInvoiceSinglePage();
+}
+
+/* ============ SINGLE-PAGE AUTO-FIT (works for A4 or Letter) ============ */
+/* Safe printable box that fits inside BOTH A4 (210x297mm) and Letter
+   (215.9x279.4mm) after a 5mm margin on every side:
+     width  -> limited by A4  (210 - 10 = 200mm)
+     height -> limited by Letter (279.4 - 10 = 269.4mm, rounded down for safety) */
+const SAFE_PRINT_WIDTH_MM  = 200;
+const SAFE_PRINT_HEIGHT_MM = 267;
+
+function mmToPx(mm){
+  const probe = document.createElement('div');
+  probe.style.cssText = `width:${mm}mm; position:absolute; visibility:hidden; height:0;`;
+  document.body.appendChild(probe);
+  const px = probe.getBoundingClientRect().width;
+  document.body.removeChild(probe);
+  return px;
+}
+
+function fitInvoiceToSinglePage(){
+  const inv = document.getElementById('invoiceArea');
+  // Reset any previous scaling before re-measuring true content size
+  inv.style.transform = 'none';
+  inv.style.width = mmToPx(SAFE_PRINT_WIDTH_MM) + 'px';
+  void inv.offsetHeight; // force reflow so getBoundingClientRect is accurate
+
+  const rect = inv.getBoundingClientRect();
+  const maxWidthPx  = mmToPx(SAFE_PRINT_WIDTH_MM);
+  const maxHeightPx = mmToPx(SAFE_PRINT_HEIGHT_MM);
+
+  const scaleX = maxWidthPx  / rect.width;
+  const scaleY = maxHeightPx / rect.height;
+  // Never scale UP — only shrink if the content is taller/wider than the page
+  const scale = Math.min(1, scaleX, scaleY);
+
+  inv.style.transformOrigin = 'top left';
+  inv.style.transform = `scale(${scale})`;
+}
+
+function printInvoiceSinglePage(){
+  const inv = document.getElementById('invoiceArea');
+  inv.classList.remove('hidden');
+
+  // Wait for the browser to actually paint the now-visible invoice before
+  // measuring it — a single rAF right after unhiding isn't always enough.
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      fitInvoiceToSinglePage();
+      window.print();
+      inv.classList.add('hidden');
+      inv.style.transform = '';
+      inv.style.width = '';
+    });
+  });
+}
+
+/* ============ SAVED BILLS — GOOGLE CLOUD FIRESTORE ============
+   localStorage अब सिर्फ EMERGENCY FALLBACK के तौर पर इस्तेमाल होता है —
+   अगर इंटरनेट न हो, या firebaseConfig अभी अपडेट न किया गया हो, तो डेटा इस
+   ब्राउज़र में सुरक्षित रह जाता है ताकि कुछ भी खोए नहीं। */
+const LOCAL_BACKUP_KEY = 'anmol_local_backup_bills_v1';
+
+function getLocalBackupBills(){
+  try{ return JSON.parse(localStorage.getItem(LOCAL_BACKUP_KEY)) || []; }
+  catch(e){ return []; }
+}
+function setLocalBackupBills(list){
+  localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(list));
+}
+
+function collectFormData(){
+  const materials = [];
+  document.querySelectorAll('#materialBody tr').forEach(tr=>{
+    const sel = tr.querySelector('.mat-select');
+    const idx = parseInt(sel.value, 10);
+    // 🆕 MULTI-USER INVOICE + ADMIN VIEW: matName/unit ab seedhe yahin save
+    // ho jaate hain (sirf matIdx nahi) — taaki Admin Panel ka 'All Invoices'
+    // page kisi bhi user ka invoice bina is form ki material-list catalogue
+    // dobara load kiye, seedhe saved data se hi sahi tarike se print kar sake।
+    materials.push({
+      matIdx: idx,
+      name: sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : (ACTIVE_CATALOG[idx] && ACTIVE_CATALOG[idx].name) || '',
+      unit: tr.querySelector('.unit-field').value,
+      price: tr.querySelector('.price-field').value,
+      qty: tr.querySelector('.qty-field').value,
+      gst: tr.querySelector('.gst-select').value
+    });
+  });
+  return {
+    savedAt: new Date().toISOString(),
+    ownerUserId: loggedInUser ? loggedInUser.userId : '',   // डेटा आइसोलेशन के लिए — हर बिल उसी यूज़र से जुड़ा रहेगा
+    ownerName: loggedInUser ? loggedInUser.name : '',
+    stateField: document.getElementById('stateField').value,
+    districtField: document.getElementById('districtField').value,
+    blockField: document.getElementById('blockField').value,
+    panchayatField: document.getElementById('panchayatField').value,
+    fyField: document.getElementById('fyField').value,
+    workCategory: document.getElementById('workCategory').value,
+    workCode: document.getElementById('workCode').value,
+    customerName: document.getElementById('customerName').value,
+    businessName: document.getElementById('businessName').value,
+    vendorName: document.getElementById('vendorName').value,
+    vendorAddress: document.getElementById('vendorAddress').value,
+    vendorGstin: document.getElementById('vendorGstin').value,
+    vendorMobile: document.getElementById('vendorMobile').value,
+    billNo: document.getElementById('billNo').value,
+    billDate: document.getElementById('billDate').value,
+    transportMode: document.getElementById('transportMode').value,
+    vehicleNo: document.getElementById('vehicleNo').value,
+    taxMode: document.getElementById('taxMode').value,
+    tdsApplicable: document.querySelector('input[name="tdsApplicable"]:checked').value,
+    royaltyInput: document.getElementById('royaltyInput').value,
+    payMode: document.querySelector('input[name="payMode"]:checked').value,
+    bankName: document.getElementById('bankName').value,
+    acNo: document.getElementById('acNo').value,
+    ifsc: document.getElementById('ifsc').value,
+    branchName: document.getElementById('branchName').value,
+    materials: materials
+  };
+}
+
+/* Save button दबाने पर यही फंक्शन चलता है — डेटा अब सीधे Cloud Run बैकएंड
+   (MySQL) में जाकर सेव होता है। Duplicate Bill No को upsert करना (नया बनाने
+   की बजाय update) अब सर्वर साइड पर होता है — /material/bills route
+   ownerUserId + billNo के मिलान पर खुद ही update बनाम insert तय करता है। */
+async function saveCurrentBill(showAlert){
+  const data = collectFormData();
+  const btn = document.getElementById('saveBillBtn');
+  const originalBtnText = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Saving...'; btn.classList.add('opacity-60','cursor-not-allowed'); }
+  try{
+    // 🆕 FIX: Render ke free-tier backend ko agar 15 minute tak koi request
+    // na mile to woh "sleep" ho jaata hai, aur agli request ko jagne (cold
+    // start) mein 30-50 second tak lag sakte hain. Pehle yahan koi timeout
+    // ya loading state nahi thi, isliye Save button click karne par ऐसा
+    // lagta tha jaise "kuch ho hi nahi raha" — asal me ye backend ke jagne
+    // ka wait tha (ya network/CORS error jiska koi feedback nahi milta tha).
+    // Ab 25 second ka timeout aur button par "Saving..." dikhaya jaata hai.
+    // 🆕 EDIT FEATURE: agar koi bill "✏️ Edit" se load kiya gaya hai
+    // (currentEditingBillId set hai), to seedhe usi record ko PUT se
+    // UPDATE karo — Bill No badal bhi diya ho to bhi wahi purana record
+    // update hoga, koi naya duplicate bill nahi banega. Naya bill ho to
+    // pehle jaisa hi POST (jo ownerUserId+BillNo match par khud upsert
+    // kar leta hai)।
+    if(currentEditingBillId){
+      await withTimeout(API.put('/material/bills/' + currentEditingBillId, data), 25000, 'Save');
+    } else {
+      await withTimeout(API.post('/material/bills', data), 25000, 'Save');
+    }
+    if(showAlert) alert('✅ Bill data saved successfully to Google Cloud (MySQL).');
+  }catch(err){
+    console.error('Backend save failed:', err);
+    // Save to Cloud failed (network / backend down) — keep data safe in
+    // this browser so nothing is lost, and clearly inform the user.
+    const list = getLocalBackupBills();
+    list.unshift(data);
+    setLocalBackupBills(list);
+    if(showAlert){
+      alert('⚠️ Could not save to Cloud: ' + err.message +
+        '\n\nYour data has been temporarily saved in this browser. ' +
+        'Please check your internet connection and press Save again.');
+    }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalBtnText; btn.classList.remove('opacity-60','cursor-not-allowed'); }
+  }
+}
+
+function applyFormData(data){
+  document.getElementById('stateField').value = data.stateField || '';
+  document.getElementById('districtField').value = data.districtField || '';
+  document.getElementById('blockField').value = data.blockField || '';
+  document.getElementById('panchayatField').value = data.panchayatField || '';
+  document.getElementById('fyField').value = data.fyField || '';
+  document.getElementById('workCategory').value = data.workCategory || '';
+  // 🆕 FIX: saved bill load karte waqt ACTIVE_CATALOG ko bhi usi bill ki
+  // Work Category ke hisaab se sync karna zaroori hai — warna neeche
+  // addRow({matIdx}) purani/galat category ke catalogue se material
+  // name/unit/gst utha leta (khaaskar ab jab Admin ne kayi custom
+  // categories bana rakhi hon)।
+  (function(){
+    const wc = WORK_CATEGORIES.find(function(c){ return c.id === (data.workCategory || ''); });
+    if(wc) ACTIVE_CATALOG = wc.items;
+  })();
+  document.getElementById('workCode').value = data.workCode || '';
+  // 🆕 FIX: 'workName' field ab layout se hata diya gaya hai — is field ka
+  // concept ab seedhe 'customerName' box mein hi hai (jise ab "Work Name"
+  // label kiya gaya hai). Purane save kiye gaye bills mein jo data
+  // 'workName' key mein tha, use bhi yahan fallback ki tarah dikha diya
+  // jaata hai taaki purana data edit karte waqt gayab na ho jaaye.
+  document.getElementById('customerName').value = data.customerName || data.workName || '';
+  document.getElementById('businessName').value = data.businessName || '';
+  document.getElementById('vendorName').value = data.vendorName || '';
+  document.getElementById('vendorAddress').value = data.vendorAddress || '';
+  document.getElementById('vendorGstin').value = data.vendorGstin || '';
+  document.getElementById('vendorMobile').value = data.vendorMobile || '';
+  document.getElementById('billNo').value = data.billNo || '';
+  document.getElementById('billDate').value = data.billDate || '';
+  document.getElementById('transportMode').value = data.transportMode || '';
+  document.getElementById('vehicleNo').value = data.vehicleNo || '';
+  document.getElementById('taxMode').value = data.taxMode || 'Regular (GST Invoice)';
+  document.querySelector(`input[name="tdsApplicable"][value="${data.tdsApplicable||'no'}"]`).checked = true;
+  document.getElementById('royaltyInput').value = data.royaltyInput || 0;
+  const payModeEl = document.querySelector(`input[name="payMode"][value="${data.payMode}"]`);
+  if(payModeEl) payModeEl.checked = true;
+  document.getElementById('bankName').value = data.bankName || '';
+  document.getElementById('acNo').value = data.acNo || '';
+  document.getElementById('ifsc').value = data.ifsc || '';
+  document.getElementById('branchName').value = data.branchName || '';
+
+  document.getElementById('materialBody').innerHTML = '';
+  rowCounter = 0;
+  (data.materials || []).forEach(m=>{
+    addRow({matIdx: m.matIdx});
+    const tr = document.getElementById('materialBody').lastElementChild;
+    tr.querySelector('.price-field').value = m.price;
+    tr.querySelector('.qty-field').value = m.qty;
+    tr.children[6].innerHTML = gstCellHTML(m.gst);
+  });
+  if(!(data.materials && data.materials.length)) addRow();
+  calculateAll();
+}
+
+/* साइडबार में "Load" दबाने पर Firestore से आया वही बिल फॉर्म में भर दिया जाता है */
+function loadBill(idx){
+  const bill = cloudBillsCache[idx];
+  if(!bill) return;
+  applyFormData(bill);
+  // 🆕 EDIT FEATURE: is bill ka ID yaad rakho, taaki Save dabane par yeh
+  // seedhe UPDATE ho (naya duplicate bill na bane)।
+  currentEditingBillId = bill.id;
+  SHOW_EDIT_MODE_BANNER(bill);
+  toggleSidebar();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// 🆕 EDIT FEATURE: form ke upar ek chhota banner dikhata hai ki abhi
+// "Edit Mode" chalu hai aur kaunsa bill edit ho raha hai, taaki confusion
+// na ho ki naya bill ban raha hai ya purana update ho raha hai।
+function SHOW_EDIT_MODE_BANNER(bill){
+  let banner = document.getElementById('editModeBanner');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'editModeBanner';
+    banner.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:8px 14px;border-radius:6px;margin-bottom:10px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center';
+    const formCard = document.querySelector('#saveBillBtn').closest('.bg-white, .rounded, form') || document.body;
+    formCard.parentNode.insertBefore(banner, formCard);
+  }
+  banner.innerHTML = '✏️ Edit Mode: Bill No ' + (bill.billNo || '—') + ' is being updated. '
+    + '<button onclick="EXIT_EDIT_MODE()" style="text-decoration:underline;background:none;border:none;color:#92400e;cursor:pointer;font-weight:700">Start New Bill</button>';
+  banner.style.display = 'flex';
+}
+function EXIT_EDIT_MODE(){
+  // resetForm() itself asks confirm() and only clears currentEditingBillId
+  // + banner if the user clicks "OK" — so nothing separate is cleared here
+  // (otherwise state would break even when the user clicks "Cancel").
+  resetForm();
+}
+
+/* Clicking "Delete" in the sidebar permanently removes the bill from Google Cloud (MySQL) */
+async function deleteBill(idx){
+  const bill = cloudBillsCache[idx];
+  if(!bill) return;
+  if(!confirm('Permanently delete this bill from the Google Cloud database?')) return;
+  try{
+    await API.del('/material/bills/' + bill.id);
+    // cloudBillsCache and the sidebar will auto-update on the next 10-second
+    // poll, but we also pull immediately once here to refresh the UI right away
+    startBillsSync();
+  }catch(err){
+    alert('❌ Error while deleting: ' + err.message);
+  }
+}
+
+function renderSidebar(){
+  const list = cloudBillsCache;
+  document.getElementById('savedCount').textContent = list.length;
+  const container = document.getElementById('savedBillsList');
+
+  if(!cloudSyncOK){
+    container.innerHTML = '<p class="text-amber-600 text-center text-xs pt-6 px-2">⚠️ Could not connect to Google Cloud (Server).<br>Please check your internet connection.</p>';
+    return;
+  }
+  if(list.length === 0){
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">No bills saved to Cloud yet.</p>';
+    return;
+  }
+  container.innerHTML = list.map((b,i)=>{
+    const dt = b.savedAt ? new Date(b.savedAt).toLocaleString('en-IN') : '';
+    return `
+      <div class="border border-gray-300 rounded p-2.5 hover:bg-gray-50">
+        <p class="font-semibold text-[var(--gov-navy)] text-[13px]">${b.businessName || '(No vendor name)'}</p>
+        <p class="text-[11px] text-gray-600">Bill No: ${b.billNo || '—'} &nbsp;|&nbsp; Date: ${b.billDate || '—'}</p>
+        <p class="text-[10px] text-gray-400">☁️ Saved: ${dt}</p>
+        <div class="flex gap-2 mt-1.5">
+          <button onclick="loadBill(${i})" class="flex-1 text-[11px] font-semibold px-2 py-1 rounded bg-[var(--gov-blue)] text-white hover:opacity-90">✏️ Edit</button>
+          <button onclick="deleteBill(${i})" class="text-[11px] font-semibold px-2 py-1 rounded border border-red-400 text-red-600 hover:bg-red-50">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleSidebar(){
+  document.getElementById('savedSidebar').classList.toggle('translate-x-full');
+  document.getElementById('sidebarOverlay').classList.toggle('hidden');
+}
+
+/* init — डिफ़ॉल्ट रूप से सिर्फ़ 1 रो; बाकी रो सिर्फ़ '+ ADD MATERIAL ROW' बटन दबाने पर जुड़ेंगी */
+addRow({matIdx:4});   // Portland Cement
+</script>
+
+<!-- ============ LOGIN GATE + BASIC ANTI-INSPECT SCRIPT ============ -->
+<script>
+/* =====================================================================
+   ⚠️ ज़रूरी नोट (कृपया पढ़ें):
+   यह लॉगिन अब Admin Panel में बनाई गई "Invoice Material List" के User ID +
+   Mobile Number से Cloud Firestore (material_users collection) में मिलान
+   करता है — अब User ID/Mobile कोड में हार्डकोड नहीं हैं। अगर एडमिन किसी
+   यूज़र को Block कर दे, तो वह यूज़र यहां लॉगिन नहीं कर पाएगा।
+   कैप्चा और अन्य फ्रंट-एंड सुरक्षा (नीचे) फिर भी सिर्फ आम यूज़र को रोकने के
+   लिए हैं, यह ब्राउज़र-आधारित प्रोटेक्शन असली सर्वर-साइड सिक्योरिटी जितनी
+   मज़बूत नहीं है।
+   ===================================================================== */
+
+let currentCaptcha = '';
+
+function generateCaptcha(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // भ्रामक अक्षर (I,O,0,1) हटाए गए
+  let code = '';
+  for(let i=0;i<5;i++){ code += chars.charAt(Math.floor(Math.random()*chars.length)); }
+  return code;
+}
+
+function refreshCaptcha(){
+  currentCaptcha = generateCaptcha();
+  const el = document.getElementById('captchaDisplay');
+  if(el) el.textContent = currentCaptcha;
+  const input = document.getElementById('loginCaptcha');
+  if(input) input.value = '';
+}
+
+function showLoginError(msg){
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideLoginError(){
+  const el = document.getElementById('loginError');
+  el.style.display = 'none';
+}
+
+function enterPortal(userDoc){
+  loggedInUser = {
+    docId: userDoc._docId, userId: userDoc.userId, name: userDoc.name,
+    village: userDoc.village || '', mobile: userDoc.mobile,
+    photo: userDoc.photo || ''
+  };
+  try{ sessionStorage.setItem('anmolPortalUser', JSON.stringify(loggedInUser)); }catch(e){}
+  document.getElementById('loginGate').style.display = 'none';
+  document.body.classList.remove('locked');
+  updateLoggedInUserBar();
+  startBillsSync();
+}
+
+function updateLoggedInUserBar(){
+  const bar = document.getElementById('loggedInUserBar');
+  if(!bar || !loggedInUser) return;
+  bar.style.display = 'flex';
+  // 🆕 Status bar ab sirf "👤 Logged in" dikhata hai (naam/ID neeche wale
+  // live photo row me pehle se hi dikh raha hai) — isliye yahan text bhar-ne
+  // ki zaroorat nahi rahi.
+
+  // 🆕 Top-right header (jahan pehle static "अनमोल कुमार / 6202119756" tha)
+  // ab bhi usi loggedInUser se dynamically bharta hai — round icon ki jagah
+  // asli live photo, naam UPPERCASE me, aur uska mobile number.
+  const topImg = document.getElementById('topHeaderPhotoImg');
+  const topPh  = document.getElementById('topHeaderPhotoPh');
+  const topName = document.getElementById('topHeaderName');
+  const topMobile = document.getElementById('topHeaderMobile');
+  if(topName) topName.textContent = (loggedInUser.name || '').toUpperCase();
+  if(topMobile) topMobile.textContent = '📱 ' + (loggedInUser.mobile || '—');
+  if(topImg && topPh){
+    if(loggedInUser.photo){
+      topImg.src = loggedInUser.photo;
+      topImg.style.display = 'block';
+      topPh.style.display = 'none';
+    } else {
+      topImg.style.display = 'none';
+      topPh.style.display = 'flex';
+    }
+  }
+
+  // 🆕 ID से जॉइन (लॉगिन) होने के बाद यूज़र की फोटो + हरा "LIVE" पल्स इंडिकेटर दिखाएँ
+  const photoRow = document.getElementById('liuPhotoRow');
+  if(photoRow){
+    photoRow.style.display = 'flex';
+    photoRow.querySelector('.liu-name2').textContent = loggedInUser.name + ' (' + loggedInUser.userId + ')';
+
+    // 🆕 गाँव (Village) badge — loggedInUser.village usi userDoc se aata hai
+    // jo login ke waqt DB/ID se match hoke enterPortal() ko mila tha, isliye
+    // yeh hamesha us user ke asli record se hi live match hoke aata hai.
+    const villageEl = photoRow.querySelector('.liu-village');
+    if(villageEl){
+      if(loggedInUser.village){
+        villageEl.textContent = '🏡 ' + loggedInUser.village;
+        villageEl.style.display = 'inline-block';
+      } else {
+        villageEl.style.display = 'none';
+      }
+    }
+
+    const img = document.getElementById('liuPhotoImg');
+    const ph  = document.getElementById('liuPhotoPh');
+    if(loggedInUser.photo){
+      img.src = loggedInUser.photo;
+      img.style.display = 'block';
+      ph.style.display = 'none';
+    } else {
+      img.style.display = 'none';
+      ph.style.display = 'flex';
+    }
+  }
+}
+
+function logoutPortal(){
+  if(!confirm('Do you want to log out?')) return;
+  // 🆕 FIX: यहाँ पहले `_billsUnsubscribe` नाम का एक ऐसा variable इस्तेमाल हो
+  // रहा था जो पूरे कोड में कहीं भी declare नहीं था (पुराने Firestore-आधारित
+  // वर्ज़न का leftover)। इससे confirm('OK') दबाने के तुरंत बाद
+  // "ReferenceError: _billsUnsubscribe is not defined" फेंकता था, और नीचे की
+  // सारी लाइनें (session clear + reload) कभी चलती ही नहीं थीं — इसलिए Logout
+  // पर क्लिक करने के बाद भी वही पेज बना रहता था। अब इस टूटी हुई लाइन को हटा
+  // दिया गया है।
+  loggedInUser = null;
+  AUTH_TOKEN = null;
+  // 🆕 FIX: ab sirf token hi nahi, poora localStorage + sessionStorage
+  // clear hota hai — koi bhi cached session data peeche nahi rehta.
+  try{ localStorage.clear(); }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
+  window.location.replace(SHDL_HOME_URL); /* 🆕 replace() so the login page never re-enters the browser back/forward history — prevents any back-button bounce into a stale session, and avoids Netlify 404s on refresh */
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 🆕 CHANGE MOBILE NUMBER (login ke baad, Dashboard/Status-bar se)
+//   Flow: naya number 2 baar likhein → 'Update करें' दबाएं → backend
+//   '/api/material/change-mobile' database mein naya mobile save karta
+//   hai (Admin Panel bhi turant yahi naya number dikhाने लगता है) →
+//   turant automatic logout → agli baar login isi naye mobile se hoga।
+// ══════════════════════════════════════════════════════════════════
+function openChangeMobileModal(){
+  const nm = document.getElementById('cmNewMobile');
+  const cm = document.getElementById('cmConfirmMobile');
+  if(nm) nm.value = '';
+  if(cm) cm.value = '';
+  hideChangeMobileError();
+  const modal = document.getElementById('changeMobileModal');
+  if(modal) modal.style.display = 'flex';
+  if(nm) nm.focus();
+}
+
+function closeChangeMobileModal(){
+  const modal = document.getElementById('changeMobileModal');
+  if(modal) modal.style.display = 'none';
+}
+
+function showChangeMobileError(msg){
+  const el = document.getElementById('cmError');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideChangeMobileError(){
+  const el = document.getElementById('cmError');
+  if(el) el.style.display = 'none';
+}
+
+async function submitChangeMobile(){
+  const newMobile = (document.getElementById('cmNewMobile').value || '').trim();
+  const confirmMobile = (document.getElementById('cmConfirmMobile').value || '').trim();
+  hideChangeMobileError();
+
+  if(!/^[0-9]{10}$/.test(newMobile)){
+    showChangeMobileError('Please enter a valid 10-digit mobile number.');
+    return;
+  }
+  if(newMobile !== confirmMobile){
+    showChangeMobileError('The mobile numbers entered do not match. Please check again.');
+    return;
+  }
+  if(loggedInUser && newMobile === String(loggedInUser.mobile || '').replace(/\D/g,'').slice(-10)){
+    showChangeMobileError('This is your current mobile number. Please enter a new number.');
+    return;
+  }
+  if(!AUTH_TOKEN){
+    showChangeMobileError('❌ Session not found. Please log in again.');
+    return;
+  }
+
+  const btn = document.getElementById('cmSubmitBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Updating...'; }
+
+  try{
+    await withTimeout(API.post('/material/change-mobile', { newMobile: newMobile }), 15000, 'Mobile number update');
+    closeChangeMobileModal();
+    alert('✅ Your mobile number has been updated successfully.\nPlease log in again with your new mobile number (' + newMobile + ').');
+    forceLogoutAfterMobileChange();
+  }catch(err){
+    showChangeMobileError('❌ ' + err.message);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Update'; }
+  }
+}
+
+// Naya mobile save hone ke turant baad automatic logout — logoutPortal()
+// jaisa hi session/token clear karta hai, bas confirm() popup nahi dikhata
+// aur Netlify homepage par navigate karne ki bajaye isi page ko reload
+// karta hai taaki login screen turant wapas dikh jaaye aur user turant
+// apne naye mobile number se dobara login kar sake.
+function forceLogoutAfterMobileChange(){
+  loggedInUser = null;
+  try{ sessionStorage.removeItem('anmolPortalUser'); }catch(e){}
+  try{ sessionStorage.removeItem('anmol_auth_token'); }catch(e){}
+  AUTH_TOKEN = null;
+  if(_billsSyncTimer){ clearInterval(_billsSyncTimer); _billsSyncTimer = null; }
+  window.location.reload();
+}
+
+function toggleRegPanel(){
+  const panel = document.getElementById('regPanel');
+  const btn = document.getElementById('regToggleBtn');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  btn.style.display = isOpen ? 'block' : 'none';
+  hideLoginError();
+}
+
+function previewRegPhoto(input){
+  if(!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      // बड़ी मोबाइल फोटो (कई MB) को छोटा करके ~150-200KB तक compress करते हैं,
+      // ताकि Firestore document limit (1MB) से बड़ी न हो और upload अटके नहीं।
+      const maxDim = 500;
+      let w = img.width, h = img.height;
+      if(w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
+      else if(h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const compressed = canvas.toDataURL('image/jpeg', 0.7);
+      document.getElementById('regPhotoPreview').src = compressed;
+      document.getElementById('regPhotoPreview').style.display = 'block';
+      document.getElementById('regPhotoPh').style.display = 'none';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function showRegError(msg){
+  const el = document.getElementById('regError');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('regSuccess').style.display = 'none';
+}
+function hideRegError(){ document.getElementById('regError').style.display = 'none'; }
+
+async function submitRegistrationRequest(){
+  const name    = document.getElementById('regName').value.trim();
+  const village = document.getElementById('regVillage').value.trim();
+  const address = document.getElementById('regAddress').value.trim();
+  const email   = document.getElementById('regEmail').value.trim();
+  const mobile  = document.getElementById('regMobile').value.trim();
+  const photo   = document.getElementById('regPhotoPreview').style.display !== 'none'
+    ? document.getElementById('regPhotoPreview').src : '';
+
+  if(!name || !village || !address || !email || !mobile){
+    showRegError('Please fill in all fields.');
+    return;
+  }
+  if(!/^\d{10}$/.test(mobile)){
+    showRegError('Please enter a valid 10-digit mobile number.');
+    return;
+  }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    showRegError('Please enter a valid Email ID.');
+    return;
+  }
+  hideRegError();
+
+  const btn = document.getElementById('regSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  try{
+    // Duplicate mobile / pending-request check now happens server-side
+    // (/material/register) — the backend will clearly return a 409 error
+    // if this number is already registered or already pending.
+    await withTimeout(API.post('/material/register', {
+      name, village, address, email, mobile, photo
+    }), 15000, 'Submitting registration');
+
+    document.getElementById('regSuccess').textContent = '✅ Your registration request has been submitted. Once the admin verifies it, you will receive your User ID and Password.';
+    document.getElementById('regSuccess').style.display = 'block';
+    document.getElementById('regName').value = '';
+    document.getElementById('regVillage').value = '';
+    document.getElementById('regAddress').value = '';
+    document.getElementById('regEmail').value = '';
+    document.getElementById('regMobile').value = '';
+    document.getElementById('regPhotoPreview').style.display = 'none';
+    document.getElementById('regPhotoPh').style.display = 'block';
+    document.getElementById('regPhotoInput').value = '';
+  }catch(err){
+    showRegError('⚠️ There was a problem submitting: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Submit Registration Request';
+  }
+}
+
+function NOW_TEXT(){
+  return new Date().toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+/* Backend calls can sometimes hang due to network/firewall issues (neither
+   succeeding nor failing). This helper throws a clear Error after a set
+   time (default 15 seconds), so the button never stays stuck on
+   "Submitting..." forever. */
+function withTimeout(promise, ms = 15000, label = 'Request'){
+  // 🆕 FIX: message hamesha hardcoded '15 seconds' bolta tha chahe 'ms'
+  // kuch bhi ho (jaise login ke liye ab 45000ms hai) — confusing tha.
+  // Ab actual seconds dynamically dikhaye jaate hain, aur purana
+  // Firestore-specific hint hata kar generic backend-connectivity hint
+  // diya gaya hai (yeh portal ab Firestore nahi, Render backend use karta hai).
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(
+      label + ' did not complete within ' + Math.round(ms/1000) + ' seconds — please check your internet connection, or the backend server may be starting up, try again in a moment.'
+    )), ms))
+  ]);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 🔒 SECURITY: User ID aur Password box mein paste (Ctrl+V / right-click
+//   paste / mouse middle-click paste / drag-drop) poori tarah block —
+//   user ko khud type hi karna hoga. Copy/Cut bhi block kiya gaya hai
+//   taaki agar galti se User ID field mein kuch sahi bhi type ho jaaye,
+//   to koi use vahan se copy karke kahin aur na le jaa sake.
+// ══════════════════════════════════════════════════════════════════
+(function BLOCK_LOGIN_PASTE(){
+  ['loginUserId', 'loginMobile'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    ['paste', 'copy', 'cut', 'drop'].forEach(function(evt){
+      el.addEventListener(evt, function(e){ e.preventDefault(); return false; });
+    });
+    // Right-click context menu bhi band, taaki uske "Paste" option se bhi na ho sake
+    el.addEventListener('contextmenu', function(e){ e.preventDefault(); return false; });
+  });
+})();
+
+async function attemptLogin(){
+  const userId  = document.getElementById('loginUserId').value.trim();
+  const secondFactor = document.getElementById('loginMobile').value.trim();
+  const captcha = document.getElementById('loginCaptcha').value.trim();
+
+  if(!userId || !secondFactor || !captcha){
+    showLoginError('Please fill in all fields.');
+    return;
+  }
+  if(captcha.toUpperCase() !== currentCaptcha){
+    showLoginError('Incorrect Captcha. Please try again.');
+    refreshCaptcha();
+    return;
+  }
+
+  const loginBtn = document.querySelector('#loginGate button[onclick="attemptLogin()"]');
+  if(loginBtn){ loginBtn.disabled = true; loginBtn.textContent = 'Checking...'; }
+
+  // 🆕 RENDER COLD-START NOTICE: free-tier backend sleeps after ~15 min
+  // idle; the first request after that can take 20-50s to wake up. If the
+  // login call hasn't resolved in 4s, swap in a reassuring message so this
+  // doesn't just look like a frozen "Checking..." button.
+  const stopWakeupWatch = (function(){
+    const timer = setTimeout(function(){ showLoginError('⏳ Server is waking up, please wait 30s... (free-tier backend sleeps when idle)'); }, 4000);
+    return function(){ clearTimeout(timer); };
+  })();
+  try{
+    // Login now goes through the same Cloud Run backend (MySQL) set in
+    // API_BASE above, instead of Firestore — /material/login route.
+    // 🆕 timeout raised 15s → 45s: 15s was shorter than a typical Render
+    // free-tier cold-start wake-up (20-50s), so a perfectly valid slow
+    // first request was being killed and shown as a false failure.
+    const result = await withTimeout(API.post('/material/login', {
+      userId: userId, secondFactor: secondFactor
+    }), 45000, 'Login check');
+    stopWakeupWatch();
+
+    const userDoc = (result && result.user) ? result.user : result;
+    // 🆕 FIX: Backend/DB column ka naam kabhi "userId" (camelCase) aur kabhi
+    // "userid" (sab lowercase) ho sakta hai — MySQL column jo bhi case me
+    // bana ho, response usi case me aata hai. Pehle sirf userDoc.userId
+    // check hota tha, isliye jab response "userid" (lowercase) me aata tha
+    // to yeh hamesha undefined milta tha aur sahi User ID par bhi "This
+    // User ID is not registered" wala galat error dikh jaata tha. Ab dono
+    // cases ko check karke ek consistent userDoc.userId set kar dete hain.
+    const resolvedUserId = userDoc && (userDoc.userId || userDoc.userid || userDoc.UserId || userDoc.USERID);
+    if(!userDoc || !resolvedUserId){
+      showLoginError('❌ This User ID is not registered. Please contact the admin.');
+      refreshCaptcha();
+      return;
+    }
+    userDoc.userId = resolvedUserId;
+    userDoc._docId = userDoc._docId || userDoc.docId || userDoc.id;
+    if(userDoc.status === 'blocked'){
+      showLoginError('🚫 This ID has been blocked by the admin. Please contact the admin.');
+      refreshCaptcha();
+      return;
+    }
+    if(result && result.token){
+      AUTH_TOKEN = result.token;
+      try{ sessionStorage.setItem('anmol_auth_token', AUTH_TOKEN); }catch(e){}
+    }
+    hideLoginError();
+    enterPortal(userDoc);
+  }catch(err){
+    stopWakeupWatch();
+    // The backend returns wrong User ID / wrong Mobile-Password / Blocked
+    // status all with clear text in err.message (via 401/403/404 — apiFetch
+    // above surfaces this).
+    showLoginError('❌ ' + err.message);
+    refreshCaptcha();
+  }finally{
+    if(loginBtn){ loginBtn.disabled = false; loginBtn.textContent = 'Login'; }
+  }
+}
+
+/* पेज लोड होते ही captcha तैयार करें, और अगर इसी टैब में पहले से लॉगिन है तो
+   Firestore से दोबारा (लाइव) status check करके सीधे अंदर जाने दें — ताकि बीच
+   में Block होने पर पुराना session काम न करे। */
+document.addEventListener('DOMContentLoaded', function(){
+  refreshCaptcha();
+  // 🆕 Section A ka "Work Category" dropdown + Section C ki material list
+  // Admin Panel se dynamically load karo — login se pehle bhi (public-read
+  // route hai) taaki form turant sahi state mein ready rahe. Uske baad har
+  // 30 second mein silently refresh karte rehte hain, taaki Admin agar
+  // Categories/Materials edit kare to yahan turant reflect ho jaaye.
+  renderWorkCategoryOptions();
+  loadMaterialCategories();
+  setInterval(loadMaterialCategories, 30000);
+  try{
+    const saved = JSON.parse(sessionStorage.getItem('anmolPortalUser') || 'null');
+    if(saved && saved.docId){
+      // पुराने सेशन को बैकएंड से दोबारा (लाइव) वेरीफाई करें — ताकि बीच में
+      // Block होने पर पुराना session काम न करे।
+      API.get('/material/users/' + encodeURIComponent(saved.docId)).then(function(userDoc){
+        if(userDoc && userDoc.status !== 'blocked'){
+          userDoc._docId = userDoc._docId || userDoc.docId || userDoc.id || saved.docId;
+          enterPortal(userDoc);
+        } else {
+          sessionStorage.removeItem('anmolPortalUser');
+        }
+      }).catch(function(){ /* offline / route उपलब्ध नहीं — purana session UI ke liye chalne dete hain */
+        enterPortal(saved);
+      });
+    }
+  }catch(e){}
+
+  const captchaField = document.getElementById('loginCaptcha');
+  if(captchaField){
+    captchaField.addEventListener('keydown', function(e){
+      if(e.key === 'Enter') attemptLogin();
+    });
+  }
+});
+
+/* =====================================================================
+   ANTI-INSPECT / ANTI-DEVTOOLS (बेस्ट-एफर्ट डिटरेंट)
+   ⚠️ नोट: ब्राउज़र में असली/पक्का तरीका मौजूद नहीं है कि DevTools को पूरी
+   तरह रोका जा सके। कोई भी थोड़ा जानकार यूज़र JavaScript बंद करके,
+   ब्राउज़र एक्सटेंशन से, या किसी दूसरी तकनीक से इसे बायपास कर सकता है।
+   नीचे का कोड सिर्फ़ आम/सामान्य यूज़र को हतोत्साहित करता है।
+   ===================================================================== */
+
+// Right-click / context menu disable
+document.addEventListener('contextmenu', function(e){
+  e.preventDefault();
+});
+
+// कीबोर्ड शॉर्टकट ब्लॉक: F12, Ctrl+Shift+I/J/C, Ctrl+U
+document.addEventListener('keydown', function(e){
+  const key = e.key;
+  if(key === 'F12'){
+    e.preventDefault();
+    return false;
+  }
+  if(e.ctrlKey && e.shiftKey && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c')){
+    e.preventDefault();
+    return false;
+  }
+  if(e.ctrlKey && (key === 'U' || key === 'u')){
+    e.preventDefault();
+    return false;
+  }
+});
+
+// टेक्स्ट सिलेक्शन/ड्रैग को हतोत्साहित करना (वैकल्पिक, हल्का डिटरेंट)
+document.addEventListener('dragstart', function(e){ e.preventDefault(); });
+</script>
+</body>
+</html>
