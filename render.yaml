@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: library-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PII_ENCRYPTION_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://digitallibraryanmollive.netlify.app
