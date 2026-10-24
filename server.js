@@ -1,4 +1,4 @@
-require('dotenv').config(); // local .env (Render uses dashboard env vars)
+try { require('dotenv').config(); } catch (e) { console.log('dotenv not installed, skipping...'); } // local .env only; Render uses dashboard env vars
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
