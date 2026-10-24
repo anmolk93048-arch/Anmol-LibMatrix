@@ -70,27 +70,26 @@ const NETLIFY_ANY_RE = /^https:\/\/[a-z0-9-]+\.netlify\.app$/;
 const NETLIFY_PREVIEW_RE = /^https:\/\/[a-z0-9-]+--digitallibraryanmollive\.netlify\.app$/;
 // 🆕 Local development (sirf production ke bahar)
 const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-app.use(cors({
+// CORS: open to all origins by default. Authentication uses Bearer tokens (no cookies), so reflecting the
+// request origin does not expose logged-in sessions. Set CORS_STRICT=true on Render to restrict access to the
+// allowlist above (FRONTEND_URL / EXTRA_CORS_ORIGINS / Netlify).
+const CORS_OPTIONS = {
     origin: function (origin, callback) {
-        // Server-to-server / curl / Postman jaisi requests mein origin header
-        // hota hi nahi — unhe allow karo (koi browser CORS risk nahi hai).
-        if (!origin) return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin)) return callback(null, true);
-        // 🆕 Any Netlify site (https://<name>.netlify.app and deploy previews) is allowed by default so a renamed /
-        //    new Netlify site never gets "blocked by CORS". Auth uses Bearer tokens (no cookies), so this does not
-        //    expose logged-in sessions. Set CORS_STRICT=true in Render to allow ONLY FRONTEND_URL / EXTRA_CORS_ORIGINS.
-        if (process.env.CORS_STRICT !== 'true' && NETLIFY_ANY_RE.test(origin)) return callback(null, true);
+        if (!origin || process.env.CORS_STRICT !== 'true') return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin) || NETLIFY_ANY_RE.test(origin)) return callback(null, true);
         if (process.env.NODE_ENV !== 'production' && LOCAL_DEV_RE.test(origin)) return callback(null, true);
-        console.warn('❌ CORS blocked origin:', origin);
+        console.warn('CORS blocked origin:', origin);
         const corsErr = new Error('CORS: access from this domain is not allowed — ' + origin);
-        corsErr.status = 403; // 500 ki jagah saaf 403
+        corsErr.status = 403;
         return callback(corsErr);
     },
-    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    maxAge: 86400 // cache preflight for a day
-}));
+    maxAge: 86400
+};
+app.use(cors(CORS_OPTIONS));
+app.options('*', cors(CORS_OPTIONS));
+
 
 app.use(express.json({
     limit: '100mb',
@@ -780,7 +779,10 @@ db.getConnection = function (cb) {
     });
 };
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || (function () {
+    console.warn('JWT_SECRET is not set. Using a temporary random secret; all logins will be invalidated on every restart. Set JWT_SECRET in Render → Environment.');
+    return require('crypto').randomBytes(32).toString('hex');
+})();
 
 // 🔒 SECURITY: pehle DB password aur JWT secret seedhe code mein likhe the
 // (agar yeh code kabhi public GitHub repo mein hota, to password sabko dikh
@@ -788,7 +790,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // koi bhi secret ab is file mein kahin nahi likha. Agar zaroori variable
 // missing ho, to server turant clearly bata dega (chup-chaap galat/khaali
 // credential se connect karne ki koshish nahi karega).
-const REQUIRED_ENV = process.env.DATABASE_URL ? ['DATABASE_URL', 'JWT_SECRET'] : ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET'];
+const REQUIRED_ENV = process.env.DATABASE_URL ? ['DATABASE_URL'] : ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 const missingEnv = REQUIRED_ENV.filter(k => !process.env[k]);
 if (missingEnv.length) {
     console.error('❌ The following required environment variables are not set in the Render Dashboard: ' + missingEnv.join(', '));
