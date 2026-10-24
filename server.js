@@ -58,6 +58,7 @@ app.set('trust proxy', 1);
 // bhi allow karne hon, to bas neeche is array mein add kar dein.
 const ALLOWED_ORIGINS = [
     'https://digitallibraryanmollive.netlify.app',
+    'https://wondrous-jelly-3ffe47.netlify.app',
     'https://library-backend-4efk.onrender.com'
 ]
     // 🆕 Render ka apna (custom) domain + koi extra origin — Environment se, code badle bina:
