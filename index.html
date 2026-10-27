@@ -672,7 +672,7 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
    nahi karna padega. */
 // 🆕 FIX (Netlify 404s): in hrefs ko un EXACT filenames se match kiya gaya hai
 // jo actually deploy folder mein upload hote hain (Netlify case-sensitive
-// Linux hosting hai, isliye 'PFMS_Login.html' !== 'PFMS_login.html' — ek
+// Linux hosting hai, isliye 'PFMS_Login.html' !== '/pfms-login' — ek
 // case-mismatch bhi 404 de deta hai). Yehi list Admin_panel_Login.html ki
 // DEFAULT_LOGIN_OPTIONS mein bhi match honi chahiye (source of truth).
 // 🆕 CRITICAL FIX (Admin Panel sync never worked on Netlify): every live-sync
@@ -687,11 +687,11 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
 // sync. If the backend URL ever changes, update it in ONE place here.
 const SHDL_API_BASE = window.SHDL_API_BASE || 'https://anmol-libmatrix.onrender.com/api';
 const LOGIN_FEATURES = [
-  {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'Admin_Login.html'},
-  {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'Agent_Login.html'},
-  {icon:'👥', name:'HRMS Login', desc:'Staff, attendance & HR management', href:'HRMS_login.html'},
-  {icon:'🎓', name:'Student Login', desc:'Books, fees, attendance & services', href:'Student_Attendance.html'},
-  {icon:'📦', name:'Invoice Generator', desc:'Materials, invoices & stock management', href:'INVOICE_LOGIN.html'}
+  {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'/admin-login'},
+  {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'/agent-login'},
+  {icon:'👥', name:'HRMS Login', desc:'Staff, attendance & HR management', href:'/hrms-login'},
+  {icon:'🎓', name:'Student Login', desc:'Books, fees, attendance & services', href:'/student-login'},
+  {icon:'📦', name:'Invoice Generator', desc:'Materials, invoices & stock management', href:'/invoice-login'}
 ];
 const APP_FEATURES = [
   {icon:'🟢', name:'NMS Attendance Login', desc:'Download attendance app', href:'#mobile-app', download:true},
@@ -714,9 +714,9 @@ const COMMAND_UPDATES = [
 ];
 // 🆕 Portal links: legacy filenames (older Admin-saved login_options) are mapped to the deployed files,
 //    unsafe schemes are dropped, and every portal opens in a NEW TAB so index.html stays open.
-const LEGACY_PAGES={'admin_panel_login.html':'Admin_Login.html','admin_login.html':'Admin_Login.html','new_admin_login.html':'Admin_Login.html','super_admin_login.html':'Admin_Login.html',
-  'agent_login.html':'Agent_Login.html','hrms_login.html':'HRMS_login.html','pfms_login.html':'PFMS_login.html','student_attendance.html':'Student_Attendance.html',
-  'student_attendance_portal.html':'Student_Attendance.html','invoice_login.html':'INVOICE_LOGIN.html','anmol_material_entry.html':'INVOICE_LOGIN.html','anmol_material_login.html':'INVOICE_LOGIN.html'};
+const LEGACY_PAGES={'admin_panel_login.html':'/admin-login','admin_login.html':'/admin-login','new_admin_login.html':'/admin-login','super_admin_login.html':'/admin-login',
+  'agent_login.html':'/agent-login','hrms_login.html':'/hrms-login','pfms_login.html':'/pfms-login','student_attendance.html':'/student-login',
+  'student_attendance_portal.html':'/student-login','invoice_login.html':'/invoice-login','anmol_material_entry.html':'/invoice-login','anmol_material_login.html':'/invoice-login'};
 function safeHref(u){
   u=String(u==null?'':u).trim();
   if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return '#';
@@ -823,7 +823,7 @@ renderUpdates();
       // sync hua hi na ho. Ab jaise hi backend se login_options/apps ek ARRAY ke roop mein
       // aata hai (khaali ho ya bhara hua), DATABASE hi hamesha jeetta hai — Admin Panel jo
       // bhi save kare (poora Render/absolute URL ho ya sirf ek relative filename jaise
-      // 'HRMS_login.html'), index.html turant EXACT wahi dikhayega. LOGIN_FEATURES/
+      // '/hrms-login'), index.html turant EXACT wahi dikhayega. LOGIN_FEATURES/
       // APP_FEATURES wale local defaults sirf tab tak dikhte hain jab tak Admin Panel ne
       // us key ko KABHI save hi nahi kiya (d.login_options === undefined) — yeh sirf ek
       // first-run placeholder hai jab tak backend se koi jawab na aaye, DB ko kabhi
