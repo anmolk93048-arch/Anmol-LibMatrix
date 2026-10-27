@@ -1,0 +1,24 @@
+# Clean URLs for Netlify (the Express server applies the same rules). Order matters.
+/Admin_Login.html            /admin-login      301!
+/Agent_Login.html            /agent-login      301!
+/HRMS_login.html             /hrms-login       301!
+/Student_Attendance.html     /student-login    301!
+/PFMS_login.html             /pfms-login       301!
+/INVOICE_LOGIN.html          /invoice-login    301!
+/Super_Admin_Dashboard.html  /admin-dashboard  301!
+/admin                       /admin-login      301
+/super-admin-login           /admin-login      301
+/super-admin                 /admin-login      301
+/agent                       /agent-login      301
+/hrms                        /hrms-login       301
+/student                     /student-login    301
+/pfms                        /pfms-login       301
+/invoice                     /invoice-login    301
+
+/admin-login      /Admin_Login.html            200
+/agent-login      /Agent_Login.html            200
+/hrms-login       /HRMS_login.html             200
+/student-login    /Student_Attendance.html     200
+/pfms-login       /PFMS_login.html             200
+/invoice-login    /INVOICE_LOGIN.html          200
+/admin-dashboard  /Super_Admin_Dashboard.html  200
