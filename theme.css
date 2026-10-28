@@ -1,0 +1,63 @@
+/* Anmol LibMatrix — theme layer: dark mode for the shared shell + login screens, Tiranga accent, toggle buttons */
+html{color-scheme:light}html[data-theme="dark"]{color-scheme:dark}
+body{transition:background-color .25s ease,color .25s ease}
+[data-theme-toggle]{cursor:pointer}
+.gov-a11y #gov-dark{border:1px solid rgba(255,255,255,.4);border-radius:12px;padding:1px 9px}
+.anmol-theme-fab{position:fixed;right:14px;bottom:56px;z-index:100001;width:42px;height:42px;border-radius:50%;border:1px solid rgba(0,0,0,.15);background:#fff;color:#111;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center}
+html[data-theme="dark"] .anmol-theme-fab{background:#1e293b;color:#fff;border-color:#475569}
+/* Tiranga stripe */
+html.theme-tiranga body::before{content:"";position:fixed;left:0;right:0;top:0;height:4px;z-index:2147483000;pointer-events:none;background:linear-gradient(90deg,#ff9933 0 33.3%,#fff 33.3% 66.6%,#138808 66.6% 100%)}
+/* Shared gov shell — dark */
+html:not([data-dark-invert])[data-theme="dark"] .gov-header{background:#111c33;border-bottom-color:var(--gov-orange,#f28c28)}
+html:not([data-dark-invert])[data-theme="dark"] .gov-brand .t1{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] .gov-brand .t2{color:#9fb0c8!important}
+html:not([data-dark-invert])[data-theme="dark"] .gov-footer{background:#0a1222;color:#b8c6dc}
+html:not([data-dark-invert])[data-theme="dark"] .gov-footer b{color:#fff}
+/* Login screens — dark */
+html:not([data-dark-invert])[data-theme="dark"] #login-screen,html:not([data-dark-invert])[data-theme="dark"] #admin-login,html:not([data-dark-invert])[data-theme="dark"] body.login-page{background:#0b1220!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen::before{background:linear-gradient(145deg,#0b1220 0%,#111c33 55%,#0e182b 100%)!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell,html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell[style]{background:#141e2d!important;border-color:#2b3a4f!important;color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen label,html:not([data-dark-invert])[data-theme="dark"] #login-screen h1,html:not([data-dark-invert])[data-theme="dark"] #login-screen h2,html:not([data-dark-invert])[data-theme="dark"] #login-screen h3{color:#c9d6e8!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen input{color:#e6edf7!important;background:transparent!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen [id$="-box"]{background:#101a29!important;border-color:#2b3a4f!important}
+/* pages without native dark CSS: smart-invert fallback (opt in with <html data-dark-invert>) */
+html[data-dark-invert][data-theme="dark"]{background:#fff;filter:invert(.92) hue-rotate(180deg)}
+html[data-dark-invert][data-theme="dark"] img,html[data-dark-invert][data-theme="dark"] video,html[data-dark-invert][data-theme="dark"] canvas,html[data-dark-invert][data-theme="dark"] iframe,html[data-dark-invert][data-theme="dark"] .anmol-theme-fab{filter:invert(1) hue-rotate(180deg)}
+/* admin dashboard extras */
+html:not([data-dark-invert])[data-theme="dark"] .theme-preview-bar{border:1px solid #2a3550}
+.dashboard-theme-swatch[data-preset="tiranga"]{background:linear-gradient(180deg,#ff9933 0 33%,#fff 33% 66%,#138808 66% 100%)!important}
+.topbar-theme-btn{background:transparent;border:1px solid rgba(255,255,255,.25);color:inherit;border-radius:10px;padding:6px 9px;font-size:15px;line-height:1}
+
+/* Dashboard (Super Admin) dark variables — fill the ones the base [data-theme=dark] block does not define */
+html[data-theme="dark"]{--page-bg:#0a0f1e;--text-main:#e6edf7;--text-sub:#a9b8cf;--text-muted:#7f90a8;--row-hover:#18223a;--border:#2a3550;--shadow:0 2px 12px rgba(0,0,0,.45);--t1:#e6edf7;--t2:#a9b8cf;--t3:#7f90a8}
+html:not([data-dark-invert])[data-theme="dark"] body{background:var(--page-bg,#0a0f1e);color:var(--text-main,#e6edf7)}
+html:not([data-dark-invert])[data-theme="dark"] .main,html:not([data-dark-invert])[data-theme="dark"] .content,html:not([data-dark-invert])[data-theme="dark"] .page{background:transparent}
+html:not([data-dark-invert])[data-theme="dark"] .data-table th,html:not([data-dark-invert])[data-theme="dark"] table thead th{background:#18223a;color:#a9b8cf}
+html:not([data-dark-invert])[data-theme="dark"] .data-table td,html:not([data-dark-invert])[data-theme="dark"] table td{border-color:#2a3550}
+html:not([data-dark-invert])[data-theme="dark"] select,html:not([data-dark-invert])[data-theme="dark"] textarea,html:not([data-dark-invert])[data-theme="dark"] input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]){background-color:var(--input-bg,#111827);color:var(--text-main,#e6edf7);border-color:#2a3550}
+html:not([data-dark-invert])[data-theme="dark"] .sa-card,html:not([data-dark-invert])[data-theme="dark"] .sa-in,html:not([data-dark-invert])[data-theme="dark"] .sa-tab{background:var(--card-bg,#1e2a42);color:var(--text-main,#e6edf7);border-color:#2a3550}
+/* Agent login card — dark */
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2){background:rgba(20,30,45,.96)!important;border-color:#2b3a4f!important;box-shadow:0 24px 70px rgba(0,0,0,.5)!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) label{color:#9fb2c8!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) input{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) input::placeholder{color:#6f829a!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) div[id$="-box"],html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) div[style*="border-radius"][style*="1.5px"]{background:#101a29!important;border-color:#2b3a4f!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:first-child *{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2) *:not(button):not(input):not(canvas){color:#c9d6e8}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen #user-box,html:not([data-dark-invert])[data-theme="dark"] #login-screen #pass-box,html:not([data-dark-invert])[data-theme="dark"] #login-screen #cap-box{background:#101a29!important;border-color:#2b3a4f!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen #login-user,html:not([data-dark-invert])[data-theme="dark"] #login-screen #login-pass,html:not([data-dark-invert])[data-theme="dark"] #login-screen #login-cap{color:#e6edf7!important;-webkit-text-fill-color:#e6edf7!important;background:transparent!important}
+html:not([data-dark-invert])[data-theme="dark"] #agent-reg-btn{color:#f0cf72!important;background:rgba(201,162,39,.16)!important;border-color:rgba(201,162,39,.6)!important}
+html:not([data-dark-invert])[data-theme="dark"] #cust-reg-btn{background:rgba(15,110,86,.25)!important;color:#6ee7a1!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:first-child,html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:first-child *{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2)>div:first-child,html:not([data-dark-invert])[data-theme="dark"] #login-screen .agent-login-shell>div:nth-of-type(2)>div:first-child *{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #login-screen #cust-reg-btn{background:rgba(15,110,86,.28)!important;color:#6ee7a1!important;border-color:rgba(74,222,128,.45)!important}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app,html:not([data-dark-invert])[data-theme="dark"] .content-area,html:not([data-dark-invert])[data-theme="dark"] .app-body{background:var(--page-bg,#0a0f1e)!important}
+html:not([data-dark-invert])[data-theme="dark"] .data-table th,html:not([data-dark-invert])[data-theme="dark"] .data-table thead,html:not([data-dark-invert])[data-theme="dark"] table thead th{background:#18223a!important;color:#a9b8cf!important}
+html:not([data-dark-invert])[data-theme="dark"] .data-table td{color:#d5deec}
+html:not([data-dark-invert])[data-theme="dark"] .page-title{color:#e6edf7}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app .content-area{background:#0a0f1e!important}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app th,html:not([data-dark-invert])[data-theme="dark"] #admin-app thead tr{background:#18223a!important;color:#a9b8cf!important}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app .page-title,html:not([data-dark-invert])[data-theme="dark"] #admin-app .page-header h1,html:not([data-dark-invert])[data-theme="dark"] #admin-app .page-header h2{color:#e6edf7!important}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app .page-sub{color:#8fa1ba!important}
+html:not([data-dark-invert])[data-theme="dark"] #admin-app td{color:#d5deec!important}
+html[data-dark-invert][data-theme="dark"] .gov-shell,html[data-dark-invert][data-theme="dark"] .gov-fixed-top,html[data-dark-invert][data-theme="dark"] .gov-footer{filter:invert(1) hue-rotate(180deg)}
