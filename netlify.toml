@@ -1,0 +1,20 @@
+[build]
+  publish = "frontend"     # static site, no build step
+
+# "/" serves frontend/index.html automatically. Unknown URLs -> index.html's landing page.
+[[redirects]]
+  from = "/index"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 404
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
