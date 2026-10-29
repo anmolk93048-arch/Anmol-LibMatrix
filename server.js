@@ -126,11 +126,7 @@ const PUBLIC_DIR = (function () {
     const p = path.join(__dirname, 'public');
     try { return fs.statSync(p).isDirectory() ? p : null; } catch (e) { return null; }
 })();
-const FRONTEND_DIR = (function () {
-    const p = path.join(__dirname, '..', 'frontend');
-    try { return fs.statSync(p).isDirectory() ? p : null; } catch (e) { return null; }
-})();
-const STATIC_DIRS = [PUBLIC_DIR, FRONTEND_DIR, __dirname].filter(Boolean);
+const STATIC_DIRS = PUBLIC_DIR ? [PUBLIC_DIR, __dirname] : [__dirname];
 const ROOT_DENY_NAMES = new Set(['server.js', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
     'procfile', 'dockerfile', 'render.yaml', 'readme.md']);
 const ROOT_ALLOW_EXT = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.map', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
@@ -167,51 +163,7 @@ function findStaticFile(name) {
     }
     return null;
 }
-// ═══ CLEAN URLs (no .html) ═══ one table drives: clean routes, legacy *.html -> 301 redirects and /api/pages/<slug> fallbacks.
-const CLEAN_PAGES = [
-    { clean: '/', file: 'index.html', aliases: ['/index', '/home'], slug: null },
-    { clean: '/admin-login', file: 'Admin_Login.html', slug: 'admin-login',
-      aliases: ['/admin', '/admin_login', '/super-admin', '/super-admin-login', '/super_admin_login', '/superadmin', '/admin-panel-login', '/admin_panel_login', '/new-admin-login', '/new_admin_login'] },
-    { clean: '/agent-login', file: 'Agent_Login.html', slug: 'agent-login', aliases: ['/agent', '/agent_login'] },
-    { clean: '/hrms-login', file: 'HRMS_login.html', slug: 'hrms-login', aliases: ['/hrms', '/hrms_login'] },
-    { clean: '/student-login', file: 'Student_Attendance.html', slug: 'student-login', aliases: ['/student', '/student_login', '/student-attendance', '/student_attendance'] },
-    { clean: '/pfms-login', file: 'PFMS_login.html', slug: 'pfms-login', aliases: ['/pfms', '/pfms_login'] },
-    { clean: '/invoice-login', file: 'INVOICE_LOGIN.html', slug: 'invoice-login', aliases: ['/invoice', '/invoice_login'] },
-    { clean: '/admin-dashboard', file: 'Super_Admin_Dashboard.html', slug: 'admin-dashboard', aliases: ['/dashboard', '/super-admin-dashboard', '/super_admin_dashboard'] }
-];
-const LEGACY_FILE_TO_CLEAN = {};   // 'admin_login.html' -> '/admin-login' (lower-case, with and without .html)
-const CLEAN_BY_SLUG = {};
-CLEAN_PAGES.forEach(function (pg) {
-    const base = pg.file.toLowerCase();
-    LEGACY_FILE_TO_CLEAN[base] = pg.clean;
-    LEGACY_FILE_TO_CLEAN[base.replace(/\.html$/, '')] = pg.clean;
-    if (pg.slug) CLEAN_BY_SLUG[pg.slug] = pg;
-    pg.aliases.forEach(function (a) { LEGACY_FILE_TO_CLEAN[a.slice(1) + '.html'] = pg.clean; });
-});
-LEGACY_FILE_TO_CLEAN['admin_panel_login.html'] = '/admin-login';
-LEGACY_FILE_TO_CLEAN['index.html'] = '/';
-// Slug aliases for /api/pages/<slug> (so old names keep working)
-['admin', 'super-admin', 'super-admin-login', 'admin_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['admin-login']; });
-['agent', 'agent_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['agent-login']; });
-['student', 'student_attendance'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['student-login']; });
-['hrms', 'hrms_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['hrms-login']; });
-// Browser URL never shows ".html": /Agent_Login.html?x=1 -> 301 /agent-login?x=1
-app.use(function (req, res, next) {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-    if (req.path.startsWith('/api/')) return next();
-    const m = /^\/([A-Za-z0-9_\-]+)(\.html?)?$/.exec(req.path);
-    if (!m) return next();
-    const key = (m[1] + '.html').toLowerCase();
-    const hit = LEGACY_FILE_TO_CLEAN[key];
-    if (!hit) return next();
-    const clean = hit;
-    if (!m[2] && ('/' + m[1]) === clean) return next();           // already the clean URL
-    if (!m[2] && key.replace(/\.html$/, '') === m[1].toLowerCase() && '/' + m[1].toLowerCase() === clean) return next();
-    const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : '';
-    res.redirect(301, clean + q);
-});
 if (PUBLIC_DIR) app.use(express.static(PUBLIC_DIR, STATIC_OPTS));
-if (FRONTEND_DIR) { const feStatic = express.static(FRONTEND_DIR, STATIC_OPTS); app.use(function (req, res, next) { return isSafeRootStaticPath(req.path) && !/\.html?$/i.test(req.path) ? feStatic(req, res, next) : next(); }); }
 const rootStatic = express.static(__dirname, STATIC_OPTS);
 app.use(function (req, res, next) { return isSafeRootStaticPath(req.path) ? rootStatic(req, res, next) : next(); });
 
@@ -2055,10 +2007,6 @@ function kvSetCore(table, key, value, res) {
         );
     };
     const finish = (val) => {
-        // New accounts are ACTIVE by default (never "Deactivated") — only an explicit Block/Deactivate by the admin changes it.
-        if (table === 'kv_admin_entities' && Array.isArray(val) && ['admins', 'agents', 'staff', 'students'].indexOf(key) >= 0) {
-            val = val.map(function (r) { return (r && typeof r === 'object' && !Array.isArray(r) && (r.status === undefined || r.status === null || r.status === '')) ? Object.assign({}, r, { status: 'active' }) : r; });
-        }
         if (table !== 'kv_admin_entities' || !Array.isArray(val)) return finishRaw(val);
         db.query(`SELECT value FROM ${table} WHERE \`key\` = ?`, [key], (err, rows) => {
             let merged = val, prevList = [];
@@ -2348,7 +2296,7 @@ function hrCanManage(auth, agentUsername) {
 //    se call hone par agentUsername zaroori nahi (Admin Panel se global
 //    staff add karna — kisi specific library se linked nahi).
 // 🪪 Identity Number (Aadhaar / ID) mandatory + global duplicate block (public form, so IP rate-limited)
-const hrRegisterWithChecks = asyncRoute(async (req, res) => {
+app.post('/api/hr/register', asyncRoute(async (req, res) => {
     const body = req.body || {};
     if (hitRateLimit('hrreg:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const norm = normIdentity(firstDefined(body.aadhar, body.aadhaar, body.identityNumber, body.identity, ''));
@@ -2360,8 +2308,7 @@ const hrRegisterWithChecks = asyncRoute(async (req, res) => {
         req.body = Object.assign({}, body, { aadhar: norm });
     }
     return hrRegisterCore(req, res);
-});
-app.post('/api/hr/register', feeGate('hrms'), hrRegisterWithChecks);
+}));
 function hrRegisterCore(req, res) {
     const body = req.body || {};
     const auth = getAuthUser(req);
@@ -2381,9 +2328,8 @@ function hrRegisterCore(req, res) {
                 return res.status(409).json({ error: 'This mobile number already exists with another registration.' });
             }
             const regId = 'PREG' + Date.now() + Math.random().toString(36).slice(2, 6);
-            const trackingId = genTrackingId('HRM');
             const rec = {
-                id: regId, trackingId, paymentRef: req.__paymentRef || '', fee: req.__fee || 0, name, phone, email: body.email || '', address: body.address || '',
+                id: regId, name, phone, email: body.email || '', address: body.address || '',
                 photo: body.photo || '', designation: body.designation || '', department: body.department || '',
                 agentUsername, status: 'pending', submittedOn: new Date().toISOString()
             };
@@ -2391,8 +2337,7 @@ function hrRegisterCore(req, res) {
             pending.push(rec);
             hrSetBlob('hrms_pending_registrations', pending, (sErr) => {
                 if (sErr) return res.status(500).json({ error: 'DB error: ' + sErr.message });
-                addTracking({ trackingId, kind: 'hrms', regId, name, mobile: phone, paymentRef: req.__paymentRef || '', fee: req.__fee || 0 });
-                res.status(201).json({ success: true, id: regId, trackingId });
+                res.status(201).json({ success: true, id: regId });
             });
         });
     });
@@ -3463,19 +3408,8 @@ app.get('/api/pages/:slug', (req, res) => {
     // chuki ho. Ab LOWER() dono taraf lagाya hai, taaki casing kabhi matter
     // na kare.
     db.query('SELECT name, mime, data FROM site_files WHERE LOWER(slug)=LOWER(?)', [req.params.slug], (err, rows) => {
-        // Built-in page fallback: never 404 for the standard login pages (admin-login, agent-login, ...).
-        const _builtin = CLEAN_BY_SLUG[String(req.params.slug || '').toLowerCase()];
-        const _sendBuiltin = function () {
-            const bf = _builtin && findStaticFile(_builtin.file);
-            if (bf) { res.set('Cache-Control', 'no-cache'); return res.sendFile(bf); }
-            if (_builtin) return res.redirect(302, _builtin.clean);
-            return false;
-        };
-        if (err) { if (_builtin) return _sendBuiltin(); return res.status(500).send('DB error: ' + err.message); }
-        if (!rows || !rows.length) {
-            if (_builtin) return _sendBuiltin();
-            return res.status(404).send('This page has not been uploaded yet: /' + req.params.slug);
-        }
+        if (err) return res.status(500).send('DB error: ' + err.message);
+        if (!rows || !rows.length) return res.status(404).send('This page has not been uploaded yet: /' + req.params.slug);
         const f = rows[0];
         res.set('Content-Type', f.mime || 'text/html');
         res.set('Content-Disposition', 'inline; filename="' + f.name + '"');
@@ -3508,7 +3442,7 @@ app.get('/api/students', (req, res) => kvGet('kv_admin_entities', 'students', re
 // koi "Pending" list thi hi nahi jahan yeh dikhta. Ab yeh backend mein
 // pending register hota hai; Admin Panel isse dekh kar Approve/Reject
 // karta hai — approve hone tak agent login nahi kar sakta.
-function agentRegistrationCore(req, res) {
+app.post('/api/agent-registrations', (req, res) => {
     const { name, username, password, mobile, company } = req.body || {};
     if (!name || !username || !password) return res.status(400).json({ error: 'Name, username and password are required.' });
     if (password.length < 4) return res.status(400).json({ error: 'The password must be at least 4 characters long.' });
@@ -3529,9 +3463,8 @@ function agentRegistrationCore(req, res) {
             if (pending.some(p => p && p.username && p.username.toLowerCase() === uname && p.status === 'pending')) {
                 return res.status(409).json({ error: 'A registration with this username is already awaiting Admin approval.' });
             }
-            const trackingId = genTrackingId('AGT');
             const rec = {
-                id: 'REG' + Date.now(), trackingId, paymentRef: req.__paymentRef || '', fee: req.__fee || 0, name, username: uname,
+                id: 'REG' + Date.now(), name, username: uname,
                 // 🔒 Password Hashing: pending registration mein bhi
                 // password kabhi plain-text save nahi hota — turant bcrypt
                 // hash. Admin approve karega to yahi hash 'agents' list
@@ -3547,14 +3480,12 @@ function agentRegistrationCore(req, res) {
                 [JSON.stringify(pending)],
                 (insErr) => {
                     if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-                    addTracking({ trackingId, kind: 'agent', regId: rec.id, name: rec.name, mobile: rec.mobile, username: rec.username, paymentRef: req.__paymentRef || '', fee: req.__fee || 0 });
-                    res.status(201).json({ success: true, id: rec.id, trackingId });
+                    res.status(201).json({ success: true, id: rec.id });
                 }
             );
         });
     });
-}
-app.post('/api/agent-registrations', feeGate('agent'), agentRegistrationCore);
+});
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -3610,26 +3541,23 @@ app.post('/api/customer-registrations/order', async (req, res) => {
             try { plans = pRows && pRows.length ? JSON.parse(pRows[0].value) : []; } catch (e) {}
             const plan = plans.find(p => p && p.id === planId);
             if (!plan) return res.status(404).json({ error: 'This membership plan is not configured by the Admin.' });
-            resolveFee('customer', { mobile: mobile, agent: [agentId, loginUsername], planPrice: plan.price }).then((fee) => {
-                if (fee <= 0) return { id: 'FREE_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'), amount: 0, currency: 'INR', free: true };
-                return razorpayRequest('/v1/orders', {
-                    amount: Math.round(Number(fee) * 100),
-                    currency: 'INR',
-                    receipt: 'custreg_' + mobile + '_' + Date.now()
-                }).then((o) => { o.fee = fee; return o; });
+            razorpayRequest('/v1/orders', {
+                amount: Math.round(Number(plan.price) * 100),
+                currency: 'INR',
+                receipt: 'custreg_' + mobile + '_' + Date.now()
             }).then((order) => {
                 db.query(
                     `INSERT INTO customer_registration_orders
                         (orderId, name, mobile, email, address, note, agentId, planId, planName, amount,
                          district, state, pin_code, aadhaar_last4, aadhaar_hash, aadhaar_enc, pan_enc, pan_hash, pan_masked)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-                    [order.id, cName, mobile, cEmail, cAddress, cNote, agentId, plan.id, plan.name || '', order.free ? 0 : (order.fee != null ? order.fee : plan.price),
+                    [order.id, cName, mobile, cEmail, cAddress, cNote, agentId, plan.id, plan.name || '', plan.price,
                         kyc.district || '', kyc.state || '', kyc.pin_code || '',
                         kyc.aadhaar_last4 || null, kyc.aadhaar_hash || null, kyc.aadhaar_enc || null,
                         kyc.pan_enc || null, kyc.pan_hash || null, kyc.pan_masked || null],
                     (err) => {
                         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-                        res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, plan: plan, free: !!order.free, fee: order.free ? 0 : (order.fee != null ? order.fee : plan.price) });
+                        res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, plan: plan });
                     }
                 );
             }).catch((e) => res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }));
@@ -3639,22 +3567,18 @@ app.post('/api/customer-registrations/order', async (req, res) => {
 
 app.post('/api/customer-registrations/verify', (req, res) => {
     const secret = process.env.PAYMENT_API_SECRET;
+    if (!secret) return res.status(501).json({ error: 'PAYMENT_API_SECRET is not set in the Render Environment.' });
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
-    // Free registration (₹0 set by the Super Admin): the order id is server-issued ("FREE_…") and its stored amount is 0.
-    const isFree = /^FREE_/.test(String(razorpay_order_id || ''));
-    if (!isFree) {
-        if (!secret) return res.status(501).json({ error: 'PAYMENT_API_SECRET is not set in the Render Environment.' });
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-            return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
-        }
-        const expected = crypto.createHmac('sha256', secret)
-            .update(razorpay_order_id + '|' + razorpay_payment_id)
-            .digest('hex');
-        if (expected !== razorpay_signature) {
-            return res.status(400).json({ error: 'Payment could not be verified — signature mismatch.' });
-        }
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
     }
-    db.query(isFree ? "SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created' AND amount = 0" : "SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created'", [razorpay_order_id], (err, rows) => {
+    const expected = crypto.createHmac('sha256', secret)
+        .update(razorpay_order_id + '|' + razorpay_payment_id)
+        .digest('hex');
+    if (expected !== razorpay_signature) {
+        return res.status(400).json({ error: 'Payment could not be verified — signature mismatch.' });
+    }
+    db.query("SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created'", [razorpay_order_id], (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         if (!rows || !rows.length) return res.status(404).json({ error: 'This order has already been processed or was not found.' });
         // 🔒 FIX: Postgres row keys lowercase hoti hain (agentid/planid/planname) —
@@ -3741,11 +3665,6 @@ async function trackStatusHandler(req, res) {
         const mobile = normMobile(src.mobile);
         if (!appId || mobile.length !== 10) {
             return res.status(400).json({ error: 'Please enter a valid Application ID and a 10-digit mobile number.' });
-        }
-        if (/^TRK-/i.test(appId)) {
-            const t = await trackingLookup(appId, mobile);
-            if (!t) return res.status(404).json({ error: 'No application was found for the Tracking ID and mobile number provided.' });
-            return res.json(t);
         }
         const list = await readCustomerRegs();
         const rec = list.find(r => r && String(r.id).toLowerCase() === appId.toLowerCase() && normMobile(r.mobile) === mobile);
@@ -5904,7 +5823,6 @@ function checkIdentityFormat(n) {
 }
 function maskIdentity(n) { n = String(n || ''); return n.length >= 4 ? 'XXXX XXXX ' + n.slice(-4) : ''; }
 function ownerLabel(att, fallbackName) {
-    if (att && att.agentCompany) return att.agentCompany + (att.agentName ? ' — Agent ' + att.agentName : '') + (att.agentId ? ' (' + att.agentId + ')' : '');
     if (att && att.agentName) return att.agentName + (att.agentId ? ' (' + att.agentId + ')' : '');
     if (att && (att.agentId || att.agentUsername)) return att.agentId || att.agentUsername;
     return fallbackName ? fallbackName : 'Admin / Direct';
@@ -5941,8 +5859,8 @@ async function findIdentityOwner(norm, selfKeys, excludeSrc, idx, selfPhone) {
                 // pending registration → approved employee/staff (naya ID, wahi insaan): same mobile = same person
                 if (selfPhone && PENDING_IDENTITY_SRCS.indexOf(src.key) >= 0 && last10(rec.mobile || rec.phone) === selfPhone) continue;
                 const att = attribute(idx, [rec.agentId, rec.ownerUser, rec.agentUsername, rec.registeredAgentId, rec.scopeAgentId]);
-                const lbl = src.kind === 'agent' ? ((rec.company ? rec.company + ' — ' : '') + 'Agent ' + (rec.name || rec.username || '') + (rec.agentId ? ' (' + rec.agentId + ')' : '')) : ownerLabel(att);
-                return { kind: src.kind, entityId: genericEntityId(rec), name: rec.name || '', company: (att && att.agentCompany) || (src.kind === 'agent' ? (rec.company || '') : ''), label: (src.kind !== 'agent' && rec.name ? 'existing record "' + rec.name + '" under ' : '') + lbl };
+                const lbl = src.kind === 'agent' ? ((rec.name || rec.username || 'Agent') + (rec.agentId ? ' (' + rec.agentId + ')' : '')) : ownerLabel(att);
+                return { kind: src.kind, entityId: genericEntityId(rec), name: rec.name || '', label: lbl };
             }
         }
     }
@@ -5951,7 +5869,7 @@ async function findIdentityOwner(norm, selfKeys, excludeSrc, idx, selfPhone) {
         for (let i = 0; i < rows.length; i++) {
             if (selfKeys.length && selfKeys.indexOf(String(rows[i].entity_id).toLowerCase()) >= 0) continue;
             const att = attribute(idx, [rows[i].agent_id, rows[i].agent_username]);
-            return { kind: rows[i].entity_type, entityId: String(rows[i].entity_id), name: rows[i].full_name || '', company: att.agentCompany || '', label: (rows[i].full_name ? 'existing record "' + rows[i].full_name + '" under ' : '') + ownerLabel(att) };
+            return { kind: rows[i].entity_type, entityId: String(rows[i].entity_id), name: rows[i].full_name || '', label: ownerLabel(att) };
         }
     }
     return null;
@@ -6045,12 +5963,12 @@ const GATE_DEFAULT = {
         roleLabel: 'Select Role', locationLabel: 'Select Location', continueLabel: 'Continue'
     },
     roles: [
-        { id: 'super_admin', label: 'Admin', portal: 'admin', target: '/admin-dashboard', enabled: true },
-        { id: 'pfms', label: 'PFMS Portal', portal: 'pfms', target: '/pfms-login', enabled: true },
-        { id: 'agent', label: 'Agent Login', portal: 'agent', target: '/agent-login', enabled: true },
-        { id: 'hrms', label: 'HRMS', portal: 'hrms', target: '/hrms-login', enabled: true },
-        { id: 'student', label: 'Student Attendance', portal: 'student', target: '/student-login', enabled: true },
-        { id: 'invoice', label: 'Invoice Login', portal: 'invoice', target: '/invoice-login', enabled: true }
+        { id: 'super_admin', label: 'Super Admin', portal: 'admin', target: 'Super_Admin_Dashboard.html', enabled: true },
+        { id: 'pfms', label: 'PFMS Portal', portal: 'pfms', target: 'PFMS_login.html', enabled: true },
+        { id: 'agent', label: 'Agent Login', portal: 'agent', target: 'Agent_Login.html', enabled: true },
+        { id: 'hrms', label: 'HRMS', portal: 'hrms', target: 'HRMS_login.html', enabled: true },
+        { id: 'student', label: 'Student Attendance', portal: 'student', target: 'Student_Attendance.html', enabled: true },
+        { id: 'invoice', label: 'Invoice Login', portal: 'invoice', target: 'INVOICE_LOGIN.html', enabled: true }
     ],
     locations: [
         { id: 'begusarai', label: 'Begusarai', enabled: true },
@@ -6059,8 +5977,7 @@ const GATE_DEFAULT = {
     users: []   // [{username, name, title:'Mr.'|'Mrs.', roles:[ids], locations:[ids], actAs:{roleId: username}}]
 };
 const GATE_PORTALS = ['admin', 'pfms', 'agent', 'hrms', 'student', 'invoice'];
-const SAFE_TARGET = /^\/?[A-Za-z0-9_\-]{1,60}(\.html)?$/;
-const cleanTarget = (t) => { const k = String(t || '').replace(/^\//, '').toLowerCase(); return LEGACY_FILE_TO_CLEAN[k.endsWith('.html') ? k : k + '.html'] || (String(t).charAt(0) === '/' ? t : '/' + t); };
+const SAFE_TARGET = /^[A-Za-z0-9_\-]{1,60}\.html$/;
 function sanitizeGate(v) {
     const g = (v && typeof v === 'object') ? v : {};
     const s = function (x, n) { return cleanText(x, n); };
@@ -6072,8 +5989,7 @@ function sanitizeGate(v) {
         if (!r || !s(r.label, 60)) return;
         const portal = GATE_PORTALS.indexOf(r.portal) >= 0 ? r.portal : 'admin';
         let target = s(r.target, 80);
-        if (!SAFE_TARGET.test(target)) target = (GATE_DEFAULT.roles.find(function (d) { return d.portal === portal; }) || {}).target || '/admin-dashboard';
-        target = cleanTarget(target);
+        if (!SAFE_TARGET.test(target)) target = (GATE_DEFAULT.roles.find(function (d) { return d.portal === portal; }) || {}).target || 'Super_Admin_Dashboard.html';
         out.roles.push({ id: slug(r.id, r.label), label: s(r.label, 60), portal: portal, target: target, enabled: r.enabled !== false });
     });
     (Array.isArray(g.locations) ? g.locations : []).slice(0, 100).forEach(function (l) {
@@ -6288,14 +6204,18 @@ app.put('/api/admin/cms/:key', noStore, requireRole('admin'), asyncRoute(async (
 //     /admin /admin-login        → Admin_Login.html   (fallback: /api/pages/admin-login)
 //     /agent /agent-login        → Agent_Login.html   (fallback: /api/pages/agent-login)
 // ══════════════════════════════════════════════════════════════════
-CLEAN_PAGES.forEach(function (pg) {
-    [pg.clean].concat(pg.aliases).forEach(function (p) {
+const PAGE_MAP = [
+    { paths: ['/', '/index', '/home'], file: 'index.html', slug: null },
+    { paths: ['/admin', '/admin-login', '/admin_login'], file: 'Admin_Login.html', slug: 'admin-login' },
+    { paths: ['/agent', '/agent-login', '/agent_login'], file: 'Agent_Login.html', slug: 'agent-login' }
+];
+PAGE_MAP.forEach(function (pg) {
+    pg.paths.forEach(function (p) {
         app.get(p, function (req, res, next) {
-            if (p !== pg.clean) { const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : ''; return res.redirect(301, pg.clean + q); } // alias -> canonical clean URL
             const f = findStaticFile(pg.file);
             if (f) { res.set('Cache-Control', 'no-cache'); return res.sendFile(f); }
-            if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend on Netlify: same as before
-            if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);                 // uploaded copy from the database
+            if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend Netlify par ho to pehle jaisa
+            if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);
             next();
         });
     });
@@ -6332,279 +6252,6 @@ app.get('/api/health/deep', async (req, res) => {
     }
     res.set('Cache-Control', 'no-store').json(out);
 });
-// ═══════════════════════════════════════════════════════════════════════
-// 🆕 TRACKING IDs · CUSTOM FEES · DYNAMIC BRANDING · MASTER USERS LIST
-// ═══════════════════════════════════════════════════════════════════════
-function genTrackingId(prefix) {
-    return 'TRK-' + prefix + '-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
-}
-async function xBlobGet(key, dflt) {
-    try {
-        const r = await dbq('SELECT value FROM kv_blob WHERE `key` = ?', [key]);
-        const v = JSON.parse(r[0] && r[0].value);
-        return v == null ? dflt : v;
-    } catch (e) { return dflt; }
-}
-async function xBlobSet(key, val) {
-    await dbq('INSERT INTO kv_blob ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(val)]);
-}
-let _trkQueue = Promise.resolve();
-function addTracking(rec) {
-    rec.createdAt = new Date().toISOString();
-    _trkQueue = _trkQueue.then(async function () {
-        const list = await xBlobGet('tracking_records', []);
-        (Array.isArray(list) ? list : (list = [])).push(rec);
-        await xBlobSet('tracking_records', list.slice(-5000));
-    }).catch(function (e) { console.error('tracking save failed:', e.message); });
-    return _trkQueue;
-}
-
-// ── Fee configuration (Super Admin controlled; ₹0 = free) ──
-const FEE_KINDS = ['agent', 'hrms', 'customer'];
-function feeNum(v) { const n = Math.round(Number(v) * 100) / 100; return (isFinite(n) && n >= 0 && n <= 1000000) ? n : null; }
-async function getFeeConfig() {
-    const c = await xBlobGet('fee_config', {});
-    const cfg = { defaults: { agent: 0, hrms: 0 }, overrides: [] };
-    if (c && c.defaults) { ['agent', 'hrms'].forEach(function (k) { const n = feeNum(c.defaults[k]); if (n !== null) cfg.defaults[k] = n; }); }
-    if (c && Array.isArray(c.overrides)) cfg.overrides = c.overrides.filter(function (o) { return o && o.key && feeNum(o.fee) !== null; });
-    return cfg;
-}
-// Resolution order: per-mobile override → per-agent override → default (customer: the plan's own price).
-async function resolveFee(kind, ctx) {
-    const cfg = await getFeeConfig();
-    ctx = ctx || {};
-    const mob = last10(ctx.mobile);
-    const agents = (Array.isArray(ctx.agent) ? ctx.agent : [ctx.agent]).map(function (a) { return String(a || '').trim().toLowerCase(); }).filter(Boolean);
-    const match = function (o) { return o.kind === kind || o.kind === '*' || !o.kind; };
-    if (mob.length === 10) { const o = cfg.overrides.find(function (x) { return match(x) && last10(x.key) === mob && /^\d{10}$/.test(last10(x.key)) && String(x.key).replace(/\D/g, '').length >= 10; }); if (o) return feeNum(o.fee); }
-    if (agents.length) { const o = cfg.overrides.find(function (x) { return match(x) && agents.indexOf(String(x.key).trim().toLowerCase()) >= 0; }); if (o) return feeNum(o.fee); }
-    if (kind === 'customer') return feeNum(ctx.planPrice) === null ? 0 : feeNum(ctx.planPrice);
-    return cfg.defaults[kind] || 0;
-}
-async function verifyRegPayment(kind, fee, p) {
-    const secret = process.env.PAYMENT_API_SECRET;
-    if (!secret || !p || !p.orderId || !p.paymentId || !p.signature) return false;
-    const expected = crypto.createHmac('sha256', secret).update(p.orderId + '|' + p.paymentId).digest('hex');
-    const a = Buffer.from(expected), b = Buffer.from(String(p.signature));
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-    const orders = await xBlobGet('reg_orders', {});
-    const o = orders && orders[p.orderId];
-    if (!o || o.kind !== kind || Number(o.fee) !== Number(fee) || o.used) return false;
-    o.used = true; o.paymentId = p.paymentId;
-    await xBlobSet('reg_orders', orders);
-    return true;
-}
-function feeGate(kind) {
-    return function (req, res, next) {
-        (async function () {
-            const b = req.body || {};
-            const fee = await resolveFee(kind, { mobile: b.mobile || b.phone, agent: [b.agentUsername, b.agent, b.agentId] });
-            req.__fee = fee;
-            if (fee <= 0) return next();
-            const ok = await verifyRegPayment(kind, fee, b.payment || {});
-            if (!ok) return res.status(402).json({ error: 'A registration fee of ₹' + fee + ' is required. Please complete the payment to continue.', feeRequired: true, fee: fee });
-            req.__paymentRef = String(b.payment.paymentId).slice(0, 60);
-            next();
-        })().catch(function (e) { console.error('feeGate error:', e.message); res.status(500).json({ error: 'Unable to verify the registration fee. Please try again.' }); });
-    };
-}
-app.get('/api/registration/fee', asyncRoute(async (req, res) => {
-    const kind = String(req.query.kind || '');
-    if (FEE_KINDS.indexOf(kind) < 0 || kind === 'customer') return res.status(400).json({ error: 'Invalid registration type.' });
-    const fee = await resolveFee(kind, { mobile: req.query.mobile, agent: req.query.agent });
-    res.json({ fee: fee, free: fee <= 0 });
-}));
-app.post('/api/registration/payment-order', asyncRoute(async (req, res) => {
-    if (hitRateLimit('regpay:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-    const b = req.body || {};
-    const kind = String(b.kind || '');
-    if (kind !== 'agent' && kind !== 'hrms') return res.status(400).json({ error: 'Invalid registration type.' });
-    const fee = await resolveFee(kind, { mobile: b.mobile, agent: [b.agentUsername, b.agent, b.agentId] });
-    if (fee <= 0) return res.json({ free: true, fee: 0 });
-    if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET) return res.status(501).json({ error: 'Payment keys are not set in the Render Environment (PAYMENT_API_KEY / PAYMENT_API_SECRET).' });
-    const order = await razorpayRequest('/v1/orders', { amount: Math.round(fee * 100), currency: 'INR', receipt: 'reg_' + kind + '_' + Date.now(), notes: { kind: kind } });
-    const orders = await xBlobGet('reg_orders', {});
-    const keys = Object.keys(orders);
-    if (keys.length > 2000) keys.slice(0, keys.length - 1500).forEach(function (k) { delete orders[k]; });
-    orders[order.id] = { kind: kind, fee: fee, used: false, at: Date.now() };
-    await xBlobSet('reg_orders', orders);
-    res.json({ free: false, orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, fee: fee });
-}));
-app.get('/api/admin/fee-config', requireRole('admin'), asyncRoute(async (req, res) => { res.json(await getFeeConfig()); }));
-app.put('/api/admin/fee-config', requireRole('admin'), asyncRoute(async (req, res) => {
-    const b = req.body || {};
-    const cfg = { defaults: { agent: 0, hrms: 0 }, overrides: [] };
-    for (const k of ['agent', 'hrms']) {
-        const n = feeNum(b.defaults && b.defaults[k]);
-        if (b.defaults && b.defaults[k] !== undefined && n === null) return res.status(400).json({ error: 'Please enter a valid fee amount (0 or more).' });
-        cfg.defaults[k] = n === null ? 0 : n;
-    }
-    for (const o of (Array.isArray(b.overrides) ? b.overrides : [])) {
-        const key = cleanText(o && o.key, 80).trim();
-        const fee = feeNum(o && o.fee);
-        if (!key) continue;
-        if (fee === null) return res.status(400).json({ error: 'Invalid fee for "' + key + '".' });
-        const kind = ['agent', 'hrms', 'customer', '*'].indexOf(o.kind) >= 0 ? o.kind : '*';
-        cfg.overrides.push({ key: key, kind: kind, fee: fee, note: cleanText(o.note, 120) });
-    }
-    if (cfg.overrides.length > 500) return res.status(400).json({ error: 'Too many custom fee rows (max 500).' });
-    await xBlobSet('fee_config', cfg);
-    res.json(cfg);
-}));
-
-// ── Dynamic branding: the agent's company name + logo for login page / dashboard header ──
-app.get('/api/branding/agent', asyncRoute(async (req, res) => {
-    const u = String(req.query.u || '').trim().toLowerCase();
-    res.set('Cache-Control', 'public, max-age=60');
-    if (!u || u.length > 80) return res.json({ found: false });
-    const rows = await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['agents']);
-    const list = parseEntityList(rows[0] && rows[0].value);
-    const a = list.find(function (x) { return x && (String(x.username || '').toLowerCase() === u || String(x.agentId || '').toLowerCase() === u); });
-    if (!a) return res.json({ found: false });
-    const logo = String(a.logo || '');
-    const okLogo = /^(data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,|https?:\/\/|\/[^\/])/i.test(logo) && logo.length < 3 * 1024 * 1024;
-    res.json({ found: true, company: a.company || '', name: a.name || '', logo: okLogo ? logo : '' });
-}));
-
-// ── Tracking lookup for Agent / HRMS registrations (used by track-status) ──
-async function trackingLookup(trackingId, mobile) {
-    const list = await xBlobGet('tracking_records', []);
-    const t = (Array.isArray(list) ? list : []).find(function (r) { return r && String(r.trackingId).toLowerCase() === trackingId.toLowerCase() && last10(r.mobile) === mobile; });
-    if (!t) return null;
-    const out = { success: true, trackingId: t.trackingId, applicationId: t.trackingId, name: t.name, type: t.kind === 'agent' ? 'Agent Registration' : 'HRMS / Staff Registration', submittedOn: t.createdAt, status: 'pending', feePaid: t.fee || 0 };
-    if (t.kind === 'agent') {
-        const pend = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['agent_pending_registrations']))[0] || {}).value);
-        const p = pend.find(function (x) { return x && x.id === t.regId; });
-        const ag = parseEntityList(((await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['agents']))[0] || {}).value);
-        const agent = ag.find(function (x) { return x && String(x.username || '').toLowerCase() === String(t.username || '').toLowerCase(); });
-        if (agent) { out.status = 'approved'; out.credentials = { userId: agent.username, password: null }; out.message = 'Your Agent registration has been approved. Sign in with your User ID and the password you chose at registration.'; }
-        else if (p && String(p.status || 'pending') === 'rejected') { out.status = 'rejected'; out.message = 'Your registration was not approved. Please contact the Admin.'; }
-        else if (!p) { out.status = 'rejected'; out.message = 'This registration is no longer in the review queue. Please contact the Admin.'; }
-        else out.message = 'Your registration is under review by the Admin.';
-    } else {
-        const pend = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['hrms_pending_registrations']))[0] || {}).value);
-        if (pend.some(function (x) { return x && x.id === t.regId; })) { out.message = 'Your registration is under review.'; }
-        else {
-            const emps = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['hrms_employees']))[0] || {}).value);
-            const e = emps.find(function (x) { return x && last10(x.phone) === mobile; });
-            if (e) { out.status = 'approved'; out.credentials = { userId: e.empId, password: null }; out.message = 'Your registration has been approved. Your Employee ID is ' + e.empId + '. Sign in on the HRMS login page with this ID.'; }
-            else { out.status = 'rejected'; out.message = 'Your registration was not approved. Please contact your library / Admin.'; }
-        }
-    }
-    return out;
-}
-
-// ═══ MASTER USERS & REGISTRATIONS LIST (Super Admin — every Supabase record in one place) ═══
-const MASTER_SOURCES = [
-    { id: 'agents', table: 'kv_admin_entities', key: 'agents', kind: 'agent', label: 'Agent' },
-    { id: 'students', table: 'kv_admin_entities', key: 'students', kind: 'student', label: 'Student' },
-    { id: 'staff', table: 'kv_admin_entities', key: 'staff', kind: 'staff', label: 'Staff' },
-    { id: 'hrms_employees', table: 'kv_blob', key: 'hrms_employees', kind: 'employee', label: 'HRMS Staff' },
-    { id: 'hrms_pending_registrations', table: 'kv_blob', key: 'hrms_pending_registrations', kind: 'employee', label: 'HRMS Registration (pending)' },
-    { id: 'agent_pending_registrations', table: 'kv_blob', key: 'agent_pending_registrations', kind: 'agent', label: 'Agent Registration (pending)' },
-    { id: 'customer_pending_registrations', table: 'kv_blob', key: 'customer_pending_registrations', kind: 'customer', label: 'Customer Registration' }
-];
-function masterRecId(rec) { return String(firstDefined(rec.id, rec.studentId, rec.empId, rec.agentId, rec.username, '')).trim(); }
-function masterStatus(rec) { return String(rec.status || 'active').toLowerCase(); }
-app.get('/api/admin/master-list', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const idx = await loadAgentsIndex();
-    const kycRows = await safeQ('SELECT entity_type, entity_id, aadhaar_last4 FROM kyc_records LIMIT 50000', []);
-    const kycMap = new Map();
-    kycRows.forEach(function (r) { kycMap.set(r.entity_type + ':' + String(r.entity_id).toLowerCase(), r.aadhaar_last4 || ''); });
-    const out = [];
-    for (const s of MASTER_SOURCES) {
-        const rows = await safeQ('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
-        const list = parseEntityList(rows[0] && rows[0].value);
-        list.forEach(function (rec) {
-            if (!rec || typeof rec !== 'object') return;
-            const id = masterRecId(rec);
-            const att = attribute(idx, [rec.agentUsername, rec.ownerUser, rec.agentId, s.kind === 'agent' ? rec.username : '']);
-            let last4 = kycMap.get(s.kind + ':' + id.toLowerCase()) || '';
-            if (!last4) { const d = extractAadhaarDigits(rec); if (d) last4 = d.slice(-4); }
-            out.push({
-                source: s.id, kind: s.kind, type: s.label, id: id, name: rec.name || '', mobile: rec.mobile || rec.phone || '', email: rec.email || '',
-                address: rec.address || '', username: rec.username || '', status: masterStatus(rec),
-                aadhaarMasked: last4 ? 'XXXX XXXX ' + last4 : '', trackingId: rec.trackingId || '',
-                agentUsername: att.agentUsername || String(rec.agentUsername || ''), agentName: att.agentName, company: s.kind === 'agent' ? (rec.company || '') : (att.agentCompany || ''),
-                createdAt: rec.createdAt || rec.submittedOn || rec.joinedOn || rec.registeredOn || rec.date || ''
-            });
-        });
-    }
-    const mu = await safeQ('SELECT * FROM material_users ORDER BY 1 DESC LIMIT 5000', []);
-    mu.forEach(function (r) {
-        out.push({ source: 'material_users', kind: 'material_user', type: 'Material User', id: String(r.userid || r.userId || ''), name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: r.address || r.village || '',
-            username: String(r.userid || ''), status: String(r.status || 'active').toLowerCase(), aadhaarMasked: '', trackingId: '', agentUsername: '', agentName: '', company: '', createdAt: r.created_at || r.createdat || '' });
-    });
-    const mr = await safeQ('SELECT * FROM material_user_requests ORDER BY 1 DESC LIMIT 5000', []);
-    mr.forEach(function (r) {
-        out.push({ source: 'material_user_requests', kind: 'material_request', type: 'Material User Request', id: String(r.id || ''), name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: r.address || r.village || '',
-            username: '', status: String(r.status || 'pending').toLowerCase(), aadhaarMasked: '', trackingId: '', agentUsername: '', agentName: '', company: '', createdAt: r.created_at || r.createdat || '' });
-    });
-    const counts = {};
-    out.forEach(function (r) { counts[r.type] = (counts[r.type] || 0) + 1; });
-    res.json({ total: out.length, counts: counts, items: out, agents: Array.from(new Set(Array.from(idx.values()))).map(function (a) { return { username: a.username, name: a.name, company: a.company, agentId: a.agentId }; }) });
-}));
-const MASTER_EDITABLE = ['name', 'mobile', 'phone', 'email', 'address', 'status', 'company', 'designation', 'department'];
-app.put('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(async (req, res) => {
-    const src = req.params.source, id = String(req.params.id || '').trim();
-    const b = req.body || {};
-    if (b.status !== undefined && ['active', 'inactive', 'blocked', 'pending', 'approved', 'rejected'].indexOf(String(b.status).toLowerCase()) < 0) return res.status(400).json({ error: 'Invalid status.' });
-    if (src === 'material_users') {
-        const sets = [], params = [];
-        ['name', 'mobile', 'email', 'address', 'status'].forEach(function (f) { if (b[f] !== undefined) { sets.push(f + ' = ?'); params.push(cleanText(b[f], 500)); } });
-        if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
-        params.push(id);
-        const r = await dbq('UPDATE material_users SET ' + sets.join(', ') + ' WHERE userid = ? RETURNING userid', params);
-        if (!r.length) return res.status(404).json({ error: 'Record not found.' });
-        return res.json({ success: true });
-    }
-    const s = MASTER_SOURCES.find(function (x) { return x.id === src; });
-    if (!s) return res.status(400).json({ error: 'Unknown record source.' });
-    const rows = await dbq('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
-    const list = parseEntityList(rows[0] && rows[0].value);
-    const rec = list.find(function (r) { return r && masterRecId(r).toLowerCase() === id.toLowerCase(); });
-    if (!rec) return res.status(404).json({ error: 'Record not found.' });
-    MASTER_EDITABLE.forEach(function (f) { if (b[f] !== undefined) rec[f] = cleanText(b[f], 500); });
-    // Agent ↔ Staff / Student mapping
-    if (b.agentUsername !== undefined) {
-        const idx = await loadAgentsIndex();
-        const uname = String(b.agentUsername || '').trim().toLowerCase();
-        if (uname) {
-            const a = idx.get(uname);
-            if (!a) return res.status(400).json({ error: 'The selected Agent was not found.' });
-            rec.agentUsername = a.username; rec.ownerUser = a.username; if (a.agentId) rec.agentId = a.agentId;
-        } else { rec.agentUsername = ''; rec.ownerUser = ''; }
-    }
-    await dbq('INSERT INTO ' + s.table + ' ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [s.key, JSON.stringify(list)]);
-    if (s.key === 'agents') _scopeCache.clear();
-    if (b.name !== undefined || b.mobile !== undefined || b.email !== undefined) {
-        await safeQ('UPDATE kyc_records SET full_name = COALESCE(?, full_name), mobile = COALESCE(?, mobile), email = COALESCE(?, email), updated_at = CURRENT_TIMESTAMP WHERE entity_type = ? AND LOWER(entity_id) = ?',
-            [b.name !== undefined ? cleanText(b.name, 255) : null, b.mobile !== undefined ? cleanText(b.mobile, 20) : null, b.email !== undefined ? cleanText(b.email, 255) : null, s.kind, id.toLowerCase()]);
-    }
-    res.json({ success: true });
-}));
-app.delete('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(async (req, res) => {
-    const src = req.params.source, id = String(req.params.id || '').trim();
-    if (src === 'material_users') {
-        const r = await dbq('DELETE FROM material_users WHERE userid = ? RETURNING userid', [id]);
-        return r.length ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
-    }
-    if (src === 'material_user_requests') {
-        const r = await dbq('DELETE FROM material_user_requests WHERE id = ? RETURNING id', [id]);
-        return r.length ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
-    }
-    const s = MASTER_SOURCES.find(function (x) { return x.id === src; });
-    if (!s) return res.status(400).json({ error: 'Unknown record source.' });
-    const rows = await dbq('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
-    const list = parseEntityList(rows[0] && rows[0].value);
-    const next = list.filter(function (r) { return !(r && masterRecId(r).toLowerCase() === id.toLowerCase()); });
-    if (next.length === list.length) return res.status(404).json({ error: 'Record not found.' });
-    await dbq('INSERT INTO ' + s.table + ' ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [s.key, JSON.stringify(next)]);
-    await safeQ('DELETE FROM kyc_records WHERE entity_type = ? AND LOWER(entity_id) = ?', [s.kind, id.toLowerCase()]);
-    if (s.key === 'agents') _scopeCache.clear();
-    res.json({ success: true });
-}));
-
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
