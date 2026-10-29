@@ -126,7 +126,11 @@ const PUBLIC_DIR = (function () {
     const p = path.join(__dirname, 'public');
     try { return fs.statSync(p).isDirectory() ? p : null; } catch (e) { return null; }
 })();
-const STATIC_DIRS = PUBLIC_DIR ? [PUBLIC_DIR, __dirname] : [__dirname];
+const FRONTEND_DIR = (function () {
+    const p = path.join(__dirname, '..', 'frontend');
+    try { return fs.statSync(p).isDirectory() ? p : null; } catch (e) { return null; }
+})();
+const STATIC_DIRS = [PUBLIC_DIR, FRONTEND_DIR, __dirname].filter(Boolean);
 const ROOT_DENY_NAMES = new Set(['server.js', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
     'procfile', 'dockerfile', 'render.yaml', 'readme.md']);
 const ROOT_ALLOW_EXT = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.map', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
@@ -163,7 +167,51 @@ function findStaticFile(name) {
     }
     return null;
 }
+// ═══ CLEAN URLs (no .html) ═══ one table drives: clean routes, legacy *.html -> 301 redirects and /api/pages/<slug> fallbacks.
+const CLEAN_PAGES = [
+    { clean: '/', file: 'index.html', aliases: ['/index', '/home'], slug: null },
+    { clean: '/admin-login', file: 'Admin_Login.html', slug: 'admin-login',
+      aliases: ['/admin', '/admin_login', '/super-admin', '/super-admin-login', '/super_admin_login', '/superadmin', '/admin-panel-login', '/admin_panel_login', '/new-admin-login', '/new_admin_login'] },
+    { clean: '/agent-login', file: 'Agent_Login.html', slug: 'agent-login', aliases: ['/agent', '/agent_login'] },
+    { clean: '/hrms-login', file: 'HRMS_login.html', slug: 'hrms-login', aliases: ['/hrms', '/hrms_login'] },
+    { clean: '/student-login', file: 'Student_Attendance.html', slug: 'student-login', aliases: ['/student', '/student_login', '/student-attendance', '/student_attendance'] },
+    { clean: '/pfms-login', file: 'PFMS_login.html', slug: 'pfms-login', aliases: ['/pfms', '/pfms_login'] },
+    { clean: '/invoice-login', file: 'INVOICE_LOGIN.html', slug: 'invoice-login', aliases: ['/invoice', '/invoice_login'] },
+    { clean: '/admin-dashboard', file: 'Super_Admin_Dashboard.html', slug: 'admin-dashboard', aliases: ['/dashboard', '/super-admin-dashboard', '/super_admin_dashboard'] }
+];
+const LEGACY_FILE_TO_CLEAN = {};   // 'admin_login.html' -> '/admin-login' (lower-case, with and without .html)
+const CLEAN_BY_SLUG = {};
+CLEAN_PAGES.forEach(function (pg) {
+    const base = pg.file.toLowerCase();
+    LEGACY_FILE_TO_CLEAN[base] = pg.clean;
+    LEGACY_FILE_TO_CLEAN[base.replace(/\.html$/, '')] = pg.clean;
+    if (pg.slug) CLEAN_BY_SLUG[pg.slug] = pg;
+    pg.aliases.forEach(function (a) { LEGACY_FILE_TO_CLEAN[a.slice(1) + '.html'] = pg.clean; });
+});
+LEGACY_FILE_TO_CLEAN['admin_panel_login.html'] = '/admin-login';
+LEGACY_FILE_TO_CLEAN['index.html'] = '/';
+// Slug aliases for /api/pages/<slug> (so old names keep working)
+['admin', 'super-admin', 'super-admin-login', 'admin_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['admin-login']; });
+['agent', 'agent_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['agent-login']; });
+['student', 'student_attendance'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['student-login']; });
+['hrms', 'hrms_login'].forEach(function (a) { CLEAN_BY_SLUG[a] = CLEAN_BY_SLUG['hrms-login']; });
+// Browser URL never shows ".html": /Agent_Login.html?x=1 -> 301 /agent-login?x=1
+app.use(function (req, res, next) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path.startsWith('/api/')) return next();
+    const m = /^\/([A-Za-z0-9_\-]+)(\.html?)?$/.exec(req.path);
+    if (!m) return next();
+    const key = (m[1] + '.html').toLowerCase();
+    const hit = LEGACY_FILE_TO_CLEAN[key];
+    if (!hit) return next();
+    const clean = hit;
+    if (!m[2] && ('/' + m[1]) === clean) return next();           // already the clean URL
+    if (!m[2] && key.replace(/\.html$/, '') === m[1].toLowerCase() && '/' + m[1].toLowerCase() === clean) return next();
+    const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : '';
+    res.redirect(301, clean + q);
+});
 if (PUBLIC_DIR) app.use(express.static(PUBLIC_DIR, STATIC_OPTS));
+if (FRONTEND_DIR) { const feStatic = express.static(FRONTEND_DIR, STATIC_OPTS); app.use(function (req, res, next) { return isSafeRootStaticPath(req.path) && !/\.html?$/i.test(req.path) ? feStatic(req, res, next) : next(); }); }
 const rootStatic = express.static(__dirname, STATIC_OPTS);
 app.use(function (req, res, next) { return isSafeRootStaticPath(req.path) ? rootStatic(req, res, next) : next(); });
 
@@ -645,6 +693,10 @@ function requireActiveMaterialUser(req, res, next) {
     }
     db.query('SELECT status FROM material_users WHERE userid = ?', [auth.userId], (err, rows) => {
         if (err) return next(); // DB check fail ho jaaye to request block mat karo
+        // 🆕 DELETE => credentials turant invalid: row hi nahi bacha to purana JWT (7 din) bhi kaam nahi karega.
+        if (!rows || !rows.length) {
+            return res.status(401).json({ error: 'This account no longer exists. Please contact the administrator.', accountDeleted: true });
+        }
         if (rows && rows[0] && rows[0].status === 'blocked') {
             return res.status(403).json({ error: 'This ID has been blocked by the administrator. You can no longer use this portal.' });
         }
@@ -1285,6 +1337,32 @@ db.getConnection((err, connection) => {
         // hai (jaise ₹5, ₹10, ₹20, ₹100...), to Global Amount ko IGNORE karke
         // seedha yehi individual amount Razorpay order mein use hota hai.
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS invoiceAmount DECIMAL(10,2)",
+        // 🆕 MATERIAL USER AADHAAR (mandatory at registration) — encrypted vault style:
+        //   aadhaar_enc = AES-256-GCM, aadhaar_hash = HMAC blind-index (exact search / duplicate block),
+        //   aadhaar_last4 = display only. Poora Aadhaar kabhi plain-text nahi.
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS aadhaar_last4 VARCHAR(4)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS aadhaar_hash VARCHAR(64)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS aadhaar_enc TEXT",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS aadhaar_last4 VARCHAR(4)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS aadhaar_hash VARCHAR(64)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS aadhaar_enc TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_mu_aadhaar_hash ON material_users (aadhaar_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_mu_aadhaar_last4 ON material_users (aadhaar_last4)",
+        "CREATE INDEX IF NOT EXISTS idx_mur_aadhaar_hash ON material_user_requests (aadhaar_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_mur_aadhaar_last4 ON material_user_requests (aadhaar_last4)",
+        // 🆕 Material invoice payments: one row per Razorpay order (amount is fixed server-side, one-time use)
+        `CREATE TABLE IF NOT EXISTS material_invoice_payments (
+            order_id VARCHAR(80) PRIMARY KEY,
+            owner_user_id VARCHAR(50) NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            purpose VARCHAR(20),
+            status VARCHAR(12) DEFAULT 'created',
+            payment_id VARCHAR(80),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            paid_at TIMESTAMP,
+            used_at TIMESTAMP
+        )`,
         "ALTER TABLE material_bills ADD COLUMN IF NOT EXISTS ownerUserId VARCHAR(50) NOT NULL DEFAULT ''",
         "ALTER TABLE material_bills ADD COLUMN IF NOT EXISTS data TEXT",
         "ALTER TABLE material_bills ADD COLUMN IF NOT EXISTS savedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
@@ -1442,8 +1520,8 @@ function genMuPassword() {
 function sanitizeInvoiceAmount(v) {
     if (v === undefined || v === null || v === '') return null;
     const n = Number(v);
-    if (!isFinite(n) || n <= 0) return null;
-    return Math.round(n * 100) / 100;
+    if (!isFinite(n) || n < 0 || n > 100000) return null;
+    return Math.round(n * 100) / 100; // 0 = free (gateway bypassed), blank/invalid = use default
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1452,161 +1530,216 @@ function sanitizeInvoiceAmount(v) {
 //   se judte hain — pehle ye routes missing the, isliye 404 aata tha)
 // ══════════════════════════════════════════════════════════════════
 
-// 1) Public self-registration request (material_entry portal ka form)
-app.post('/api/material/register', (req, res) => {
-    const { name, village, address, email, mobile, photo } = req.body || {};
-    if (!name || !village || !address || !email || !mobile) {
-        return res.status(400).json({ error: 'Please fill in all required fields.' });
+// ── Material Aadhaar helper: mandatory, 12 digits, stored encrypted (never plain-text) ──
+function parseMaterialAadhaar(body, required) {
+    const raw = firstDefined(body.aadhaar, body.aadhaarNumber, body.aadhar, body.aadharNumber, body.aadhaarRedacted);
+    if (raw === undefined || String(raw).trim() === '') {
+        return required ? { error: 'Aadhaar number is required.' } : { none: true };
     }
-    const dupSql = `SELECT id FROM material_users WHERE mobile = ?
-                     UNION SELECT id FROM material_user_requests WHERE mobile = ?`;
-    db.query(dupSql, [mobile, mobile], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (rows && rows.length) {
-            return res.status(409).json({ error: 'This mobile number is already registered or pending.' });
-        }
-        insertWithIdHeal(
-            'INSERT INTO material_user_requests (name, village, address, email, mobile, photo) VALUES (?,?,?,?,?,?)',
-            [name, village, address, email, mobile, photo || null],
-            'material_user_requests',
-            (insErr) => {
-                if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-                res.status(201).json({ success: true });
-            }
-        );
-    });
-});
+    const v = validateAadhaar12(raw);
+    if (!v.ok) return { error: v.error };
+    if (!piiReady()) return { error: 'PII_ENCRYPTION_KEY (or JWT_SECRET) is not set on the server — Aadhaar cannot be saved securely.' };
+    return { last4: v.value.slice(-4), hash: piiIndex('AADHAAR', v.value), enc: piiEncrypt(v.value) };
+}
+function normMobile10(m) { return String(m || '').replace(/\D/g, '').slice(-10); }
+// Duplicate guard across users + pending requests (mobile and Aadhaar). excludeUserId = row id being edited.
+async function materialDuplicate(mobile, aadhaarHash, excludeUserRowId) {
+    const ex = excludeUserRowId ? Number(excludeUserRowId) : -1;
+    if (mobile) {
+        const a = await dbq('SELECT id FROM material_users WHERE mobile = ? AND id <> ?', [mobile, ex]);
+        const b = await dbq('SELECT id FROM material_user_requests WHERE mobile = ?', [mobile]);
+        if (a.length || b.length) return 'This mobile number is already registered or pending.';
+    }
+    if (aadhaarHash) {
+        const a = await dbq('SELECT id FROM material_users WHERE aadhaar_hash = ? AND id <> ?', [aadhaarHash, ex]);
+        const b = await dbq('SELECT id FROM material_user_requests WHERE aadhaar_hash = ?', [aadhaarHash]);
+        if (a.length || b.length) return 'This Aadhaar number is already registered or pending.';
+    }
+    return null;
+}
+const MU_PUBLIC_COLS = 'id, userid, name, village, address, email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", created_at';
+function muRowOut(u) {
+    const o = Object.assign({ _docId: String(u.id) }, u);
+    o.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
+    return o;
+}
 
-// 2) Admin: pending requests list
-app.get('/api/material/requests', (req, res) => {
-    db.query('SELECT * FROM material_user_requests ORDER BY created_at DESC', (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        res.json(rows || []);
-    });
-});
+// 1) Public self-registration request (material_entry portal ka form) — saved as status 'pending'
+//    Required: name, village, email, mobile, Aadhaar (12 digits). Photo accepted (portal form makes it mandatory).
+app.post('/api/material/register', noStore, asyncRoute(async (req, res) => {
+    if (hitRateLimit('mu-register:' + String(req.ip || ''), 10, 60 * 60 * 1000)) {
+        return res.status(429).json({ error: 'Too many registration attempts — please try again later.' });
+    }
+    const b = req.body || {};
+    const name = cleanText(b.name, 255), village = cleanText(b.village, 255), address = cleanText(b.address, 500);
+    const email = cleanText(b.email, 255), mobile = normMobile10(b.mobile);
+    if (!name || !village || !email || !mobile) {
+        return res.status(400).json({ error: 'Please fill in all required fields (Name, Village, Email, Mobile and Aadhaar).' });
+    }
+    if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
+    const aad = parseMaterialAadhaar(b, true);
+    if (aad.error) return res.status(400).json({ error: aad.error });
+    const dup = await materialDuplicate(mobile, aad.hash, null);
+    if (dup) return res.status(409).json({ error: dup });
+    // 💳 Active registration fee (Super Admin, Supabase). ₹0 → gateway bypassed; > 0 → verified payment required.
+    const regFee = await resolveFee('material', { mobile });
+    if (regFee > 0) {
+        const paid = await verifyRegPayment('material', regFee, b.payment || {});
+        if (!paid) return res.status(402).json({ error: 'A registration fee of ₹' + regFee + ' is required. Please complete the payment to continue.', feeRequired: true, fee: regFee });
+    }
+    await dbq(`INSERT INTO material_user_requests (name, village, address, email, mobile, photo, status, aadhaar_last4, aadhaar_hash, aadhaar_enc)
+               VALUES (?,?,?,?,?,?, 'pending', ?,?,?)`,
+        [name, village, address || null, email, mobile, b.photo || null, aad.last4, aad.hash, aad.enc]);
+    res.status(201).json({ success: true, status: 'pending' });
+}));
 
-// 3) Admin: approve a request → generates userId + password, moves it into material_users
-app.post('/api/material/requests/:id/approve', (req, res) => {
+// 1b) Pre-check before any payment: validates Aadhaar / mobile / duplicates and tells the form the ACTIVE registration fee
+//     (₹0 → the portal skips the payment gateway entirely). Nothing is written here.
+app.post('/api/material/register-precheck', noStore, asyncRoute(async (req, res) => {
+    if (hitRateLimit('mu-precheck:' + String(req.ip || ''), 40, 60 * 60 * 1000)) {
+        return res.status(429).json({ error: 'Too many attempts — please try again later.' });
+    }
+    const b = req.body || {};
+    const mobile = normMobile10(b.mobile);
+    if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+    const aad = parseMaterialAadhaar(b, true);
+    if (aad.error) return res.status(400).json({ error: aad.error });
+    const dup = await materialDuplicate(mobile, aad.hash, null);
+    if (dup) return res.status(409).json({ error: dup });
+    const fee = await resolveFee('material', { mobile });
+    res.json({ ok: true, fee: fee, free: fee <= 0 });
+}));
+
+// 2) Admin: pending requests list (Aadhaar is masked — full number never leaves the server here)
+app.get('/api/material/requests', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const rows = await dbq(`SELECT id, name, village, address, email, mobile, photo, status, aadhaar_last4, created_at
+                            FROM material_user_requests WHERE COALESCE(status,'pending') = 'pending' ORDER BY created_at DESC`);
+    res.json(rows.map(r => Object.assign({ _docId: String(r.id), aadhaarMasked: maskAadhaarLast4(r.aadhaar_last4) }, r)));
+}));
+
+// 3) Admin: approve → generates userId + password, moves it into material_users (Material User List)
+app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(async (req, res) => {
     const reqId = req.params.id;
-    db.query('SELECT * FROM material_user_requests WHERE id = ?', [reqId], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (!rows || !rows.length) return res.status(404).json({ error: 'Request not found.' });
-        const r = rows[0];
-        const plainPassword = genMuPassword();
-        const passwordHash = bcrypt.hashSync(plainPassword, 10);
-        insertMaterialUserWithRetry(
-            (userId) => ({
-                sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status)
-                      VALUES (?,?,?,?,?,?,?,?, 'active')`,
-                params: [userId, r.name, r.village, r.address, r.email, r.mobile, r.photo, passwordHash]
-            }),
-            (insErr, result, userId) => {
-                if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-                db.query('DELETE FROM material_user_requests WHERE id = ?', [reqId], () => {
-                    res.json({ userId, password: plainPassword });
-                });
-            }
-        );
-    });
-});
+    const rows = await dbq('SELECT * FROM material_user_requests WHERE id = ?', [reqId]);
+    if (!rows.length) return res.status(404).json({ error: 'Request not found (it may already be approved).' });
+    const r = rows[0];
+    const plainPassword = genMuPassword();
+    const passwordHash = bcrypt.hashSync(plainPassword, 10);
+    insertMaterialUserWithRetry(
+        (userId) => ({
+            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, aadhaar_last4, aadhaar_hash, aadhaar_enc)
+                  VALUES (?,?,?,?,?,?,?,?, 'active', ?,?,?)`,
+            params: [userId, r.name, r.village, r.address, r.email, r.mobile, r.photo, passwordHash, r.aadhaar_last4 || null, r.aadhaar_hash || null, r.aadhaar_enc || null]
+        }),
+        (insErr, result, userId) => {
+            if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
+            db.query('DELETE FROM material_user_requests WHERE id = ?', [reqId], () => {
+                auditPii(req, 'material_approve', userId, 'request=' + reqId);
+                res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '' });
+            });
+        }
+    );
+}));
 
 // 4) Admin: reject/delete a pending request
-app.post('/api/material/requests/:id/reject', (req, res) => {
+const rejectMaterialRequest = (req, res) => {
     db.query('DELETE FROM material_user_requests WHERE id = ?', [req.params.id], (err) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         res.json({ success: true });
     });
-});
+};
+app.post('/api/material/requests/:id/reject', requireRole('admin'), rejectMaterialRequest);
+app.delete('/api/material/requests/:id', requireRole('admin'), rejectMaterialRequest);
 
-// 5) Admin: list all material users (Admin Panel table)
-app.get('/api/material/users', (req, res) => {
-    // 🔒 FIX: Postgres unquoted columns hamesha lowercase mein fold ho jaate
-    // hain (invoicePaymentExempt → invoicepaymentexempt) — isliye camelCase
-    // quoted ALIAS ("invoicePaymentExempt") zaroori hai, warna neeche/Admin
-    // Panel ka JS (jo hamesha camelCase property padhta hai, jaise
-    // u.invoicePaymentExempt / u.invoiceAmount) hamesha undefined hi paata.
-    db.query('SELECT id, userid, name, village, address, email, mobile, photo, status, blockedReason, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", created_at FROM material_users ORDER BY created_at DESC', (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        const mapped = (rows || []).map(u => Object.assign({ _docId: String(u.id) }, u));
-        res.json(mapped);
-    });
-});
+// 5) Admin: list all material users (Material User List table)
+app.get('/api/material/users', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const rows = await dbq('SELECT ' + MU_PUBLIC_COLS + ' FROM material_users ORDER BY created_at DESC');
+    res.json(rows.map(muRowOut));
+}));
 
-// 6) Admin: directly create a material user (bina request ke, "New Material User Register" form)
-app.post('/api/material/users', (req, res) => {
-    const { name, village, mobile, photo, status, invoicePaymentExempt, invoiceAmount } = req.body || {};
-    if (!name || !village || !mobile) {
-        return res.status(400).json({ error: 'Name, village and mobile number are required.' });
-    }
-    db.query('SELECT id FROM material_users WHERE mobile = ?', [mobile], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (rows && rows.length) return res.status(409).json({ error: 'This mobile number is already registered.' });
-        const passwordHash = bcrypt.hashSync(genMuPassword(), 10);
-        insertMaterialUserWithRetry(
-            (userId) => ({
-                sql: `INSERT INTO material_users (userid, name, village, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount)
-                      VALUES (?,?,?,?,?,?,?,?,?)`,
-                params: [userId, name, village, mobile, photo || null, passwordHash, status || 'active', !!invoicePaymentExempt, sanitizeInvoiceAmount(invoiceAmount)]
-            }),
-            (insErr, result, userId) => {
-                if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-                res.status(201).json({ userId });
-            }
-        );
-    });
-});
-
-// 7) Admin: edit / block / unblock a material user
-app.put('/api/material/users/:id', (req, res) => {
-    const fields = req.body || {};
-    const allowed = ['name', 'village', 'address', 'email', 'mobile', 'photo', 'status', 'blockedReason', 'invoicePaymentExempt'];
-    const sets = [];
-    const values = [];
-    allowed.forEach(f => {
-        if (Object.prototype.hasOwnProperty.call(fields, f)) {
-            sets.push(f + ' = ?');
-            values.push(fields[f]);
+// 6) Admin: directly create a material user ("New Material User Register" form). Aadhaar mandatory.
+app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const name = cleanText(b.name, 255), village = cleanText(b.village, 255), mobile = normMobile10(b.mobile);
+    if (!name || !village || !mobile) return res.status(400).json({ error: 'Name, village and mobile number are required.' });
+    if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+    const aad = parseMaterialAadhaar(b, true);
+    if (aad.error) return res.status(400).json({ error: aad.error });
+    const dup = await materialDuplicate(mobile, aad.hash, null);
+    if (dup) return res.status(409).json({ error: dup });
+    const plainPassword = genMuPassword();
+    const passwordHash = bcrypt.hashSync(plainPassword, 10);
+    const status = b.status === 'blocked' ? 'blocked' : 'active';
+    insertMaterialUserWithRetry(
+        (userId) => ({
+            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            params: [userId, name, village, cleanText(b.address, 500) || null, cleanText(b.email, 255) || null, mobile, b.photo || null, passwordHash, status,
+                !!b.invoicePaymentExempt, sanitizeInvoiceAmount(b.invoiceAmount), aad.last4, aad.hash, aad.enc]
+        }),
+        (insErr, result, userId) => {
+            if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
+            res.status(201).json({ success: true, userId, password: plainPassword });
         }
+    );
+}));
+
+// 7) Admin: edit / block / unblock a material user (Aadhaar optional on edit — blank keeps the existing one)
+app.put('/api/material/users/:id', requireRole('admin'), asyncRoute(async (req, res) => {
+    const fields = req.body || {};
+    const allowed = ['name', 'village', 'address', 'email', 'photo', 'status', 'blockedReason', 'invoicePaymentExempt'];
+    const sets = [], values = [];
+    allowed.forEach(f => {
+        if (Object.prototype.hasOwnProperty.call(fields, f)) { sets.push(f + ' = ?'); values.push(fields[f]); }
     });
-    // 🆕 PER-USER CUSTOM PAYMENT AMOUNT: alag se handle karte hain kyunki
-    // ismein sanitization chahiye (khaali/invalid value → NULL, taaki woh
-    // user wapas Global Default Amount par chala jaaye — "clear" karna bhi
-    // isi field se possible hai).
+    if (Object.prototype.hasOwnProperty.call(fields, 'mobile')) {
+        const m = normMobile10(fields.mobile);
+        if (m.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+        const dup = await materialDuplicate(m, null, req.params.id);
+        if (dup) return res.status(409).json({ error: dup });
+        sets.push('mobile = ?'); values.push(m);
+    }
+    const aad = parseMaterialAadhaar(fields, false);
+    if (aad.error) return res.status(400).json({ error: aad.error });
+    if (!aad.none) {
+        const dup = await materialDuplicate(null, aad.hash, req.params.id);
+        if (dup) return res.status(409).json({ error: dup });
+        sets.push('aadhaar_last4 = ?', 'aadhaar_hash = ?', 'aadhaar_enc = ?');
+        values.push(aad.last4, aad.hash, aad.enc);
+    }
+    // per-user custom payment amount (invalid/empty → NULL = Global Default Amount)
     if (Object.prototype.hasOwnProperty.call(fields, 'invoiceAmount')) {
-        sets.push('invoiceAmount = ?');
-        values.push(sanitizeInvoiceAmount(fields.invoiceAmount));
+        sets.push('invoiceAmount = ?'); values.push(sanitizeInvoiceAmount(fields.invoiceAmount));
     }
     if (!sets.length) return res.status(400).json({ error: 'No update data was provided.' });
     values.push(req.params.id);
-    db.query(`UPDATE material_users SET ${sets.join(', ')} WHERE id = ?`, values, (err) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        res.json({ success: true });
-    });
-});
+    const r = await dbq(`UPDATE material_users SET ${sets.join(', ')} WHERE id = ? RETURNING id`, values);
+    if (!r.length) return res.status(404).json({ error: 'Material user not found.' });
+    res.json({ success: true });
+}));
 
-// 7b) Admin/Live-sync: single material user ki details (photo field ke saath —
-//     Anmol_material_entry_secure.html ka live-profile-sync isi route ko har
-//     12 second mein poll karta hai taaki photo/status turant update ho jaaye)
+// 7b) Single material user (portal live-profile-sync polls this; 404 after delete → portal must log out)
 app.get('/api/material/users/:id', (req, res) => {
     db.query(
-        'SELECT id, userid, name, village, address, email, mobile, photo, status, blockedReason, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", created_at FROM material_users WHERE id = ?',
+        'SELECT ' + MU_PUBLIC_COLS + ' FROM material_users WHERE id = ?',
         [req.params.id],
         (err, rows) => {
             if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-            if (!rows || !rows.length) return res.status(404).json({ error: 'Material user not found.' });
-            res.json(Object.assign({ _docId: String(rows[0].id) }, rows[0]));
+            if (!rows || !rows.length) return res.status(404).json({ error: 'Material user not found.', accountDeleted: true });
+            res.json(muRowOut(rows[0]));
         }
     );
 });
 
-// 7c) Admin: material user ko permanently delete karna (Admin Panel "Delete User" feature)
-app.delete('/api/material/users/:id', (req, res) => {
-    db.query('DELETE FROM material_users WHERE id = ?', [req.params.id], (err, result) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (!result || !result.affectedRows) return res.status(404).json({ error: 'Material user not found.' });
-        res.json({ success: true });
-    });
-});
+// 7c) Admin: PERMANENT delete. Row (incl. password hash + Aadhaar) is removed from Supabase, so login fails
+//     immediately (login looks the user up in DB) and any still-valid JWT is rejected by requireActiveMaterialUser.
+app.delete('/api/material/users/:id', requireRole('admin'), asyncRoute(async (req, res) => {
+    const r = await dbq('DELETE FROM material_users WHERE id = ? RETURNING userid', [req.params.id]);
+    if (!r.length) return res.status(404).json({ error: 'Material user not found.' });
+    auditPii(req, 'material_delete', String(r[0].userid || ''), 'row=' + req.params.id);
+    res.json({ success: true, userId: r[0].userid });
+}));
 
 // 8) Material user login (userId + mobile-number-or-admin-issued-password)
 app.post('/api/material/login', (req, res) => {
@@ -2007,6 +2140,10 @@ function kvSetCore(table, key, value, res) {
         );
     };
     const finish = (val) => {
+        // New accounts are ACTIVE by default (never "Deactivated") — only an explicit Block/Deactivate by the admin changes it.
+        if (table === 'kv_admin_entities' && Array.isArray(val) && ['admins', 'agents', 'staff', 'students'].indexOf(key) >= 0) {
+            val = val.map(function (r) { return (r && typeof r === 'object' && !Array.isArray(r) && (r.status === undefined || r.status === null || r.status === '')) ? Object.assign({}, r, { status: 'active' }) : r; });
+        }
         if (table !== 'kv_admin_entities' || !Array.isArray(val)) return finishRaw(val);
         db.query(`SELECT value FROM ${table} WHERE \`key\` = ?`, [key], (err, rows) => {
             let merged = val, prevList = [];
@@ -2296,7 +2433,7 @@ function hrCanManage(auth, agentUsername) {
 //    se call hone par agentUsername zaroori nahi (Admin Panel se global
 //    staff add karna — kisi specific library se linked nahi).
 // 🪪 Identity Number (Aadhaar / ID) mandatory + global duplicate block (public form, so IP rate-limited)
-app.post('/api/hr/register', asyncRoute(async (req, res) => {
+const hrRegisterWithChecks = asyncRoute(async (req, res) => {
     const body = req.body || {};
     if (hitRateLimit('hrreg:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const norm = normIdentity(firstDefined(body.aadhar, body.aadhaar, body.identityNumber, body.identity, ''));
@@ -2308,7 +2445,8 @@ app.post('/api/hr/register', asyncRoute(async (req, res) => {
         req.body = Object.assign({}, body, { aadhar: norm });
     }
     return hrRegisterCore(req, res);
-}));
+});
+app.post('/api/hr/register', feeGate('hrms'), hrRegisterWithChecks);
 function hrRegisterCore(req, res) {
     const body = req.body || {};
     const auth = getAuthUser(req);
@@ -2328,8 +2466,9 @@ function hrRegisterCore(req, res) {
                 return res.status(409).json({ error: 'This mobile number already exists with another registration.' });
             }
             const regId = 'PREG' + Date.now() + Math.random().toString(36).slice(2, 6);
+            const trackingId = genTrackingId('HRM');
             const rec = {
-                id: regId, name, phone, email: body.email || '', address: body.address || '',
+                id: regId, trackingId, paymentRef: req.__paymentRef || '', fee: req.__fee || 0, name, phone, email: body.email || '', address: body.address || '',
                 photo: body.photo || '', designation: body.designation || '', department: body.department || '',
                 agentUsername, status: 'pending', submittedOn: new Date().toISOString()
             };
@@ -2337,7 +2476,8 @@ function hrRegisterCore(req, res) {
             pending.push(rec);
             hrSetBlob('hrms_pending_registrations', pending, (sErr) => {
                 if (sErr) return res.status(500).json({ error: 'DB error: ' + sErr.message });
-                res.status(201).json({ success: true, id: regId });
+                addTracking({ trackingId, kind: 'hrms', regId, name, mobile: phone, paymentRef: req.__paymentRef || '', fee: req.__fee || 0 });
+                res.status(201).json({ success: true, id: regId, trackingId });
             });
         });
     });
@@ -3408,8 +3548,19 @@ app.get('/api/pages/:slug', (req, res) => {
     // chuki ho. Ab LOWER() dono taraf lagाya hai, taaki casing kabhi matter
     // na kare.
     db.query('SELECT name, mime, data FROM site_files WHERE LOWER(slug)=LOWER(?)', [req.params.slug], (err, rows) => {
-        if (err) return res.status(500).send('DB error: ' + err.message);
-        if (!rows || !rows.length) return res.status(404).send('This page has not been uploaded yet: /' + req.params.slug);
+        // Built-in page fallback: never 404 for the standard login pages (admin-login, agent-login, ...).
+        const _builtin = CLEAN_BY_SLUG[String(req.params.slug || '').toLowerCase()];
+        const _sendBuiltin = function () {
+            const bf = _builtin && findStaticFile(_builtin.file);
+            if (bf) { res.set('Cache-Control', 'no-cache'); return res.sendFile(bf); }
+            if (_builtin) return res.redirect(302, _builtin.clean);
+            return false;
+        };
+        if (err) { if (_builtin) return _sendBuiltin(); return res.status(500).send('DB error: ' + err.message); }
+        if (!rows || !rows.length) {
+            if (_builtin) return _sendBuiltin();
+            return res.status(404).send('This page has not been uploaded yet: /' + req.params.slug);
+        }
         const f = rows[0];
         res.set('Content-Type', f.mime || 'text/html');
         res.set('Content-Disposition', 'inline; filename="' + f.name + '"');
@@ -3442,7 +3593,7 @@ app.get('/api/students', (req, res) => kvGet('kv_admin_entities', 'students', re
 // koi "Pending" list thi hi nahi jahan yeh dikhta. Ab yeh backend mein
 // pending register hota hai; Admin Panel isse dekh kar Approve/Reject
 // karta hai — approve hone tak agent login nahi kar sakta.
-app.post('/api/agent-registrations', (req, res) => {
+function agentRegistrationCore(req, res) {
     const { name, username, password, mobile, company } = req.body || {};
     if (!name || !username || !password) return res.status(400).json({ error: 'Name, username and password are required.' });
     if (password.length < 4) return res.status(400).json({ error: 'The password must be at least 4 characters long.' });
@@ -3463,8 +3614,9 @@ app.post('/api/agent-registrations', (req, res) => {
             if (pending.some(p => p && p.username && p.username.toLowerCase() === uname && p.status === 'pending')) {
                 return res.status(409).json({ error: 'A registration with this username is already awaiting Admin approval.' });
             }
+            const trackingId = genTrackingId('AGT');
             const rec = {
-                id: 'REG' + Date.now(), name, username: uname,
+                id: 'REG' + Date.now(), trackingId, paymentRef: req.__paymentRef || '', fee: req.__fee || 0, name, username: uname,
                 // 🔒 Password Hashing: pending registration mein bhi
                 // password kabhi plain-text save nahi hota — turant bcrypt
                 // hash. Admin approve karega to yahi hash 'agents' list
@@ -3480,12 +3632,14 @@ app.post('/api/agent-registrations', (req, res) => {
                 [JSON.stringify(pending)],
                 (insErr) => {
                     if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-                    res.status(201).json({ success: true, id: rec.id });
+                    addTracking({ trackingId, kind: 'agent', regId: rec.id, name: rec.name, mobile: rec.mobile, username: rec.username, paymentRef: req.__paymentRef || '', fee: req.__fee || 0 });
+                    res.status(201).json({ success: true, id: rec.id, trackingId });
                 }
             );
         });
     });
-});
+}
+app.post('/api/agent-registrations', feeGate('agent'), agentRegistrationCore);
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -3541,23 +3695,26 @@ app.post('/api/customer-registrations/order', async (req, res) => {
             try { plans = pRows && pRows.length ? JSON.parse(pRows[0].value) : []; } catch (e) {}
             const plan = plans.find(p => p && p.id === planId);
             if (!plan) return res.status(404).json({ error: 'This membership plan is not configured by the Admin.' });
-            razorpayRequest('/v1/orders', {
-                amount: Math.round(Number(plan.price) * 100),
-                currency: 'INR',
-                receipt: 'custreg_' + mobile + '_' + Date.now()
+            resolveFee('customer', { mobile: mobile, agent: [agentId, loginUsername], planPrice: plan.price }).then((fee) => {
+                if (fee <= 0) return { id: 'FREE_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'), amount: 0, currency: 'INR', free: true };
+                return razorpayRequest('/v1/orders', {
+                    amount: Math.round(Number(fee) * 100),
+                    currency: 'INR',
+                    receipt: 'custreg_' + mobile + '_' + Date.now()
+                }).then((o) => { o.fee = fee; return o; });
             }).then((order) => {
                 db.query(
                     `INSERT INTO customer_registration_orders
                         (orderId, name, mobile, email, address, note, agentId, planId, planName, amount,
                          district, state, pin_code, aadhaar_last4, aadhaar_hash, aadhaar_enc, pan_enc, pan_hash, pan_masked)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-                    [order.id, cName, mobile, cEmail, cAddress, cNote, agentId, plan.id, plan.name || '', plan.price,
+                    [order.id, cName, mobile, cEmail, cAddress, cNote, agentId, plan.id, plan.name || '', order.free ? 0 : (order.fee != null ? order.fee : plan.price),
                         kyc.district || '', kyc.state || '', kyc.pin_code || '',
                         kyc.aadhaar_last4 || null, kyc.aadhaar_hash || null, kyc.aadhaar_enc || null,
                         kyc.pan_enc || null, kyc.pan_hash || null, kyc.pan_masked || null],
                     (err) => {
                         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-                        res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, plan: plan });
+                        res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, plan: plan, free: !!order.free, fee: order.free ? 0 : (order.fee != null ? order.fee : plan.price) });
                     }
                 );
             }).catch((e) => res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }));
@@ -3567,18 +3724,22 @@ app.post('/api/customer-registrations/order', async (req, res) => {
 
 app.post('/api/customer-registrations/verify', (req, res) => {
     const secret = process.env.PAYMENT_API_SECRET;
-    if (!secret) return res.status(501).json({ error: 'PAYMENT_API_SECRET is not set in the Render Environment.' });
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
+    // Free registration (₹0 set by the Super Admin): the order id is server-issued ("FREE_…") and its stored amount is 0.
+    const isFree = /^FREE_/.test(String(razorpay_order_id || ''));
+    if (!isFree) {
+        if (!secret) return res.status(501).json({ error: 'PAYMENT_API_SECRET is not set in the Render Environment.' });
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
+        }
+        const expected = crypto.createHmac('sha256', secret)
+            .update(razorpay_order_id + '|' + razorpay_payment_id)
+            .digest('hex');
+        if (expected !== razorpay_signature) {
+            return res.status(400).json({ error: 'Payment could not be verified — signature mismatch.' });
+        }
     }
-    const expected = crypto.createHmac('sha256', secret)
-        .update(razorpay_order_id + '|' + razorpay_payment_id)
-        .digest('hex');
-    if (expected !== razorpay_signature) {
-        return res.status(400).json({ error: 'Payment could not be verified — signature mismatch.' });
-    }
-    db.query("SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created'", [razorpay_order_id], (err, rows) => {
+    db.query(isFree ? "SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created' AND amount = 0" : "SELECT * FROM customer_registration_orders WHERE orderId=? AND status='created'", [razorpay_order_id], (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         if (!rows || !rows.length) return res.status(404).json({ error: 'This order has already been processed or was not found.' });
         // 🔒 FIX: Postgres row keys lowercase hoti hain (agentid/planid/planname) —
@@ -3665,6 +3826,11 @@ async function trackStatusHandler(req, res) {
         const mobile = normMobile(src.mobile);
         if (!appId || mobile.length !== 10) {
             return res.status(400).json({ error: 'Please enter a valid Application ID and a 10-digit mobile number.' });
+        }
+        if (/^TRK-/i.test(appId)) {
+            const t = await trackingLookup(appId, mobile);
+            if (!t) return res.status(404).json({ error: 'No application was found for the Tracking ID and mobile number provided.' });
+            return res.json(t);
         }
         const list = await readCustomerRegs();
         const rec = list.find(r => r && String(r.id).toLowerCase() === appId.toLowerCase() && normMobile(r.mobile) === mobile);
@@ -4187,96 +4353,114 @@ app.post('/api/payments/razorpay/verify', (req, res) => {
 //   apna manchaha amount bhej de to fraud ho sakta tha).
 // ══════════════════════════════════════════════════════════════════
 
-// Material user apna config check karta hai — payment chahiye ya nahi,
-// aur kitna. (Amount yahan sirf DISPLAY ke liye hai — asli charge order
-// banate waqt server phir se DB se hi amount uthata hai.)
-app.get('/api/material/invoice-payment/config', requireActiveMaterialUser, (req, res) => {
-    if (!req.authUser || req.authUser.role !== 'material_user') {
-        return res.status(401).json({ error: 'Material user login is required.' });
-    }
-    // 🔒 FIX + 🆕 PER-USER CUSTOM AMOUNT: quoted camelCase alias zaroori hai
-    // (dekhein upar wali similar fix ki tippani) — warna invoicePaymentExempt
-    // aur naya invoiceAmount dono hamesha undefined milte (Postgres unquoted
-    // columns lowercase mein fold ho jaate hain).
-    db.query('SELECT invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount" FROM material_users WHERE userid=?', [req.authUser.userId], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        const exempt = !!(rows && rows[0] && rows[0].invoicePaymentExempt);
-        const userAmount = (rows && rows[0]) ? sanitizeInvoiceAmount(rows[0].invoiceAmount) : null;
-        hrGetBlobObj('material_invoice_settings', (sErr, settings) => {
-            const enabled = sErr ? true : (settings.enabled !== false); // default ON agar admin ne kabhi set na kiya ho
-            const globalAmount = sErr ? 10 : (Number(settings.amount) || 10);
-            // 🆕 PER-USER CUSTOM AMOUNT: is specific user ke liye Admin ne agar
-            // koi individual amount set kiya hai, to Global Fixed Amount ki
-            // jagah WAHI istemal hota hai — chahe ₹5 ho, ₹10, ₹20, ya ₹100.
-            const amount = (userAmount !== null) ? userAmount : globalAmount;
-            res.json({ paymentRequired: enabled && !exempt, amount, exempt, isCustomAmount: userAmount !== null });
-        });
-    });
-});
+// ── Active invoice fee for one material user (Supabase: kv_blob 'material_invoice_settings' + per-user override) ──
+//    Priority: Admin-exempt → ₹0 | per-user amount (0 = free) | global amount. Global switch "enabled=false" → ₹0.
+async function materialInvoiceFeeFor(userId) {
+    const rows = await dbq('SELECT invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount" FROM material_users WHERE userid = ?', [String(userId || '')]);
+    const exempt = !!(rows[0] && rows[0].invoicePaymentExempt);
+    const userAmount = rows[0] ? sanitizeInvoiceAmount(rows[0].invoiceAmount) : null;
+    const st = await xBlobGet('material_invoice_settings', {});
+    const enabled = !st || st.enabled !== false;
+    const gRaw = st ? st.amount : undefined;
+    const globalAmount = (gRaw === undefined || gRaw === null || gRaw === '' || !isFinite(Number(gRaw)) || Number(gRaw) < 0) ? 10 : Math.round(Number(gRaw) * 100) / 100;
+    const amount = userAmount !== null ? userAmount : globalAmount;
+    const fee = (!enabled || exempt) ? 0 : amount;
+    return { fee, paymentRequired: fee > 0, amount, exempt, enabled, isCustomAmount: userAmount !== null };
+}
+// Who is the invoice owner? Material user → self. Admin (editing on behalf of a user) → ownerUserId from request.
+function invoiceOwnerFromReq(req) {
+    const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+    const owner = isAdmin ? cleanText((req.body && req.body.ownerUserId) || req.query.ownerUserId, 50) : req.authUser.userId;
+    return { isAdmin, owner };
+}
 
-// Order banao — amount hamesha server-side DB se (per-user custom amount ho
-// to wahi, warna Admin ke Global Fixed Amount se) — client se bheja gaya
-// koi bhi amount IGNORE hota hai.
-app.post('/api/material/invoice-payment/order', requireActiveMaterialUser, async (req, res) => {
-    if (!req.authUser || req.authUser.role !== 'material_user') {
-        return res.status(401).json({ error: 'Material user login is required.' });
-    }
+// Fee check — payment needed? and how much? (display only; the real charge is re-computed on order creation)
+app.get('/api/material/invoice-payment/config', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const { owner } = invoiceOwnerFromReq(req);
+    if (!owner) return res.status(400).json({ error: 'ownerUserId is required.' });
+    res.json(await materialInvoiceFeeFor(owner));
+}));
+
+// Order — fee is ALWAYS read from the database. ₹0 → no order, gateway bypassed (free:true).
+app.post('/api/material/invoice-payment/order', requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const { owner } = invoiceOwnerFromReq(req);
+    if (!owner) return res.status(400).json({ error: 'ownerUserId is required.' });
+    const f = await materialInvoiceFeeFor(owner);
+    if (!f.paymentRequired) return res.json({ free: true, fee: 0, amount: 0 });
     if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET) {
         return res.status(501).json({ error: 'Payment keys are not set in the Render Environment.' });
     }
-    db.query('SELECT invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount" FROM material_users WHERE userid=?', [req.authUser.userId], async (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        const exempt = !!(rows && rows[0] && rows[0].invoicePaymentExempt);
-        if (exempt) return res.status(400).json({ error: 'You are exempt from this check — there is no need to create a payment order.' });
-        const userAmount = (rows && rows[0]) ? sanitizeInvoiceAmount(rows[0].invoiceAmount) : null;
-        hrGetBlobObj('material_invoice_settings', async (sErr, settings) => {
-            const enabled = sErr ? true : (settings.enabled !== false);
-            const globalAmount = sErr ? 10 : (Number(settings.amount) || 10);
-            if (!enabled) return res.status(400).json({ error: 'Invoice payment is currently disabled by the Admin.' });
-            // 🆕 PER-USER CUSTOM AMOUNT: yahi single source-of-truth hai jo
-            // Razorpay order mein jaata hai — isi user ke liye set kiya gaya
-            // individual amount (agar hai) Global Amount se hamesha priority
-            // leta hai. Client isse kabhi override nahi kar sakta.
-            const amount = (userAmount !== null) ? userAmount : globalAmount;
-            try {
-                const order = await razorpayRequest('/v1/orders', {
-                    amount: Math.round(amount * 100),
-                    currency: 'INR',
-                    receipt: 'inv_' + req.authUser.userId + '_' + Date.now()
-                });
-                res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY });
-            } catch (e) {
-                res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message });
-            }
-        });
-    });
-});
+    const purpose = String((req.body && req.body.purpose) || 'generate') === 'update' ? 'update' : 'generate';
+    let order;
+    try {
+        order = await razorpayRequest('/v1/orders', { amount: Math.round(f.fee * 100), currency: 'INR', receipt: ('inv_' + owner + '_' + Date.now()).slice(0, 40) });
+    } catch (e) { return res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }); }
+    await dbq('INSERT INTO material_invoice_payments (order_id, owner_user_id, amount, purpose) VALUES (?,?,?,?)', [order.id, owner, f.fee, purpose]);
+    res.json({ free: false, orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, fee: f.fee });
+}));
 
-// Verify karo — signature sahi hone par ek short-lived "invoice unlock"
-// token issue hota hai, jo frontend ko Generate Invoice chalane ke liye
-// chahiye hota hai (single-purpose, 10 minute expiry, isi user se bound).
-app.post('/api/material/invoice-payment/verify', requireActiveMaterialUser, (req, res) => {
-    if (!req.authUser || req.authUser.role !== 'material_user') {
-        return res.status(401).json({ error: 'Material user login is required.' });
-    }
+// Verify — Razorpay signature + order must belong to this owner. Returns a 10-minute unlock token (single use).
+app.post('/api/material/invoice-payment/verify', requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const { owner } = invoiceOwnerFromReq(req);
     const secret = process.env.PAYMENT_API_SECRET;
     if (!secret) return res.status(501).json({ error: 'PAYMENT_API_SECRET is not set in the Render Environment.' });
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    if (!owner || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
         return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
     }
-    const expected = crypto.createHmac('sha256', secret)
-        .update(razorpay_order_id + '|' + razorpay_payment_id)
-        .digest('hex');
-    if (expected !== razorpay_signature) {
+    const expected = crypto.createHmac('sha256', secret).update(razorpay_order_id + '|' + razorpay_payment_id).digest('hex');
+    const a = Buffer.from(expected), b = Buffer.from(String(razorpay_signature));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return res.status(400).json({ error: 'Payment could not be verified — signature mismatch.' });
     }
-    const unlockToken = jwt.sign(
-        { purpose: 'material_invoice_unlock', userId: req.authUser.userId, paymentId: razorpay_payment_id },
-        JWT_SECRET, { expiresIn: '10m' }
-    );
-    res.json({ success: true, unlockToken });
-});
+    const r = await dbq("UPDATE material_invoice_payments SET status='paid', payment_id=?, paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND owner_user_id=? AND status='created' RETURNING amount",
+        [razorpay_payment_id, razorpay_order_id, owner]);
+    if (!r.length) return res.status(400).json({ error: 'This payment order was not found or was already processed.' });
+    const unlockToken = jwt.sign({ purpose: 'material_invoice_unlock', userId: owner, orderId: razorpay_order_id }, JWT_SECRET, { expiresIn: '10m' });
+    res.json({ success: true, unlockToken, amount: Number(r[0].amount) });
+}));
+
+// 🔒 SERVER-SIDE FEE GATE for every bill create / update.
+//    fee = ₹0 → saved instantly (gateway bypassed).  fee > 0 → a verified, unused payment for >= that amount is mandatory.
+//    Returns { ok:true, orderId? } or sends 402 and returns { ok:false }.
+async function enforceInvoiceFee(req, res, ownerUserId) {
+    const f = await materialInvoiceFeeFor(ownerUserId);
+    if (!f.paymentRequired) return { ok: true, fee: 0 };
+    const tok = String((req.body && req.body.unlockToken) || req.get('x-invoice-unlock') || '');
+    let dec = null;
+    try { dec = tok ? jwt.verify(tok, JWT_SECRET) : null; } catch (e) { dec = null; }
+    if (!dec || dec.purpose !== 'material_invoice_unlock' || String(dec.userId) !== String(ownerUserId) || !dec.orderId) {
+        res.status(402).json({ error: 'A fee of ₹' + f.fee + ' is required before saving. Please complete the payment.', feeRequired: true, fee: f.fee });
+        return { ok: false };
+    }
+    const used = await dbq("UPDATE material_invoice_payments SET status='used', used_at=CURRENT_TIMESTAMP WHERE order_id=? AND owner_user_id=? AND status='paid' AND amount >= ? RETURNING order_id",
+        [dec.orderId, ownerUserId, f.fee]);
+    if (!used.length) {
+        res.status(402).json({ error: 'This payment was already used or does not cover the current fee (₹' + f.fee + '). Please pay again.', feeRequired: true, fee: f.fee });
+        return { ok: false };
+    }
+    return { ok: true, fee: f.fee, orderId: dec.orderId };
+}
+// If the DB write fails after the payment was consumed, give the payment back so the user is not charged twice.
+function refundInvoiceToken(gate) {
+    if (gate && gate.orderId) db.query("UPDATE material_invoice_payments SET status='paid', used_at=NULL WHERE order_id=? AND status='used'", [gate.orderId], () => {});
+}
+
+// Super Admin: set the invoice fee (stored in Supabase). Amount 0 = free → payment gateway is bypassed everywhere.
+app.get('/api/admin/material-invoice-settings', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const st = await xBlobGet('material_invoice_settings', {});
+    const n = (st && st.amount !== undefined && st.amount !== '' && isFinite(Number(st.amount)) && Number(st.amount) >= 0) ? Number(st.amount) : 10;
+    res.json({ enabled: !st || st.enabled !== false, amount: n });
+}));
+app.put('/api/admin/material-invoice-settings', requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const n = Number(b.amount);
+    if (b.amount === '' || b.amount === undefined || !isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: 'Please enter a valid fee amount (0 or more).' });
+    const cfg = { enabled: b.enabled !== false, amount: Math.round(n * 100) / 100 };
+    await xBlobSet('material_invoice_settings', cfg);
+    auditPii(req, 'invoice_fee_set', 'material_invoice_settings', 'amount=' + cfg.amount + ' enabled=' + cfg.enabled);
+    res.json(cfg);
+}));
 
 // 🎓 STUDENT SUBSCRIPTION PAYMENT — Student_Attendance.html ka
 //   "Ab Payment Karein" button ab seedha in dono routes se judta hai
@@ -5170,8 +5354,9 @@ app.post('/api/admin/wallet/topup', requireRole('admin'), (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 // 🧾 MATERIAL BILLS/INVOICES (Anmol_material_entry_secure.html)
 // ══════════════════════════════════════════════════════════════════
-app.post('/api/material/bills', requireActiveMaterialUser, (req, res) => {
-    const body = req.body || {};
+app.post('/api/material/bills', requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const body = Object.assign({}, req.body || {});
+    delete body.unlockToken;
     // 🔒 SECURITY FIX: pehle ownerUserId client ke request body se seedha
     // trust ho jaata tha — koi bhi logged-in material user, body mein
     // KISI AUR ka userId bhej kar unke naam par bill save kar sakta tha.
@@ -5184,6 +5369,9 @@ app.post('/api/material/bills', requireActiveMaterialUser, (req, res) => {
     const ownerUserId = isAdmin ? body.ownerUserId : req.authUser.userId;
     if (!ownerUserId) return res.status(400).json({ error: 'ownerUserId is required.' });
     body.ownerUserId = ownerUserId;
+    // 🔒 FEE GATE: ₹0 → instant save; fee > 0 → verified one-time payment required (checked on the server)
+    const gate = await enforceInvoiceFee(req, res, ownerUserId);
+    if (!gate.ok) return;
     // 🆕 FIX: pehle yahan har save par HAMESHA naya row INSERT hota tha —
     // chahe wahi Bill No dobara save kiya jaaye. Frontend isi behavior ki
     // ummeed karta hai ki ownerUserId + billNo match hone par UPDATE ho,
@@ -5202,17 +5390,17 @@ app.post('/api/material/bills', requireActiveMaterialUser, (req, res) => {
     findExisting((existingId) => {
         if (existingId) {
             db.query('UPDATE material_bills SET data=? WHERE id=?', [JSON.stringify(body), existingId], (uErr) => {
-                if (uErr) return res.status(500).json({ error: 'DB error: ' + uErr.message });
+                if (uErr) { refundInvoiceToken(gate); return res.status(500).json({ error: 'DB error: ' + uErr.message }); }
                 res.status(200).json({ id: existingId, updated: true });
             });
         } else {
             db.query('INSERT INTO material_bills (owneruserid, data) VALUES (?,?)', [ownerUserId, JSON.stringify(body)], (err, result) => {
-                if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+                if (err) { refundInvoiceToken(gate); return res.status(500).json({ error: 'DB error: ' + err.message }); }
                 res.status(201).json({ id: result.insertId, updated: false });
             });
         }
     });
-});
+}));
 app.get('/api/material/bills', (req, res) => {
     const ownerUserId = req.query.ownerUserId;
     // 🆕 MULTI-USER INVOICE + ADMIN VIEW: jab ownerUserId diya gaya ho, wahi
@@ -5235,7 +5423,7 @@ app.get('/api/material/bills', (req, res) => {
     });
 });
 app.put('/api/material/bills/:id', requireActiveMaterialUser, (req, res) => {
-    db.query('SELECT owneruserid, data FROM material_bills WHERE id=?', [req.params.id], (err, rows) => {
+    db.query('SELECT owneruserid, data FROM material_bills WHERE id=?', [req.params.id], async (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         if (!rows || !rows.length) return res.status(404).json({ error: 'Bill not found.' });
         // 🔒 SECURITY FIX: pehle client body ke ownerUserId par bharosa
@@ -5249,11 +5437,17 @@ app.put('/api/material/bills/:id', requireActiveMaterialUser, (req, res) => {
         if (!isAdmin && rows[0].owneruserid && requestOwnerId !== rows[0].owneruserid) {
             return res.status(403).json({ error: 'This bill does not belong to you — it cannot be edited.' });
         }
+        const newBody = Object.assign({}, req.body || {});
+        delete newBody.unlockToken;
+        // 🔒 EDIT => RE-PAYMENT: changes are NOT saved until the active fee is paid (₹0 → saved instantly)
+        let gate;
+        try { gate = await enforceInvoiceFee(req, res, rows[0].owneruserid || ''); } catch (gErr) { return res.status(500).json({ error: 'Fee check failed: ' + gErr.message }); }
+        if (!gate.ok) return;
         let merged = {};
         try { merged = JSON.parse(rows[0].data); } catch (e) {}
-        Object.assign(merged, req.body || {});
+        Object.assign(merged, newBody);
         db.query('UPDATE material_bills SET data=? WHERE id=?', [JSON.stringify(merged), req.params.id], (uErr) => {
-            if (uErr) return res.status(500).json({ error: 'DB error: ' + uErr.message });
+            if (uErr) { refundInvoiceToken(gate); return res.status(500).json({ error: 'DB error: ' + uErr.message }); }
             res.json({ success: true });
         });
     });
@@ -5469,7 +5663,7 @@ async function attendanceSummary(keys) {
     return t;
 }
 async function buildHistory(hit) {
-    const h = { feePayments: [], subscriptionOrders: [], transactions: [], registrationOrders: [], salarySlips: [], attendance: null };
+    const h = { feePayments: [], subscriptionOrders: [], transactions: [], registrationOrders: [], salarySlips: [], materialBills: [], attendance: null };
     const id = String(hit.entityId || '');
     const mob = String(hit.mobile || '').replace(/\D/g, '').slice(-10);
     const num = function (v) { return v === null || v === undefined || v === '' ? null : Number(v); };
@@ -5487,6 +5681,14 @@ async function buildHistory(hit) {
     if (mob.length === 10) {
         (await safeQ('SELECT orderid, planname, amount, status, agentid, created_at FROM customer_registration_orders WHERE mobile = ? ORDER BY created_at DESC LIMIT 20', [mob]))
             .forEach(function (r) { h.registrationOrders.push({ orderId: r.orderid, plan: r.planname, amount: num(r.amount), status: r.status, agentId: r.agentid, date: r.created_at }); });
+    }
+    if (id && hit.kind === 'material_user') {
+        h.materialBills = [];
+        (await safeQ('SELECT id, data, savedat FROM material_bills WHERE owneruserid = ? ORDER BY savedat DESC LIMIT 100', [id]))
+            .forEach(function (r) {
+                let d = {}; try { d = JSON.parse(r.data) || {}; } catch (e) {}
+                h.materialBills.push({ id: r.id, billNo: d.billNo || '', billDate: d.billDate || '', business: d.businessName || d.vendorName || '', workCode: d.workCode || '', date: r.savedat });
+            });
     }
     if (id && (hit.kind === 'staff' || hit.kind === 'employee')) {
         (await safeQ('SELECT id, data, created_at FROM hrms_salary_slips WHERE empid = ? ORDER BY created_at DESC LIMIT 24', [id]))
@@ -5541,6 +5743,29 @@ async function runAadhaarSearch(req, res) {
             o.matchType = mode;
             results.push(o);
             seen.add(r.entity_type + ':' + String(r.entity_id).toLowerCase());
+        });
+    }
+
+    // 1b) Material users + their pending registrations (Admin only) — instant, by Aadhaar hash / last-4
+    if (isAdmin && (mode === 'last4' || piiReady())) {
+        const col = mode === 'full' ? 'aadhaar_hash' : 'aadhaar_last4';
+        const val = mode === 'full' ? piiIndex('AADHAAR', digits) : digits;
+        const mus = await safeQ('SELECT id, userid, name, village, address, email, mobile, photo, status, aadhaar_last4, aadhaar_enc, created_at FROM material_users WHERE ' + col + ' = ? ORDER BY created_at DESC LIMIT ' + LIMIT, [val]);
+        mus.forEach(function (r) {
+            results.push({ id: 'mu:' + r.id, source: 'material_users', kind: 'material_user', type: 'Material User', entityId: String(r.userid), materialId: r.id,
+                name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: [r.village, r.address].filter(Boolean).join(', '), photo: r.photo || '',
+                aadhaarLast4: r.aadhaar_last4 || '', aadhaarMasked: maskAadhaarLast4(r.aadhaar_last4), hasFullAadhaar: !!r.aadhaar_enc,
+                status: r.status || 'active', registeredBy: 'Material Portal / Admin', agentId: '', agentUsername: '', agentName: '', agentCompany: '',
+                createdAt: r.created_at, matchType: mode });
+            seen.add('material_user:' + String(r.userid).toLowerCase());
+        });
+        const mrs = await safeQ("SELECT id, name, village, address, email, mobile, photo, status, aadhaar_last4, aadhaar_enc, created_at FROM material_user_requests WHERE " + col + " = ? ORDER BY created_at DESC LIMIT " + LIMIT, [val]);
+        mrs.forEach(function (r) {
+            results.push({ id: 'mur:' + r.id, source: 'material_user_requests', kind: 'material_request', type: 'Material User (Pending)', entityId: String(r.id), materialId: r.id,
+                name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: [r.village, r.address].filter(Boolean).join(', '), photo: r.photo || '',
+                aadhaarLast4: r.aadhaar_last4 || '', aadhaarMasked: maskAadhaarLast4(r.aadhaar_last4), hasFullAadhaar: !!r.aadhaar_enc,
+                status: r.status || 'pending', registeredBy: 'Material Portal (self-registration)', agentId: '', agentUsername: '', agentName: '', agentCompany: '',
+                createdAt: r.created_at, matchType: mode });
         });
     }
 
@@ -5823,6 +6048,7 @@ function checkIdentityFormat(n) {
 }
 function maskIdentity(n) { n = String(n || ''); return n.length >= 4 ? 'XXXX XXXX ' + n.slice(-4) : ''; }
 function ownerLabel(att, fallbackName) {
+    if (att && att.agentCompany) return att.agentCompany + (att.agentName ? ' — Agent ' + att.agentName : '') + (att.agentId ? ' (' + att.agentId + ')' : '');
     if (att && att.agentName) return att.agentName + (att.agentId ? ' (' + att.agentId + ')' : '');
     if (att && (att.agentId || att.agentUsername)) return att.agentId || att.agentUsername;
     return fallbackName ? fallbackName : 'Admin / Direct';
@@ -5859,8 +6085,8 @@ async function findIdentityOwner(norm, selfKeys, excludeSrc, idx, selfPhone) {
                 // pending registration → approved employee/staff (naya ID, wahi insaan): same mobile = same person
                 if (selfPhone && PENDING_IDENTITY_SRCS.indexOf(src.key) >= 0 && last10(rec.mobile || rec.phone) === selfPhone) continue;
                 const att = attribute(idx, [rec.agentId, rec.ownerUser, rec.agentUsername, rec.registeredAgentId, rec.scopeAgentId]);
-                const lbl = src.kind === 'agent' ? ((rec.name || rec.username || 'Agent') + (rec.agentId ? ' (' + rec.agentId + ')' : '')) : ownerLabel(att);
-                return { kind: src.kind, entityId: genericEntityId(rec), name: rec.name || '', label: lbl };
+                const lbl = src.kind === 'agent' ? ((rec.company ? rec.company + ' — ' : '') + 'Agent ' + (rec.name || rec.username || '') + (rec.agentId ? ' (' + rec.agentId + ')' : '')) : ownerLabel(att);
+                return { kind: src.kind, entityId: genericEntityId(rec), name: rec.name || '', company: (att && att.agentCompany) || (src.kind === 'agent' ? (rec.company || '') : ''), label: (src.kind !== 'agent' && rec.name ? 'existing record "' + rec.name + '" under ' : '') + lbl };
             }
         }
     }
@@ -5869,7 +6095,7 @@ async function findIdentityOwner(norm, selfKeys, excludeSrc, idx, selfPhone) {
         for (let i = 0; i < rows.length; i++) {
             if (selfKeys.length && selfKeys.indexOf(String(rows[i].entity_id).toLowerCase()) >= 0) continue;
             const att = attribute(idx, [rows[i].agent_id, rows[i].agent_username]);
-            return { kind: rows[i].entity_type, entityId: String(rows[i].entity_id), name: rows[i].full_name || '', label: ownerLabel(att) };
+            return { kind: rows[i].entity_type, entityId: String(rows[i].entity_id), name: rows[i].full_name || '', company: att.agentCompany || '', label: (rows[i].full_name ? 'existing record "' + rows[i].full_name + '" under ' : '') + ownerLabel(att) };
         }
     }
     return null;
@@ -5963,12 +6189,12 @@ const GATE_DEFAULT = {
         roleLabel: 'Select Role', locationLabel: 'Select Location', continueLabel: 'Continue'
     },
     roles: [
-        { id: 'super_admin', label: 'Super Admin', portal: 'admin', target: 'Super_Admin_Dashboard.html', enabled: true },
-        { id: 'pfms', label: 'PFMS Portal', portal: 'pfms', target: 'PFMS_login.html', enabled: true },
-        { id: 'agent', label: 'Agent Login', portal: 'agent', target: 'Agent_Login.html', enabled: true },
-        { id: 'hrms', label: 'HRMS', portal: 'hrms', target: 'HRMS_login.html', enabled: true },
-        { id: 'student', label: 'Student Attendance', portal: 'student', target: 'Student_Attendance.html', enabled: true },
-        { id: 'invoice', label: 'Invoice Login', portal: 'invoice', target: 'INVOICE_LOGIN.html', enabled: true }
+        { id: 'super_admin', label: 'Admin', portal: 'admin', target: '/admin-dashboard', enabled: true },
+        { id: 'pfms', label: 'PFMS Portal', portal: 'pfms', target: '/pfms-login', enabled: true },
+        { id: 'agent', label: 'Agent Login', portal: 'agent', target: '/agent-login', enabled: true },
+        { id: 'hrms', label: 'HRMS', portal: 'hrms', target: '/hrms-login', enabled: true },
+        { id: 'student', label: 'Student Attendance', portal: 'student', target: '/student-login', enabled: true },
+        { id: 'invoice', label: 'Invoice Login', portal: 'invoice', target: '/invoice-login', enabled: true }
     ],
     locations: [
         { id: 'begusarai', label: 'Begusarai', enabled: true },
@@ -5977,7 +6203,8 @@ const GATE_DEFAULT = {
     users: []   // [{username, name, title:'Mr.'|'Mrs.', roles:[ids], locations:[ids], actAs:{roleId: username}}]
 };
 const GATE_PORTALS = ['admin', 'pfms', 'agent', 'hrms', 'student', 'invoice'];
-const SAFE_TARGET = /^[A-Za-z0-9_\-]{1,60}\.html$/;
+const SAFE_TARGET = /^\/?[A-Za-z0-9_\-]{1,60}(\.html)?$/;
+const cleanTarget = (t) => { const k = String(t || '').replace(/^\//, '').toLowerCase(); return LEGACY_FILE_TO_CLEAN[k.endsWith('.html') ? k : k + '.html'] || (String(t).charAt(0) === '/' ? t : '/' + t); };
 function sanitizeGate(v) {
     const g = (v && typeof v === 'object') ? v : {};
     const s = function (x, n) { return cleanText(x, n); };
@@ -5989,7 +6216,8 @@ function sanitizeGate(v) {
         if (!r || !s(r.label, 60)) return;
         const portal = GATE_PORTALS.indexOf(r.portal) >= 0 ? r.portal : 'admin';
         let target = s(r.target, 80);
-        if (!SAFE_TARGET.test(target)) target = (GATE_DEFAULT.roles.find(function (d) { return d.portal === portal; }) || {}).target || 'Super_Admin_Dashboard.html';
+        if (!SAFE_TARGET.test(target)) target = (GATE_DEFAULT.roles.find(function (d) { return d.portal === portal; }) || {}).target || '/admin-dashboard';
+        target = cleanTarget(target);
         out.roles.push({ id: slug(r.id, r.label), label: s(r.label, 60), portal: portal, target: target, enabled: r.enabled !== false });
     });
     (Array.isArray(g.locations) ? g.locations : []).slice(0, 100).forEach(function (l) {
@@ -6204,18 +6432,14 @@ app.put('/api/admin/cms/:key', noStore, requireRole('admin'), asyncRoute(async (
 //     /admin /admin-login        → Admin_Login.html   (fallback: /api/pages/admin-login)
 //     /agent /agent-login        → Agent_Login.html   (fallback: /api/pages/agent-login)
 // ══════════════════════════════════════════════════════════════════
-const PAGE_MAP = [
-    { paths: ['/', '/index', '/home'], file: 'index.html', slug: null },
-    { paths: ['/admin', '/admin-login', '/admin_login'], file: 'Admin_Login.html', slug: 'admin-login' },
-    { paths: ['/agent', '/agent-login', '/agent_login'], file: 'Agent_Login.html', slug: 'agent-login' }
-];
-PAGE_MAP.forEach(function (pg) {
-    pg.paths.forEach(function (p) {
+CLEAN_PAGES.forEach(function (pg) {
+    [pg.clean].concat(pg.aliases).forEach(function (p) {
         app.get(p, function (req, res, next) {
+            if (p !== pg.clean) { const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : ''; return res.redirect(301, pg.clean + q); } // alias -> canonical clean URL
             const f = findStaticFile(pg.file);
             if (f) { res.set('Cache-Control', 'no-cache'); return res.sendFile(f); }
-            if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend Netlify par ho to pehle jaisa
-            if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);
+            if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend on Netlify: same as before
+            if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);                 // uploaded copy from the database
             next();
         });
     });
@@ -6252,6 +6476,279 @@ app.get('/api/health/deep', async (req, res) => {
     }
     res.set('Cache-Control', 'no-store').json(out);
 });
+// ═══════════════════════════════════════════════════════════════════════
+// 🆕 TRACKING IDs · CUSTOM FEES · DYNAMIC BRANDING · MASTER USERS LIST
+// ═══════════════════════════════════════════════════════════════════════
+function genTrackingId(prefix) {
+    return 'TRK-' + prefix + '-' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+}
+async function xBlobGet(key, dflt) {
+    try {
+        const r = await dbq('SELECT value FROM kv_blob WHERE `key` = ?', [key]);
+        const v = JSON.parse(r[0] && r[0].value);
+        return v == null ? dflt : v;
+    } catch (e) { return dflt; }
+}
+async function xBlobSet(key, val) {
+    await dbq('INSERT INTO kv_blob ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(val)]);
+}
+let _trkQueue = Promise.resolve();
+function addTracking(rec) {
+    rec.createdAt = new Date().toISOString();
+    _trkQueue = _trkQueue.then(async function () {
+        const list = await xBlobGet('tracking_records', []);
+        (Array.isArray(list) ? list : (list = [])).push(rec);
+        await xBlobSet('tracking_records', list.slice(-5000));
+    }).catch(function (e) { console.error('tracking save failed:', e.message); });
+    return _trkQueue;
+}
+
+// ── Fee configuration (Super Admin controlled; ₹0 = free) ──
+const FEE_KINDS = ['agent', 'hrms', 'customer', 'material'];
+function feeNum(v) { const n = Math.round(Number(v) * 100) / 100; return (isFinite(n) && n >= 0 && n <= 1000000) ? n : null; }
+async function getFeeConfig() {
+    const c = await xBlobGet('fee_config', {});
+    const cfg = { defaults: { agent: 0, hrms: 0, material: 0 }, overrides: [] };
+    if (c && c.defaults) { ['agent', 'hrms', 'material'].forEach(function (k) { const n = feeNum(c.defaults[k]); if (n !== null) cfg.defaults[k] = n; }); }
+    if (c && Array.isArray(c.overrides)) cfg.overrides = c.overrides.filter(function (o) { return o && o.key && feeNum(o.fee) !== null; });
+    return cfg;
+}
+// Resolution order: per-mobile override → per-agent override → default (customer: the plan's own price).
+async function resolveFee(kind, ctx) {
+    const cfg = await getFeeConfig();
+    ctx = ctx || {};
+    const mob = last10(ctx.mobile);
+    const agents = (Array.isArray(ctx.agent) ? ctx.agent : [ctx.agent]).map(function (a) { return String(a || '').trim().toLowerCase(); }).filter(Boolean);
+    const match = function (o) { return o.kind === kind || o.kind === '*' || !o.kind; };
+    if (mob.length === 10) { const o = cfg.overrides.find(function (x) { return match(x) && last10(x.key) === mob && /^\d{10}$/.test(last10(x.key)) && String(x.key).replace(/\D/g, '').length >= 10; }); if (o) return feeNum(o.fee); }
+    if (agents.length) { const o = cfg.overrides.find(function (x) { return match(x) && agents.indexOf(String(x.key).trim().toLowerCase()) >= 0; }); if (o) return feeNum(o.fee); }
+    if (kind === 'customer') return feeNum(ctx.planPrice) === null ? 0 : feeNum(ctx.planPrice);
+    return cfg.defaults[kind] || 0;
+}
+async function verifyRegPayment(kind, fee, p) {
+    const secret = process.env.PAYMENT_API_SECRET;
+    if (!secret || !p || !p.orderId || !p.paymentId || !p.signature) return false;
+    const expected = crypto.createHmac('sha256', secret).update(p.orderId + '|' + p.paymentId).digest('hex');
+    const a = Buffer.from(expected), b = Buffer.from(String(p.signature));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    const orders = await xBlobGet('reg_orders', {});
+    const o = orders && orders[p.orderId];
+    if (!o || o.kind !== kind || Number(o.fee) !== Number(fee) || o.used) return false;
+    o.used = true; o.paymentId = p.paymentId;
+    await xBlobSet('reg_orders', orders);
+    return true;
+}
+function feeGate(kind) {
+    return function (req, res, next) {
+        (async function () {
+            const b = req.body || {};
+            const fee = await resolveFee(kind, { mobile: b.mobile || b.phone, agent: [b.agentUsername, b.agent, b.agentId] });
+            req.__fee = fee;
+            if (fee <= 0) return next();
+            const ok = await verifyRegPayment(kind, fee, b.payment || {});
+            if (!ok) return res.status(402).json({ error: 'A registration fee of ₹' + fee + ' is required. Please complete the payment to continue.', feeRequired: true, fee: fee });
+            req.__paymentRef = String(b.payment.paymentId).slice(0, 60);
+            next();
+        })().catch(function (e) { console.error('feeGate error:', e.message); res.status(500).json({ error: 'Unable to verify the registration fee. Please try again.' }); });
+    };
+}
+app.get('/api/registration/fee', asyncRoute(async (req, res) => {
+    const kind = String(req.query.kind || '');
+    if (FEE_KINDS.indexOf(kind) < 0 || kind === 'customer') return res.status(400).json({ error: 'Invalid registration type.' });
+    const fee = await resolveFee(kind, { mobile: req.query.mobile, agent: req.query.agent });
+    res.json({ fee: fee, free: fee <= 0 });
+}));
+app.post('/api/registration/payment-order', asyncRoute(async (req, res) => {
+    if (hitRateLimit('regpay:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const b = req.body || {};
+    const kind = String(b.kind || '');
+    if (kind !== 'agent' && kind !== 'hrms' && kind !== 'material') return res.status(400).json({ error: 'Invalid registration type.' });
+    const fee = await resolveFee(kind, { mobile: b.mobile, agent: [b.agentUsername, b.agent, b.agentId] });
+    if (fee <= 0) return res.json({ free: true, fee: 0 });
+    if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET) return res.status(501).json({ error: 'Payment keys are not set in the Render Environment (PAYMENT_API_KEY / PAYMENT_API_SECRET).' });
+    const order = await razorpayRequest('/v1/orders', { amount: Math.round(fee * 100), currency: 'INR', receipt: 'reg_' + kind + '_' + Date.now(), notes: { kind: kind } });
+    const orders = await xBlobGet('reg_orders', {});
+    const keys = Object.keys(orders);
+    if (keys.length > 2000) keys.slice(0, keys.length - 1500).forEach(function (k) { delete orders[k]; });
+    orders[order.id] = { kind: kind, fee: fee, used: false, at: Date.now() };
+    await xBlobSet('reg_orders', orders);
+    res.json({ free: false, orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, fee: fee });
+}));
+app.get('/api/admin/fee-config', requireRole('admin'), asyncRoute(async (req, res) => { res.json(await getFeeConfig()); }));
+app.put('/api/admin/fee-config', requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const cfg = { defaults: { agent: 0, hrms: 0, material: 0 }, overrides: [] };
+    for (const k of ['agent', 'hrms', 'material']) {
+        const n = feeNum(b.defaults && b.defaults[k]);
+        if (b.defaults && b.defaults[k] !== undefined && n === null) return res.status(400).json({ error: 'Please enter a valid fee amount (0 or more).' });
+        cfg.defaults[k] = n === null ? 0 : n;
+    }
+    for (const o of (Array.isArray(b.overrides) ? b.overrides : [])) {
+        const key = cleanText(o && o.key, 80).trim();
+        const fee = feeNum(o && o.fee);
+        if (!key) continue;
+        if (fee === null) return res.status(400).json({ error: 'Invalid fee for "' + key + '".' });
+        const kind = ['agent', 'hrms', 'customer', 'material', '*'].indexOf(o.kind) >= 0 ? o.kind : '*';
+        cfg.overrides.push({ key: key, kind: kind, fee: fee, note: cleanText(o.note, 120) });
+    }
+    if (cfg.overrides.length > 500) return res.status(400).json({ error: 'Too many custom fee rows (max 500).' });
+    await xBlobSet('fee_config', cfg);
+    res.json(cfg);
+}));
+
+// ── Dynamic branding: the agent's company name + logo for login page / dashboard header ──
+app.get('/api/branding/agent', asyncRoute(async (req, res) => {
+    const u = String(req.query.u || '').trim().toLowerCase();
+    res.set('Cache-Control', 'public, max-age=60');
+    if (!u || u.length > 80) return res.json({ found: false });
+    const rows = await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['agents']);
+    const list = parseEntityList(rows[0] && rows[0].value);
+    const a = list.find(function (x) { return x && (String(x.username || '').toLowerCase() === u || String(x.agentId || '').toLowerCase() === u); });
+    if (!a) return res.json({ found: false });
+    const logo = String(a.logo || '');
+    const okLogo = /^(data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,|https?:\/\/|\/[^\/])/i.test(logo) && logo.length < 3 * 1024 * 1024;
+    res.json({ found: true, company: a.company || '', name: a.name || '', logo: okLogo ? logo : '' });
+}));
+
+// ── Tracking lookup for Agent / HRMS registrations (used by track-status) ──
+async function trackingLookup(trackingId, mobile) {
+    const list = await xBlobGet('tracking_records', []);
+    const t = (Array.isArray(list) ? list : []).find(function (r) { return r && String(r.trackingId).toLowerCase() === trackingId.toLowerCase() && last10(r.mobile) === mobile; });
+    if (!t) return null;
+    const out = { success: true, trackingId: t.trackingId, applicationId: t.trackingId, name: t.name, type: t.kind === 'agent' ? 'Agent Registration' : 'HRMS / Staff Registration', submittedOn: t.createdAt, status: 'pending', feePaid: t.fee || 0 };
+    if (t.kind === 'agent') {
+        const pend = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['agent_pending_registrations']))[0] || {}).value);
+        const p = pend.find(function (x) { return x && x.id === t.regId; });
+        const ag = parseEntityList(((await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['agents']))[0] || {}).value);
+        const agent = ag.find(function (x) { return x && String(x.username || '').toLowerCase() === String(t.username || '').toLowerCase(); });
+        if (agent) { out.status = 'approved'; out.credentials = { userId: agent.username, password: null }; out.message = 'Your Agent registration has been approved. Sign in with your User ID and the password you chose at registration.'; }
+        else if (p && String(p.status || 'pending') === 'rejected') { out.status = 'rejected'; out.message = 'Your registration was not approved. Please contact the Admin.'; }
+        else if (!p) { out.status = 'rejected'; out.message = 'This registration is no longer in the review queue. Please contact the Admin.'; }
+        else out.message = 'Your registration is under review by the Admin.';
+    } else {
+        const pend = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['hrms_pending_registrations']))[0] || {}).value);
+        if (pend.some(function (x) { return x && x.id === t.regId; })) { out.message = 'Your registration is under review.'; }
+        else {
+            const emps = parseEntityList(((await dbq('SELECT value FROM kv_blob WHERE `key` = ?', ['hrms_employees']))[0] || {}).value);
+            const e = emps.find(function (x) { return x && last10(x.phone) === mobile; });
+            if (e) { out.status = 'approved'; out.credentials = { userId: e.empId, password: null }; out.message = 'Your registration has been approved. Your Employee ID is ' + e.empId + '. Sign in on the HRMS login page with this ID.'; }
+            else { out.status = 'rejected'; out.message = 'Your registration was not approved. Please contact your library / Admin.'; }
+        }
+    }
+    return out;
+}
+
+// ═══ MASTER USERS & REGISTRATIONS LIST (Super Admin — every Supabase record in one place) ═══
+const MASTER_SOURCES = [
+    { id: 'agents', table: 'kv_admin_entities', key: 'agents', kind: 'agent', label: 'Agent' },
+    { id: 'students', table: 'kv_admin_entities', key: 'students', kind: 'student', label: 'Student' },
+    { id: 'staff', table: 'kv_admin_entities', key: 'staff', kind: 'staff', label: 'Staff' },
+    { id: 'hrms_employees', table: 'kv_blob', key: 'hrms_employees', kind: 'employee', label: 'HRMS Staff' },
+    { id: 'hrms_pending_registrations', table: 'kv_blob', key: 'hrms_pending_registrations', kind: 'employee', label: 'HRMS Registration (pending)' },
+    { id: 'agent_pending_registrations', table: 'kv_blob', key: 'agent_pending_registrations', kind: 'agent', label: 'Agent Registration (pending)' },
+    { id: 'customer_pending_registrations', table: 'kv_blob', key: 'customer_pending_registrations', kind: 'customer', label: 'Customer Registration' }
+];
+function masterRecId(rec) { return String(firstDefined(rec.id, rec.studentId, rec.empId, rec.agentId, rec.username, '')).trim(); }
+function masterStatus(rec) { return String(rec.status || 'active').toLowerCase(); }
+app.get('/api/admin/master-list', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const idx = await loadAgentsIndex();
+    const kycRows = await safeQ('SELECT entity_type, entity_id, aadhaar_last4 FROM kyc_records LIMIT 50000', []);
+    const kycMap = new Map();
+    kycRows.forEach(function (r) { kycMap.set(r.entity_type + ':' + String(r.entity_id).toLowerCase(), r.aadhaar_last4 || ''); });
+    const out = [];
+    for (const s of MASTER_SOURCES) {
+        const rows = await safeQ('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
+        const list = parseEntityList(rows[0] && rows[0].value);
+        list.forEach(function (rec) {
+            if (!rec || typeof rec !== 'object') return;
+            const id = masterRecId(rec);
+            const att = attribute(idx, [rec.agentUsername, rec.ownerUser, rec.agentId, s.kind === 'agent' ? rec.username : '']);
+            let last4 = kycMap.get(s.kind + ':' + id.toLowerCase()) || '';
+            if (!last4) { const d = extractAadhaarDigits(rec); if (d) last4 = d.slice(-4); }
+            out.push({
+                source: s.id, kind: s.kind, type: s.label, id: id, name: rec.name || '', mobile: rec.mobile || rec.phone || '', email: rec.email || '',
+                address: rec.address || '', username: rec.username || '', status: masterStatus(rec),
+                aadhaarMasked: last4 ? 'XXXX XXXX ' + last4 : '', trackingId: rec.trackingId || '',
+                agentUsername: att.agentUsername || String(rec.agentUsername || ''), agentName: att.agentName, company: s.kind === 'agent' ? (rec.company || '') : (att.agentCompany || ''),
+                createdAt: rec.createdAt || rec.submittedOn || rec.joinedOn || rec.registeredOn || rec.date || ''
+            });
+        });
+    }
+    const mu = await safeQ('SELECT * FROM material_users ORDER BY 1 DESC LIMIT 5000', []);
+    mu.forEach(function (r) {
+        out.push({ source: 'material_users', kind: 'material_user', type: 'Material User', id: String(r.userid || r.userId || ''), name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: r.address || r.village || '',
+            username: String(r.userid || ''), status: String(r.status || 'active').toLowerCase(), aadhaarMasked: r.aadhaar_last4 ? 'XXXX XXXX ' + r.aadhaar_last4 : '', trackingId: '', agentUsername: '', agentName: '', company: '', createdAt: r.created_at || r.createdat || '' });
+    });
+    const mr = await safeQ('SELECT * FROM material_user_requests ORDER BY 1 DESC LIMIT 5000', []);
+    mr.forEach(function (r) {
+        out.push({ source: 'material_user_requests', kind: 'material_request', type: 'Material User Request', id: String(r.id || ''), name: r.name || '', mobile: r.mobile || '', email: r.email || '', address: r.address || r.village || '',
+            username: '', status: String(r.status || 'pending').toLowerCase(), aadhaarMasked: '', trackingId: '', agentUsername: '', agentName: '', company: '', createdAt: r.created_at || r.createdat || '' });
+    });
+    const counts = {};
+    out.forEach(function (r) { counts[r.type] = (counts[r.type] || 0) + 1; });
+    res.json({ total: out.length, counts: counts, items: out, agents: Array.from(new Set(Array.from(idx.values()))).map(function (a) { return { username: a.username, name: a.name, company: a.company, agentId: a.agentId }; }) });
+}));
+const MASTER_EDITABLE = ['name', 'mobile', 'phone', 'email', 'address', 'status', 'company', 'designation', 'department'];
+app.put('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(async (req, res) => {
+    const src = req.params.source, id = String(req.params.id || '').trim();
+    const b = req.body || {};
+    if (b.status !== undefined && ['active', 'inactive', 'blocked', 'pending', 'approved', 'rejected'].indexOf(String(b.status).toLowerCase()) < 0) return res.status(400).json({ error: 'Invalid status.' });
+    if (src === 'material_users') {
+        const sets = [], params = [];
+        ['name', 'mobile', 'email', 'address', 'status'].forEach(function (f) { if (b[f] !== undefined) { sets.push(f + ' = ?'); params.push(cleanText(b[f], 500)); } });
+        if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
+        params.push(id);
+        const r = await dbq('UPDATE material_users SET ' + sets.join(', ') + ' WHERE userid = ? RETURNING userid', params);
+        if (!r.length) return res.status(404).json({ error: 'Record not found.' });
+        return res.json({ success: true });
+    }
+    const s = MASTER_SOURCES.find(function (x) { return x.id === src; });
+    if (!s) return res.status(400).json({ error: 'Unknown record source.' });
+    const rows = await dbq('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
+    const list = parseEntityList(rows[0] && rows[0].value);
+    const rec = list.find(function (r) { return r && masterRecId(r).toLowerCase() === id.toLowerCase(); });
+    if (!rec) return res.status(404).json({ error: 'Record not found.' });
+    MASTER_EDITABLE.forEach(function (f) { if (b[f] !== undefined) rec[f] = cleanText(b[f], 500); });
+    // Agent ↔ Staff / Student mapping
+    if (b.agentUsername !== undefined) {
+        const idx = await loadAgentsIndex();
+        const uname = String(b.agentUsername || '').trim().toLowerCase();
+        if (uname) {
+            const a = idx.get(uname);
+            if (!a) return res.status(400).json({ error: 'The selected Agent was not found.' });
+            rec.agentUsername = a.username; rec.ownerUser = a.username; if (a.agentId) rec.agentId = a.agentId;
+        } else { rec.agentUsername = ''; rec.ownerUser = ''; }
+    }
+    await dbq('INSERT INTO ' + s.table + ' ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [s.key, JSON.stringify(list)]);
+    if (s.key === 'agents') _scopeCache.clear();
+    if (b.name !== undefined || b.mobile !== undefined || b.email !== undefined) {
+        await safeQ('UPDATE kyc_records SET full_name = COALESCE(?, full_name), mobile = COALESCE(?, mobile), email = COALESCE(?, email), updated_at = CURRENT_TIMESTAMP WHERE entity_type = ? AND LOWER(entity_id) = ?',
+            [b.name !== undefined ? cleanText(b.name, 255) : null, b.mobile !== undefined ? cleanText(b.mobile, 20) : null, b.email !== undefined ? cleanText(b.email, 255) : null, s.kind, id.toLowerCase()]);
+    }
+    res.json({ success: true });
+}));
+app.delete('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(async (req, res) => {
+    const src = req.params.source, id = String(req.params.id || '').trim();
+    if (src === 'material_users') {
+        const r = await dbq('DELETE FROM material_users WHERE userid = ? RETURNING userid', [id]);
+        return r.length ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
+    }
+    if (src === 'material_user_requests') {
+        const r = await dbq('DELETE FROM material_user_requests WHERE id = ? RETURNING id', [id]);
+        return r.length ? res.json({ success: true }) : res.status(404).json({ error: 'Record not found.' });
+    }
+    const s = MASTER_SOURCES.find(function (x) { return x.id === src; });
+    if (!s) return res.status(400).json({ error: 'Unknown record source.' });
+    const rows = await dbq('SELECT value FROM ' + s.table + ' WHERE `key` = ?', [s.key]);
+    const list = parseEntityList(rows[0] && rows[0].value);
+    const next = list.filter(function (r) { return !(r && masterRecId(r).toLowerCase() === id.toLowerCase()); });
+    if (next.length === list.length) return res.status(404).json({ error: 'Record not found.' });
+    await dbq('INSERT INTO ' + s.table + ' ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', [s.key, JSON.stringify(next)]);
+    await safeQ('DELETE FROM kyc_records WHERE entity_type = ? AND LOWER(entity_id) = ?', [s.kind, id.toLowerCase()]);
+    if (s.key === 'agents') _scopeCache.clear();
+    res.json({ success: true });
+}));
+
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
