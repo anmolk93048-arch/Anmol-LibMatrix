@@ -1776,8 +1776,10 @@ app.post('/api/material/login', (req, res) => {
                 // karta rehta tha), aur "मोबाइल नंबर बदलें" route bhi हमेशा
                 // "Yeh User ID nahi mila" error deta tha.
                 const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
-                const { password_hash, ...userSafe } = u;
+                // never send the password hash or the encrypted Aadhaar data to the browser
+                const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
                 userSafe._docId = String(u.id);
+                userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
                 res.json({ user: userSafe, token });
             } catch (innerErr) {
                 console.error('❌ /material/login inner error:', innerErr.message);
