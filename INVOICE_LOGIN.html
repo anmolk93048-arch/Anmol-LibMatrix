@@ -202,12 +202,14 @@
 
   /* ---- PRINT: A4 OR Letter — always a single page ---- */
   @media print{
-    /* A4 with a 5 mm page margin — identical to the downloaded PDF. The invoice is centred inside this area by
-       fitInvoiceToSinglePage() and shrunk only if it would not fit on one page. */
+    /* A4 with a 5 mm page margin — identical to the downloaded PDF. The invoice is centred horizontally and TOP-aligned
+       (starts at the top margin, flows downwards) by fitInvoiceToSinglePage(); shrunk only if it would not fit on one page. */
     @page{ size: A4; margin: 5mm; }
     html, body{
-      width:100% !important; height:100% !important;
+      width:100% !important; height:auto !important;
       margin:0 !important; padding:0 !important;
+      display:block !important; vertical-align:top !important;
+      align-items:flex-start !important; justify-content:flex-start !important; /* never vertically centre the sheet */
       font-size:11px; /* compact base font so content stays dense */
     }
     body *{ visibility:hidden; }
@@ -219,6 +221,7 @@
     #invoiceArea{
       position:absolute; left:0; top:0;
       margin:0 !important; padding:6px !important; max-width:none !important;
+      vertical-align:top !important;
       font-size:9.5px !important; line-height:1.25 !important;
       transform-origin: top left;
     }
@@ -1689,10 +1692,10 @@ async function downloadInvoicePDF(){
       windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(capW)),
       onclone: function(doc){ const c = doc.getElementById('invoiceArea'); if(c && c.parentNode){ c.parentNode.style.cssText = 'position:static;background:#fff;'; } }
     });
-    // Fit inside the margins at natural proportions (never stretched), then centre on the page — horizontally and vertically
+    // Fit inside the margins at natural proportions (never stretched), centre horizontally, TOP-align vertically (starts at the top margin)
     let w = boxW, h = w * canvas.height / canvas.width;
     if(h > boxH){ const k = boxH / h; w = w * k; h = boxH; }
-    const x = (PDF_PAGE_W_MM - w) / 2, y = (PDF_PAGE_H_MM - h) / 2;
+    const x = (PDF_PAGE_W_MM - w) / 2, y = PDF_MARGIN_MM;   // top-aligned: begins at the top margin, never vertically centred
     const pdf = new window.jspdf.jsPDF({ orientation:'p', unit:'mm', format:'a4', compress:true });
     pdf.setProperties({ title: _invoiceFileName().replace(/\.pdf$/, ''), subject: 'Tax Invoice', creator: 'Anmol LiveMatrix Invoice' });
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', x, y, w, h);
@@ -1848,8 +1851,9 @@ function _fillInvoiceFromForm(){
      width  -> limited by A4  (210 - 10 = 200mm)
      height -> limited by Letter (279.4 - 10 = 269.4mm, rounded down for safety) */
 const SAFE_PRINT_WIDTH_MM  = 200;
-const SAFE_PRINT_HEIGHT_MM = 285;   // A4 printable height (297 − 2×5 = 287) minus a 2 mm safety gap
-/* The invoice is laid out at this width for BOTH print and PDF, then centred with even margins (≈12 mm on an A4 sheet) */
+const PRINT_TOP_OFFSET_MM = 7;      // extra gap below the 5 mm @page margin → 12 mm top margin, same as the PDF
+const SAFE_PRINT_HEIGHT_MM = 278;   // A4 printable height (297 − 2×5 = 287) − 7 mm top offset − 2 mm safety gap
+/* The invoice is laid out at this width for BOTH print and PDF, then centred horizontally and top-aligned (≈12 mm margins on an A4 sheet) */
 const PRINT_RENDER_WIDTH_MM = 186;
 
 function mmToPx(mm){
@@ -1876,12 +1880,12 @@ function fitInvoiceToSinglePage(){
   const scale = Math.min(1, mmToPx(PRINT_RENDER_WIDTH_MM) / rect.width, maxHeightPx / rect.height);
   inv.classList.remove('pdf-mode');
 
-  // Centre the invoice on the A4 printable area — horizontally AND vertically (equal space on all sides)
+  // Centre horizontally only; TOP-align vertically so the invoice starts at the top margin and flows downwards
   const boxW = mmToPx(SAFE_PRINT_WIDTH_MM), boxH = mmToPx(287);
   inv.style.transformOrigin = 'top left';
   inv.style.transform = scale < 0.999 ? `scale(${scale})` : 'none';
   inv.style.left = Math.max(0, (boxW - rect.width  * scale) / 2) + 'px';
-  inv.style.top  = Math.max(0, (boxH - rect.height * scale) / 2) + 'px';
+  inv.style.top  = mmToPx(PRINT_TOP_OFFSET_MM) + 'px';
 }
 
 function printInvoiceSinglePage(){

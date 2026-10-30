@@ -7,7 +7,7 @@
 <script src="theme.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Admin Control Panel — Anmol Digital Library</title>
+<title>Admin Control Panel — Anmol LibMatrix</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- ══ FIREBASE SDK ══ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -21,7 +21,7 @@
      (digital-library-21663) — bas ek alag Firebase product use ho raha hai. ══ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-// ══ FIREBASE CONFIG (Anmol Digital Library) ══
+// ══ FIREBASE CONFIG (Anmol LibMatrix) ══
 const firebaseConfig = {
   apiKey: "AIzaSyDnK_3vfnclWSRnvsINBOcaOG02_fEuCKU",
   authDomain: "digital-library-21663.firebaseapp.com",
@@ -4266,7 +4266,7 @@ html,body,#admin-app{width:100%;min-width:0;}
 </div>
 <div style="width:100%">
 <label class="form-label" style="font-size:10px">© Copyright Text</label>
-<input class="form-input" id="footer-copyright" placeholder="© 2026 Anmol Digital Library, Begusarai, Bihar. Sab adhikar surakshit." type="text"/>
+<input class="form-input" id="footer-copyright" placeholder="© 2026 Anmol LibMatrix, Begusarai, Bihar. Sab adhikar surakshit." type="text"/>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%">
 <div>
@@ -4423,7 +4423,7 @@ html,body,#admin-app{width:100%;min-width:0;}
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%">
 <div>
 <label class="form-label" style="font-size:10px">Account Holder Name</label>
-<input class="form-input" id="s-bank-name" placeholder="Anmol Digital Library" type="text"/>
+<input class="form-input" id="s-bank-name" placeholder="Anmol LibMatrix" type="text"/>
 </div>
 <div>
 <label class="form-label" style="font-size:10px">Account Number</label>
@@ -5066,8 +5066,8 @@ html,body,#admin-app{width:100%;min-width:0;}
             <div style="position:relative">
               <input type="text" class="form-input" id="af-zone" placeholder="e.g. North Zone, Patna City" list="zone-suggestions">
               <datalist id="zone-suggestions">
-                <option value="Anmol Digital Library • MANJHAUL •">
-                <option value="Anmol Digital Library • PATNA •">
+                <option value="Anmol LibMatrix • MANJHAUL •">
+                <option value="Anmol LibMatrix • PATNA •">
                 <option value="North Zone">
                 <option value="South Zone">
                 <option value="East Zone">
@@ -5076,8 +5076,8 @@ html,body,#admin-app{width:100%;min-width:0;}
             </div>
             <!-- Quick Select Buttons -->
             <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px">
-              <button type="button" onclick="document.getElementById('af-zone').value='Anmol Digital Library • MANJHAUL •'" style="font-size:10px;font-weight:800;background:linear-gradient(135deg,rgba(201,162,39,.18),rgba(201,162,39,.08));border:1.5px solid rgba(201,162,39,.45);color:var(--gd);padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:.15s" title="Click to select">🏛️ Anmol Digital Library • MANJHAUL •</button>
-              <button type="button" onclick="document.getElementById('af-zone').value='Anmol Digital Library • PATNA •'" style="font-size:10px;font-weight:800;background:rgba(83,74,183,.1);border:1.5px solid rgba(83,74,183,.35);color:#818cf8;padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:.15s" title="Click to select">🏛️ Anmol Digital Library • PATNA •</button>
+              <button type="button" onclick="document.getElementById('af-zone').value='Anmol LibMatrix • MANJHAUL •'" style="font-size:10px;font-weight:800;background:linear-gradient(135deg,rgba(201,162,39,.18),rgba(201,162,39,.08));border:1.5px solid rgba(201,162,39,.45);color:var(--gd);padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:.15s" title="Click to select">🏛️ Anmol LibMatrix • MANJHAUL •</button>
+              <button type="button" onclick="document.getElementById('af-zone').value='Anmol LibMatrix • PATNA •'" style="font-size:10px;font-weight:800;background:rgba(83,74,183,.1);border:1.5px solid rgba(83,74,183,.35);color:#818cf8;padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:.15s" title="Click to select">🏛️ Anmol LibMatrix • PATNA •</button>
             </div>
           </div>
           <div class="form-group">
@@ -6008,14 +6008,14 @@ function INIT_DATA(){
     {id:'stu3',studentId:'SHL-003',name:'Amit Sharma',mobile:'9123456791',batch:'1',seat:'A-02',fee:500,joinDate:'2024-02-01',addr:'Hajipur',status:'active',created:NOW()}
   ]);
   if(!DB.get('settings')) DB.set('settings',{
-    libName:'Anmol Digital Library',
+    libName:'Anmol LibMatrix',
     libAddr:'Manjhaul, Bihar',
     libPhone:'+91 97988 56543',
     upiId:'9798856543@sbi',
     darkMode:false,
     logo:null,
     ownerName:'Anmol Kumar',
-    bankName:'Anmol Digital Library',
+    bankName:'Anmol LibMatrix',
     bankAcc:'11263211012313',
     bankIfsc:'UCBA0001126',
     bankBank:'UCO Bank',
@@ -7156,7 +7156,7 @@ function PRINT_STAFF_LIST(){
   if(staff.length===0){ SHOW_TOAST('No staff found to print.'); return; }
 
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
 
   var rows = staff.map(function(u,i){
@@ -7221,7 +7221,7 @@ function PRINT_STAFF_CARD(id){
   var u = staff.find(s=>s.id===id);
   if(!u){ SHOW_TOAST('Staff not found.'); return; }
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var libAddr = settings.libAddr || '';
   var printDate = new Date().toLocaleString('hi-IN');
 
@@ -7277,7 +7277,7 @@ function PRINT_STAFF_CARD(id){
 function PRINT_REPORT(opts){
   // opts = { icon, title, headers, rows, summary: [[label,value],...] }
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
 
   var theadHtml = '<tr>'+opts.headers.map(function(h){ return '<th>'+h+'</th>'; }).join('')+'</tr>';
@@ -7584,7 +7584,7 @@ function PRINT_STAFF_VERIFY(){
   if(list.length===0){ SHOW_TOAST('There are no staff verification records to print.'); return; }
 
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
 
   var pendingRows = pending.map(function(p,i){
@@ -7806,7 +7806,7 @@ function PRINT_SALARY_SLIP(id){
   var c = claims.find(x=>x.id===id);
   if(!c){ SHOW_TOAST('Salary claim not found.'); return; }
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var libAddr = settings.libAddr || '';
   var printDate = new Date().toLocaleString('hi-IN');
 
@@ -7865,7 +7865,7 @@ function PRINT_SALARY_LIST(){
   var claims = DB.get('salary_claims')||[];
   if(claims.length===0){ SHOW_TOAST('There are no salary claims to print.'); return; }
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
   var statusLbl = {pending_agent:'Agent Verify Baaki',pending_admin:'Admin Approval Baaki',approved:'Approved',rejected:'Rejected'};
 
@@ -7937,7 +7937,7 @@ function PRINT_SALARY_LIST(){
 // ════════════════════════════════════════════════════
 function GENERIC_PRINT_REPORT(opts){
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
   var headers = opts.headers || [];
   var rows = opts.rows || [];
@@ -8021,7 +8021,7 @@ function PRINT_STUDENT_REPORT(id){
   var absentCount  = records.filter(function(r){ return r.status==='Absent'; }).length;
   var leaveCount   = records.filter(function(r){ return r.status==='Leave'; }).length;
   var settings = DB.get('settings') || {};
-  var libName = settings.libName || settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libName || settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
   var photoHtml = s.photo ? '<img src="'+s.photo+'" style="width:100%;height:100%;object-fit:cover">' : '📷';
   var rowsHtml = records.map(function(r,i){
@@ -8973,7 +8973,7 @@ function PRINT_AGENTS(){
   if(agents.length===0){ SHOW_TOAST('No agents found to print.'); return; }
 
   var settings = DB.get('settings') || {};
-  var libName = settings.libraryName || 'Anmol Digital Library';
+  var libName = settings.libraryName || 'Anmol LibMatrix'; libName = String(libName).replace(/Anmol\s+(?:Smart\s+)?Digital\s+Library/gi,'Anmol LibMatrix');
   var printDate = new Date().toLocaleString('hi-IN');
 
   var rows = agents.map(function(a,i){
@@ -9170,7 +9170,16 @@ function SEND_CREDENTIALS_MSG(via, mobile, name, uid, pwd){
   var msg = 'Hello '+(name||'Agent')+',\n\nYour Anmol LibMatrix Agent App login is ready:\n\nUserID: '+uid+'\nPassword: '+pwd+'\n\nPlease log in to the app to get started.\n- Team Anmol LibMatrix';
   var encoded = encodeURIComponent(msg);
   if(via==='whatsapp'){
-    window.open('https://wa.me/91'+mobile+'?text='+encoded, '_blank');
+    // Professional Hindi click-to-chat message with a direct, clickable portal login link
+    var portal = String((window.ANMOL_CONFIG && (window.ANMOL_CONFIG.PORTAL_URL || window.ANMOL_CONFIG.SITE_URL)) || 'https://anmol-libmatrix.onrender.com').replace(/\/+$/,'');
+    var loginLink = portal + '/agent-login';
+    var waMsg = 'नमस्ते! Anmol LibMatrix में आपका स्वागत है। आपका रजिस्ट्रेशन अप्रूव कर दिया गया है।\n'+
+      'आपकी यूजर डिटेल्स नीचे दी गई हैं:\n'+
+      '- User ID: '+uid+'\n'+
+      '- Password: '+pwd+'\n'+
+      '- Login Link: '+loginLink+'\n\n'+
+      'कृपया इस लिंक पर क्लिक करके लॉगिन करें। धन्यवाद!';
+    window.open('https://wa.me/91'+mobile+'?text='+encodeURIComponent(waMsg), '_blank');
   } else {
     var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
     window.location.href = 'sms:+91'+mobile+(isIOS?'&':'?')+'body='+encoded;
