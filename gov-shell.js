@@ -135,7 +135,7 @@
     top.id = 'gov-top'; top.className = 'gov-shell gov-fixed-top';
     top.innerHTML =
       '<div class="gov-a11y" role="navigation" aria-label="Accessibility tools">' +
-        '<span class="gov-strip" id="gov-h">Anmol Smart Digital Library</span>' +
+        '<span class="gov-strip" id="gov-h">Anmol LibMatrix</span>' +
         '<span class="gov-tools">' +
         '<button type="button" id="gov-sr">Screen Reader Access</button><span class="sep">|</span>' +
         '<a href="#gov-main" id="gov-skip">Skip to Main Content</a><span class="sep">|</span>' +
@@ -174,7 +174,7 @@
   }
   function applyLang() {
     var h = document.getElementById('gov-h');
-    if (h) h.textContent = hindi ? 'अनमोल स्मार्ट डिजिटल लाइब्रेरी' : 'Anmol Smart Digital Library';
+    if (h) h.textContent = hindi ? 'अनमोल लिबमैट्रिक्स' : 'Anmol LibMatrix';
     document.documentElement.setAttribute('lang', hindi ? 'hi' : 'en');
   }
     /* ── Dynamic branding: an agent's company name + logo replace the default brand on login pages ── */
