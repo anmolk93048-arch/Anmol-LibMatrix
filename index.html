@@ -689,11 +689,11 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
 // sync. If the backend URL ever changes, update it in ONE place here.
 const SHDL_API_BASE = window.SHDL_API_BASE || 'https://anmol-libmatrix.onrender.com/api';
 const LOGIN_FEATURES = [
-  {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'/admin-login'},
-  {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'/agent-login'},
-  {icon:'👥', name:'HRMS Login', desc:'Staff, attendance & HR management', href:'/hrms-login'},
-  {icon:'🎓', name:'Student Login', desc:'Books, fees, attendance & services', href:'/student-login'},
-  {icon:'📦', name:'Invoice Generator', desc:'Materials, invoices & stock management', href:'/invoice-login'}
+  {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'nav:admin'},
+  {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'nav:agent'},
+  {icon:'👥', name:'HRMS Login', desc:'Staff, attendance & HR management', href:'nav:hrms'},
+  {icon:'🎓', name:'Student Login', desc:'Books, fees, attendance & services', href:'nav:student'},
+  {icon:'📦', name:'Invoice Generator', desc:'Materials, invoices & stock management', href:'nav:invoice'}
 ];
 const APP_FEATURES = [
   {icon:'🟢', name:'NMS Attendance Login', desc:'Download attendance app', href:'#mobile-app', download:true},
@@ -716,10 +716,11 @@ const COMMAND_UPDATES = [
 ];
 // 🆕 Portal links: legacy filenames (older Admin-saved login_options) are mapped to the deployed files,
 //    unsafe schemes are dropped, and every portal opens in a NEW TAB so index.html stays open.
-const LEGACY_PAGES={'admin_panel_login.html':'/admin-login','admin_login.html':'/admin-login','new_admin_login.html':'/admin-login','super_admin_login.html':'/admin-login',
-  'agent_login.html':'/agent-login','hrms_login.html':'/hrms-login','pfms_login.html':'/pfms-login','student_attendance.html':'/student-login',
-  'student_attendance_portal.html':'/student-login','invoice_login.html':'/invoice-login','anmol_material_entry.html':'/invoice-login','anmol_material_login.html':'/invoice-login'};
-function safeHref(u){
+const LEGACY_PAGES={'admin_panel_login.html':'nav:admin','admin_login.html':'nav:admin','new_admin_login.html':'nav:admin','super_admin_login.html':'nav:admin',
+  'agent_login.html':'nav:agent','hrms_login.html':'nav:hrms','pfms_login.html':'nav:pfms','student_attendance.html':'nav:student',
+  'student_attendance_portal.html':'nav:student','invoice_login.html':'nav:invoice','anmol_material_entry.html':'nav:invoice','anmol_material_login.html':'nav:invoice'};
+function safeHref(u){var r=_safeHref(u);return window.AnmolNav?window.AnmolNav.href(r):r;}
+function _safeHref(u){
   u=String(u==null?'':u).trim();
   if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return '#';
   if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base])return LEGACY_PAGES[base]+u.slice(base.length);}

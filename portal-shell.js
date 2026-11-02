@@ -4,16 +4,16 @@
   var CFG = window.ANMOL_CONFIG || {};
   var API = window.SHDL_API_BASE || CFG.API_BASE || '';
   var HOME = window.SHDL_HOME_URL || '/';
-  var LOGO = 'anmol_libmatrix_logo.png';
+  var LOGO = '/anmol_libmatrix_logo.png';
   var TOKEN_KEYS = ['shdl_auth_token', 'pfms_auth_token', 'anmol_auth_token', 'anmolPortalUser', 'anmol_session', 'anmol_location', 'anmol_gate'];
 
   var PORTALS = [
-    { key: 'admin',   name: 'Admin Login',        icon: '🛡️', url: '/admin-login',       desc: 'Super Admin & management panel' },
-    { key: 'agent',   name: 'Agent Login',        icon: '🤝', url: '/agent-login',       desc: 'Agents, students & collections' },
-    { key: 'pfms',    name: 'PFMS Portal',        icon: '💳', url: '/pfms-login',        desc: 'Payout & fund management' },
-    { key: 'hrms',    name: 'HRMS',               icon: '👥', url: '/hrms-login',        desc: 'Employees, salary & attendance' },
-    { key: 'student', name: 'Student Attendance', icon: '🎓', url: '/student-login', desc: 'Mark attendance & fees' },
-    { key: 'invoice', name: 'Invoice Generator',  icon: '🧾', url: '/invoice-login',     desc: 'Material bills & invoices' }
+    { key: 'admin',   name: 'Admin Login',        icon: '🛡️', url: 'nav:admin', desc: 'Super Admin & management panel' },
+    { key: 'agent',   name: 'Agent Login',        icon: '🤝', url: 'nav:agent', desc: 'Agents, students & collections' },
+    { key: 'pfms',    name: 'PFMS Portal',        icon: '💳', url: 'nav:pfms', desc: 'Payout & fund management' },
+    { key: 'hrms',    name: 'HRMS',               icon: '👥', url: 'nav:hrms', desc: 'Employees, salary & attendance' },
+    { key: 'student', name: 'Student Attendance', icon: '🎓', url: 'nav:student', desc: 'Mark attendance & fees' },
+    { key: 'invoice', name: 'Invoice Generator',  icon: '🧾', url: 'nav:invoice', desc: 'Material bills & invoices' }
   ];
 
   function each(arr, fn) { for (var i = 0; i < arr.length; i++) fn(arr[i]); }
@@ -53,7 +53,7 @@
   }
   function openPortal(key) {
     var p = null; each(PORTALS, function (x) { if (x.key === key) p = x; });
-    if (p) window.location.href = p.url;
+    if (p) { if (window.AnmolNav) window.AnmolNav.go(p.key); else window.location.href = HOME; }
   }
 
 
@@ -71,7 +71,7 @@
         else localStorage.setItem('shdl_auth_token', resp.token);
       }
     } catch (e) {}
-    window.location.href = resp.target;
+    if (window.AnmolNav) window.AnmolNav.go(resp.target); else window.location.href = resp.target;
   }
   function consumeGate(portal) {
     var g = null;
@@ -118,7 +118,7 @@
         wrap.parentNode.removeChild(wrap);
         if (role === 'pfms') {
           // PFMS has its own credentials/JWT role ('pfms'); an admin token can't be reused there.
-          window.location.href = '/pfms-login?from=admin&location=' + encodeURIComponent(loc);
+          if (window.AnmolNav) window.AnmolNav.go('pfms', '?from=admin&location=' + encodeURIComponent(loc)); else window.location.href = HOME;
         } else if (typeof opts.onSuperAdmin === 'function') { opts.onSuperAdmin(loc); }
       };
       var t = getToken();

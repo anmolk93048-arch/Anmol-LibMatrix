@@ -2,15 +2,7 @@
 (function () {
   var CFG = window.ANMOL_CONFIG || {};
   var API = window.SHDL_API_BASE || CFG.API_BASE || '';
-  var PAGE_ALIAS = { 'admin-login': 'admin_login.html', 'admin_login': 'admin_login.html', 'agent-login': 'agent_login.html', 'agent_login': 'agent_login.html',
-    'hrms-login': 'hrms_login.html', 'hrms_login': 'hrms_login.html', 'pfms-login': 'pfms_login.html', 'pfms_login': 'pfms_login.html',
-    'student-login': 'student_attendance.html', 'student_attendance': 'student_attendance.html', 'invoice-login': 'invoice_login.html', 'invoice_login': 'invoice_login.html',
-    'admin-dashboard': 'super_admin_dashboard.html', 'super_admin_dashboard': 'super_admin_dashboard.html' };
-  var CLEAN_OF = { 'admin_login.html': '/admin-login', 'agent_login.html': '/agent-login', 'hrms_login.html': '/hrms-login', 'pfms_login.html': '/pfms-login',
-    'student_attendance.html': '/student-login', 'invoice_login.html': '/invoice-login', 'super_admin_dashboard.html': '/admin-dashboard' };
-  var PAGE = (function () { var seg = (location.pathname.split('/').pop() || 'index.html').toLowerCase(); return PAGE_ALIAS[seg.replace(/\.html?$/, '')] || seg; })();
-  /* Never show ".html" in the address bar (works together with the server / _redirects rules). */
-  try { if (/^https?:$/.test(location.protocol) && /\.html?$/i.test(location.pathname) && CLEAN_OF[PAGE]) history.replaceState(null, '', CLEAN_OF[PAGE] + location.search + location.hash); } catch (e) {}
+  var PAGE = String(window.__ANMOL_PAGE || '').toLowerCase();   /* page id injected by the server — the URL no longer tells which page this is */
   var SHOW = {
     'admin_login.html': function () { return vis('#admin-login'); },
     'agent_login.html': function () { return vis('#login-screen'); },
