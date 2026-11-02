@@ -19,7 +19,8 @@ const multer = require('multer'); // 🆕 file upload (Hero image/Logo/APK) ke l
 const path = require('path'); // 🆕 404.html ka absolute path resolve karne ke liye
 const fs = require('fs'); // 🆕 static/page file lookup ke liye
 const crypto = require('crypto');
-const supabasePortals = require('./supabase-portals'); // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
+const supabasePortals = require('./supabase-portals');
+const security = require('./security'); // 🔒 cookies, CSRF, login rate-limit, headers (see security.js) // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
 
 // ══════════════════════════════════════════════════════════════════
 // 🛡️ PROCESS-LEVEL SAFETY NET — sabse pehli cheez jo file mein chalti
@@ -81,21 +82,26 @@ const NETLIFY_ANY_RE = /^https:\/\/[a-z0-9-]+\.netlify\.app$/;
 const NETLIFY_PREVIEW_RE = /^https:\/\/[a-z0-9-]+--digitallibraryanmollive\.netlify\.app$/;
 // 🆕 Local development (sirf production ke bahar)
 const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-// CORS: open to all origins by default. Authentication uses Bearer tokens (no cookies), so reflecting the
-// request origin does not expose logged-in sessions. Set CORS_STRICT=true on Render to restrict access to the
-// allowlist above (FRONTEND_URL / EXTRA_CORS_ORIGINS / Netlify).
+// 🔒 CORS: STRICT by default. Only the allow-list above (+ FRONTEND_URL / NETLIFY_URL / EXTRA_CORS_ORIGINS and this
+//    site's own deploy previews) may call the API from a browser. credentials:true lets the HTTP-only session cookie travel.
+//    (Wildcard *.netlify.app was removed — anyone can publish a site on netlify.app.)
+function isOriginAllowed(origin) {
+    if (!origin) return false;
+    if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin)) return true;
+    return process.env.NODE_ENV !== 'production' && LOCAL_DEV_RE.test(origin);
+}
 const CORS_OPTIONS = {
     origin: function (origin, callback) {
-        if (!origin || process.env.CORS_STRICT !== 'true') return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin) || NETLIFY_ANY_RE.test(origin)) return callback(null, true);
-        if (process.env.NODE_ENV !== 'production' && LOCAL_DEV_RE.test(origin)) return callback(null, true);
+        if (!origin) return callback(null, true);               // same-origin / server-to-server (webhooks, health checks): CORS does not apply
+        if (isOriginAllowed(origin)) return callback(null, true);
         console.warn('CORS blocked origin:', origin);
-        const corsErr = new Error('CORS: access from this domain is not allowed — ' + origin);
+        const corsErr = new Error('CORS: access from this domain is not allowed.');
         corsErr.status = 403;
         return callback(corsErr);
     },
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Anmol-Idle'],
     maxAge: 86400
 };
 app.use(cors(CORS_OPTIONS));
@@ -113,6 +119,38 @@ app.use(express.json({
     verify: (req, res, buf) => { req.rawBody = buf; }
 }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
+// 🔒 HTTP-only session cookie bridge + CSRF check + login rate-limits + security headers
+security.install(app, { jwt: jwt, getSecret: function () { return JWT_SECRET; }, isOriginAllowed: isOriginAllowed });
+// 🕶️ ROUTE MASKING — portal pages live only at encrypted per-session links (/app/<token>); every predictable path
+//    (/admin-login, /agent, /Admin_Login.html, /api/pages/admin-login …) answers 404. See route-mask.js.
+const routeMask = require('./route-mask').create({
+    getSecret: function () { return JWT_SECRET; },
+    findStaticFile: function (n) { return findStaticFile(n); },
+    isSafeRootStaticPath: function (p) { return isSafeRootStaticPath(p); },
+    hitRateLimit: function (k, m, w) { return hitRateLimit(k, m, w); },
+    notFound: function (req, res) { res.status(404).type('html').send(INLINE_404); },
+    getDbPage: function (slug, cb) { db.query('SELECT data FROM site_files WHERE LOWER(slug)=LOWER(?)', [slug], function (err, rows) { cb(err, rows && rows[0] && rows[0].data); }); }
+});
+app.use(routeMask.guard);
+routeMask.mount(app);
+// 🔐 Session security (global logout on password change, idle timeout, change-password) + ♻️ Recycle Bin
+let _dbShimQuery = null;   // the Postgres shim, set once db.query has been wrapped below
+const accountSecurity = require('./account-security').create({
+    jwt: jwt, getSecret: function () { return JWT_SECRET; }, dbq: function (s, p) { return dbq(s, p); }, getAuthUser: function (r) { return getAuthUser(r); },
+    asyncRoute: function (f) { return asyncRoute(f); }, hitRateLimit: function (k, m, w) { return hitRateLimit(k, m, w); },
+    readEntity: function (k) { return readEntity(k); }, writeEntity: function (k, l) { return writeEntity(k, l); },
+    looksHashed: function (v) { return looksHashed(v); }, safeEqual: security.safeEqual, clearCookie: security.clearSessionCookie,
+    get AUTH_ENTITY_FOR_ROLE() { return AUTH_ENTITY_FOR_ROLE; }
+});
+const recycleBin = require('./recycle').create({
+    rawQuery: function (s, p) { return new Promise(function (ok, bad) { (_dbShimQuery || db.query)(s, p || [], function (e, r) { e ? bad(e) : ok(r || []); }); }); },
+    getAuthUser: function (r) { return getAuthUser(r); }, requireRole: function () { return requireRole.apply(null, arguments); },
+    asyncRoute: function (f) { return asyncRoute(f); }, hitRateLimit: function (k, m, w) { return hitRateLimit(k, m, w); },
+    verifyAdminPassword: function (a, pw) { return verifyAdminPasswordFor(a, pw); },
+    bump: function (ids) { accountSecurity.bump(ids); }, clearScopeCache: function () { _scopeCache.clear(); }
+});
+accountSecurity.mount(app);
+recycleBin.mount(app);
 // ══════════════════════════════════════════════════════════════════
 // 📁 STATIC FILES — pehle yahan `express.static('.')` tha, jo poore project
 //   folder ko public bana deta tha (server.js, package.json tak URL se
@@ -132,7 +170,8 @@ const FRONTEND_DIR = (function () {
 })();
 const STATIC_DIRS = [PUBLIC_DIR, FRONTEND_DIR, __dirname].filter(Boolean);
 const ROOT_DENY_NAMES = new Set(['server.js', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
-    'procfile', 'dockerfile', 'render.yaml', 'readme.md']);
+    'procfile', 'dockerfile', 'render.yaml', 'readme.md',
+    'security.js', 'route-mask.js', 'supabase-portals.js', 'account-security.js', 'recycle.js']); // 🔒 backend modules must never be downloadable
 const ROOT_ALLOW_EXT = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.map', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
     '.woff', '.woff2', '.ttf', '.otf', '.eot', '.txt', '.xml', '.webmanifest', '.pdf']);
 const STATIC_OPTS = {
@@ -203,7 +242,7 @@ app.use(function (req, res, next) {
     if (!m) return next();
     const key = (m[1] + '.html').toLowerCase();
     const hit = LEGACY_FILE_TO_CLEAN[key];
-    if (!hit) return next();
+    if (hit !== '/') return next();   // 🕶️ portal files are no longer redirected to a clean URL — they 404 (route-mask guard)
     const clean = hit;
     if (!m[2] && ('/' + m[1]) === clean) return next();           // already the clean URL
     if (!m[2] && key.replace(/\.html$/, '') === m[1].toLowerCase() && '/' + m[1].toLowerCase() === clean) return next();
@@ -226,7 +265,7 @@ supabasePortals.mount(app, { getAuthUser: getAuthUser, requireRole: requireRole 
 //   jaisa Student_Attendance.html ke comment mein likha hai) — bas
 //   req.user null rehta hai. Wallet jaise identity-based routes username
 //   ko hi agentId/staffId ki tarah use karte hain. ──
-const PREGATE_ALLOWED_PATHS = ['/api/gate/config', '/api/portal/route', '/api/auth/logout', '/api/auth/me'];
+const PREGATE_ALLOWED_PATHS = ['/api/gate/config', '/api/portal/route', '/api/auth/logout', '/api/auth/me', '/api/auth/ping'];
 function getAuthUser(req) {
     try {
         const h = req.headers.authorization || '';
@@ -234,6 +273,7 @@ function getAuthUser(req) {
         if (!token) return null;
         if (supabasePortals.isRevoked(token)) return null; // 🆕 logged-out token (Supabase revoked_tokens)
         const dec = jwt.verify(token, JWT_SECRET);
+        if (accountSecurity.isStale(dec)) return null;   // 🔐 password changed after this token was issued
         // 🔒 A Super Admin password login only yields a short-lived PRE-GATE token. It is accepted solely by the
         //    role/location endpoints below, so the dashboard and every admin API stay locked until a role AND a
         //    location have been chosen (POST /api/portal/route issues the real session token).
@@ -848,14 +888,21 @@ db.getConnection = function (cb) {
     });
 };
 
-const JWT_SECRET = process.env.JWT_SECRET || (function () {
-    // Stable fallback (derived from DATABASE_URL) so logins survive Render restarts. Set JWT_SECRET in Render → Environment for better security.
-    if (process.env.DATABASE_URL) {
-        console.warn('JWT_SECRET is not set — using a stable secret derived from DATABASE_URL. Please set JWT_SECRET in Render → Environment.');
-        return require('crypto').createHash('sha256').update('anmol-jwt|' + process.env.DATABASE_URL).digest('hex');
+// ♻️ Recycle Bin: every statement that would erase data is snapshotted first (see recycle.js)
+_dbShimQuery = db.query;
+recycleBin.install(db, _dbShimQuery);
+(function loadSessionMarks(n) { Promise.resolve(accountSecurity.load()).then(function (ok) { if (!ok && n < 20) setTimeout(function () { loadSessionMarks(n + 1); }, 5000); }); })(0);
+
+const JWT_SECRET = (function () {
+    // 🔒 A real, random secret is mandatory (Render → Environment → JWT_SECRET, 32+ chars, e.g. `openssl rand -hex 48`).
+    const s = process.env.JWT_SECRET;
+    if (s && s.length >= 32) return s;
+    if (process.env.NODE_ENV !== 'production' && !process.env.RENDER) {
+        console.warn('⚠️ JWT_SECRET missing/short — using a temporary random secret (local development only).');
+        return require('crypto').randomBytes(48).toString('hex');
     }
-    console.warn('JWT_SECRET is not set. Using a temporary random secret; all logins will be invalidated on every restart. Set JWT_SECRET in Render → Environment.');
-    return require('crypto').randomBytes(32).toString('hex');
+    console.error('❌ FATAL: JWT_SECRET is not set (or shorter than 32 characters). Set it in Render → Environment and redeploy.');
+    process.exit(1);
 })();
 
 // 🔒 SECURITY: pehle DB password aur JWT secret seedhe code mein likhe the
@@ -934,8 +981,13 @@ function seedMasterAdmin(attempt) {
         let list = [];
         try { list = JSON.parse(rows && rows[0] && rows[0].value) || []; } catch (e) { list = []; }
         if (list.length) return;
-        const uname = process.env.MASTER_ADMIN_USERNAME || 'Anmol';
-        const pwd = process.env.MASTER_ADMIN_PASSWORD || 'Anmol@2003';
+        // 🔒 No default credentials any more: seeding happens only when BOTH env vars are set and the password is strong.
+        const uname = process.env.MASTER_ADMIN_USERNAME;
+        const pwd = process.env.MASTER_ADMIN_PASSWORD;
+        if (!uname || !pwd || pwd.length < 12) {
+            console.warn('⚠️ No admin exists and MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD (12+ chars) are not set — nothing seeded. Use POST /api/auth/bootstrap-admin (needs ADMIN_BOOTSTRAP_SECRET).');
+            return;
+        }
         const admin = { id: 'ADM' + Date.now(), username: uname, name: 'Anmol Kumar', role: 'Super Admin', status: 'active', password: bcrypt.hashSync(pwd, 10), lastLogin: null };
         db.query('INSERT INTO kv_admin_entities ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', ['admins', JSON.stringify([admin])],
             (e2) => console.log(e2 ? 'Master admin seed failed: ' + e2.message : 'Master admin account created: ' + uname));
@@ -2076,7 +2128,7 @@ app.post('/api/auth/bootstrap-admin', (req, res) => {
         return res.status(403).json({ error: 'Bootstrap feature is not enabled. Please set ADMIN_BOOTSTRAP_SECRET in Render → Environment.' });
     }
     const { secret, username, password, name } = req.body || {};
-    if (secret !== process.env.ADMIN_BOOTSTRAP_SECRET) {
+    if (!security.safeEqual(secret, process.env.ADMIN_BOOTSTRAP_SECRET)) {
         return res.status(403).json({ error: 'Invalid bootstrap secret.' });
     }
     if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
@@ -2199,7 +2251,6 @@ app.post('/api/auth/login', (req, res) => {
         const wantU = _lcT(username);
         const idx = list.findIndex(u => u && [u.username, u.email, u.id, u.agentId, u.empId].some(f => f && _lcT(f) === wantU));
         const user = idx >= 0 ? list[idx] : null;
-        console.log('[login-debug]', JSON.stringify({ role: roleKey, entityKey, rawType: rows && rows[0] ? (Array.isArray(rows[0].value) ? 'array' : typeof rows[0].value) : 'no-row', parsed: list.length, usernames: list.map(u => u && u.username), tried: wantU, matched: idx }));
         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
         if (!user || !user.password) return res.status(401).json({ error: 'User ID is not registered in the system.' });
 
@@ -2210,7 +2261,7 @@ app.post('/api/auth/login', (req, res) => {
             // Legacy plain-text record (purana data) — verify karke turant
             // hash mein upgrade kar dete hain, taaki agli baar se DB mein
             // kabhi plain-text na rahe.
-            ok = user.password === password;
+            ok = security.safeEqual(user.password, password);
             if (ok) {
                 list[idx] = { ...user, password: bcrypt.hashSync(password, 10) };
                 db.query(
@@ -2220,7 +2271,6 @@ app.post('/api/auth/login', (req, res) => {
                 );
             }
         }
-        console.log('[login-debug] bcrypt/plain compare ok =', ok);
         if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
         const _isAdminLogin = roleKey === 'admin';
         const token = _isAdminLogin
@@ -2251,6 +2301,15 @@ app.post('/api/auth/login', (req, res) => {
 // 🔒 Re-confirm the Super Admin password before destructive actions (Reset Factory All, Load Default Lists, ...).
 //    Super Admin session → checked against that admin's own password. Any other logged-in user (Invoice Portal) →
 //    checked against the Super Admin accounts. Rate-limited; the password is never logged or returned.
+async function verifyAdminPasswordFor(auth, pw) {
+    const lc = v => String(v == null ? '' : v).trim().toLowerCase();
+    let admins = parseEntityList(await readKv('kv_admin_entities', 'admins'));
+    if (String(auth.role || '').toLowerCase() === 'admin') {
+        const me = lc(auth.via || auth.username);
+        admins = admins.filter(a => a && [a.username, a.email, a.id].some(f => f && lc(f) === me));
+    }
+    return admins.some(a => a && a.password && (looksHashed(a.password) ? bcrypt.compareSync(pw, a.password) : security.safeEqual(a.password, pw)));
+}
 app.post('/api/security/verify-admin', noStore, asyncRoute(async (req, res) => {
     const auth = getAuthUser(req);
     if (!auth) return res.status(401).json({ error: 'Session expired — please log in again.' });
@@ -2263,7 +2322,7 @@ app.post('/api/security/verify-admin', noStore, asyncRoute(async (req, res) => {
         const me = lc(auth.via || auth.username);
         admins = admins.filter(a => a && [a.username, a.email, a.id].some(f => f && lc(f) === me));
     }
-    const ok = admins.some(a => a && a.password && (looksHashed(a.password) ? bcrypt.compareSync(pw, a.password) : a.password === pw));
+    const ok = admins.some(a => a && a.password && (looksHashed(a.password) ? bcrypt.compareSync(pw, a.password) : security.safeEqual(a.password, pw)));
     if (!ok) return res.status(401).json({ error: 'Incorrect Super Admin password.' });
     res.json({ success: true });
 }));
@@ -3354,8 +3413,8 @@ app.post('/api/webhooks/razorpayx', (req, res) => {
     const secret = process.env.RAZORPAYX_WEBHOOK_SECRET;
     if (!secret) { console.warn('Webhook received but RAZORPAYX_WEBHOOK_SECRET not set — ignoring.'); return res.status(501).end(); }
     const signature = req.headers['x-razorpay-signature'];
-    const expected = crypto.createHmac('sha256', secret).update(req.rawBody || Buffer.from(JSON.stringify(req.body))).digest('hex');
-    if (!signature || signature !== expected) {
+    const expected = crypto.createHmac('sha256', secret).update(req.rawBody || Buffer.alloc(0)).digest('hex');
+    if (!req.rawBody || !signature || !security.safeEqual(signature, expected)) {
         console.warn('RazorpayX webhook: invalid signature — request ignored.');
         return res.status(400).json({ error: 'Invalid signature' });
     }
@@ -3466,7 +3525,7 @@ app.post('/api/admin/full-system-reset', requireRole('admin'), (req, res) => {
         try { admins = JSON.parse(rows[0] && rows[0].value) || []; } catch (e) {}
         const me = admins.find(a => a && a.username === req.authUser.username);
         if (!me || !me.password) return res.status(401).json({ error: 'Admin record not found.' });
-        const ok = looksHashed(me.password) ? bcrypt.compareSync(password, me.password) : me.password === password;
+        const ok = looksHashed(me.password) ? bcrypt.compareSync(password, me.password) : security.safeEqual(me.password, password);
         if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
 
         // ── Entity keys (kv_admin_entities) — 'admins' aur 'agent_logins'
@@ -3808,7 +3867,7 @@ app.get('/api/pages/:slug', (req, res) => {
 
 // Admin Panel ke "Login Dropdown Manager" mein sabhi upload-ho-chuke pages
 // ki list dikhane ke liye (slug + naam + kab update hua)
-app.get('/api/pages', (req, res) => {
+app.get('/api/pages', requireRole('admin'), (req, res) => {   // 🕶️ was public
     db.query("SELECT slug, name, mime, size, updated_at FROM site_files WHERE slug IS NOT NULL ORDER BY updated_at DESC", (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         res.json(rows || []);
@@ -6826,7 +6885,7 @@ function gateViewFor(gate, auth, profile) {
     const name = (me && me.name) || profile.name || auth.username;
     const title = (me && me.title) || (/^(f|female|mrs|ms)/i.test(profile.gender || '') ? 'Mrs.' : 'Mr.');
     const welcome = String(gate.popup.welcomeTemplate || 'Welcome {title} {name}').replace(/\{title\}/gi, title).replace(/\{name\}/gi, name).replace(/\s+/g, ' ').trim();
-    return { popup: Object.assign({}, gate.popup, { welcome: welcome }), roles: roles, locations: locations, user: { username: auth.username, name: name, title: title } };
+    return { popup: Object.assign({}, gate.popup, { welcome: welcome }), roles: roles.map(function (r) { const c = Object.assign({}, r); delete c.target; return c; }), locations: locations, user: { username: auth.username, name: name, title: title } };
 }
 app.get('/api/gate/config', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const gate = await loadGate();
@@ -6877,7 +6936,7 @@ app.post('/api/portal/route', noStore, requireRole('admin'), asyncRoute(async (r
     try { auditPii(req, 'gate_route', role.label + '@' + loc.label, 'portal=' + role.portal + ' as=' + tokenUser); } catch (e) {}
     try { if (supabasePortals.logSession) supabasePortals.logSession({ event: 'role_selected', role: role.label, location: loc.label, username: String(auth.username), ip: req.ip }); } catch (e) {}
     res.json({
-        success: true, token: token, target: role.target, portal: role.portal, role: jwtRole, autoLogin: autoLogin,
+        success: true, token: token, target: routeMask.urlFor(routeMask.resolveKey(role.target) || (role.portal === 'admin' ? 'dashboard' : role.portal)) || '/', portal: role.portal, role: jwtRole, autoLogin: autoLogin,
         roleLabel: role.label, location: loc.label, username: tokenUser, name: view.user.name, title: view.user.title,
         expiresInSec: 12 * 3600
     });
@@ -7007,12 +7066,12 @@ app.put('/api/admin/cms/:key', noStore, requireRole('admin'), asyncRoute(async (
 //     /admin /admin-login        → Admin_Login.html   (fallback: /api/pages/admin-login)
 //     /agent /agent-login        → Agent_Login.html   (fallback: /api/pages/agent-login)
 // ══════════════════════════════════════════════════════════════════
-CLEAN_PAGES.forEach(function (pg) {
+CLEAN_PAGES.filter(function (pg) { return pg.clean === '/'; }).forEach(function (pg) {   // 🕶️ portals are served by route-mask.js only
     [pg.clean].concat(pg.aliases).forEach(function (p) {
         app.get(p, function (req, res, next) {
             if (p !== pg.clean) { const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : ''; return res.redirect(301, pg.clean + q); } // alias -> canonical clean URL
             const f = findStaticFile(pg.file);
-            if (f) { res.set('Cache-Control', 'no-cache'); return res.sendFile(f); }
+            if (f) { return routeMask.sendHome(req, res, pg.file); }
             if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend on Netlify: same as before
             if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);                 // uploaded copy from the database
             next();
@@ -7032,7 +7091,7 @@ app.get(['/health', '/healthz'], function (req, res) { res.json({ status: 'ok', 
 // karta hai (API_BASE + '/health' → '/api/health'). Pehle ye route missing
 // tha, isliye fetch 404 deta tha aur dot hamesha red rehta tha.
 // Deep diagnostics (no secrets): /api/health/deep tells exactly why login may fail.
-app.get('/api/health/deep', async (req, res) => {
+app.get('/api/health/deep', requireRole('admin'), async (req, res) => { // 🔒 was public (leaked admin usernames)
     const out = { env: { DATABASE_URL: !!process.env.DATABASE_URL, JWT_SECRET: !!process.env.JWT_SECRET, node: process.version }, db: 'unknown', admins: null, hint: [] };
     try {
         await dbq('SELECT 1', []);
