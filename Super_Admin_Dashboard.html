@@ -2277,6 +2277,19 @@ html,body,#admin-app{width:100%;min-width:0;}
 #wallet-err.show{margin-bottom:16px;}
 @media (max-width:640px){.wa-stats{grid-template-columns:1fr}.wa-form{grid-template-columns:1fr}.wa-req{flex-wrap:wrap}.wa-req .acts{width:100%}.wa-scroll{padding:16px}.wa-head{padding:14px 16px}}
 </style>
+<style id="anmol-layout-fix">
+/* The app shell is pinned to the viewport (above the 26px footer strip). Before, it was height:100vh inside a body that
+   also had 26px bottom padding, so the document scrolled and the top bar / page headers drifted up and overlapped. */
+html,body{overscroll-behavior:none}
+#admin-app{position:fixed!important;top:0;left:0;right:0;bottom:var(--anmol-footer-h,26px);height:auto!important;min-height:0}
+#admin-app .topbar{position:relative;flex:0 0 auto;z-index:300}
+#admin-app .app-body{min-height:0}
+#admin-app .content-area{position:relative;min-height:0;overscroll-behavior:contain}
+/* page title strips stay at the top of the scrolling content */
+#admin-app .content-area>.page.active>.page-header,#page-material-master>.page-header{position:sticky;top:0;z-index:40;background:var(--page-bg);margin:0 0 12px;padding:10px 0;border-bottom:1px solid var(--border)}
+#page-material-master .card{position:relative;z-index:0}
+@media(max-width:768px){#admin-app{bottom:var(--anmol-footer-h,26px)}}
+</style>
 </head>
 <!-- Clean UI asset policy: official brand logo retained; large photo backgrounds removed. -->
 <body>
@@ -2506,6 +2519,7 @@ html,body,#admin-app{width:100%;min-width:0;}
   <button class="nav-item" data-tooltip="Login & App Access" onclick="GOTO('config-login-apps')"><span class="nav-icon">🔐</span><span class="nav-text">Login &amp; App Access</span></button>
   <button class="nav-item" data-tooltip="Website Notices & Navigation" onclick="GOTO('config-navigation')"><span class="nav-icon">📢</span><span class="nav-text">Website Notices</span></button>
   <button class="nav-item" data-tooltip="Admin Security & System" onclick="GOTO('config-security')"><span class="nav-icon">🛡️</span><span class="nav-text">Admin Security</span></button>
+  <button class="nav-item" data-tooltip="Recycle Bin" onclick="GOTO('recycle-bin')"><span class="nav-icon">♻️</span><span class="nav-text">Recycle Bin</span></button>
   <button class="nav-item" data-tooltip="Theme & Appearance" onclick="GOTO('theme-appearance')"><span class="nav-icon">🎨</span><span class="nav-text">Theme &amp; Appearance</span></button>
  </div>
       <div class="sidebar-section website-index-control-section">
@@ -2596,7 +2610,7 @@ html,body,#admin-app{width:100%;min-width:0;}
 <section class="page" id="page-live-index-manager">
   <div class="page-header">
     <div><div class="page-title">⚡ Live Index Manager</div><div class="page-sub">Edits go to the server and appear on index.html within seconds — no Netlify redeploy.</div></div>
-    <div><a class="sa-btn gh" style="text-decoration:none;display:inline-block" href="index.html" target="_blank" rel="noopener">↗ Open site</a> <button class="sa-btn gh" onclick="LIM.reloadFrame()">↻ Preview</button></div>
+    <div><a class="sa-btn gh" style="text-decoration:none;display:inline-block" href="/" target="_blank" rel="noopener">↗ Open site</a> <button class="sa-btn gh" onclick="LIM.reloadFrame()">↻ Preview</button></div>
   </div>
   <div class="sa-tabs" id="lim-tabs"></div>
   <div class="sa-card"><div id="lim-body">Loading…</div><div id="lim-msg" class="sa-msg"></div></div>
@@ -3007,7 +3021,7 @@ html,body,#admin-app{width:100%;min-width:0;}
   <div id="rlm-msg" class="sa-msg"></div>
   <div class="sa-card"><h3>Popup text</h3><div class="sa-grid" id="rlm-popup"></div></div>
   <div class="sa-card"><h3>Roles <button class="sa-btn gh" style="float:right" onclick="RLM.addRole()">+ Add role</button></h3>
-    <div style="font-size:11px;color:var(--text-muted)">Portal decides which login token is issued. Target must be an .html file in the same site (e.g. Super_Admin_Dashboard.html).</div><div id="rlm-roles"></div></div>
+    <div style="font-size:11px;color:var(--text-muted)">Portal decides which login token is issued. Target is a portal key: dashboard, admin, agent, pfms, hrms, student or invoice. The browser is sent to a private, per-session link.</div><div id="rlm-roles"></div></div>
   <div class="sa-card"><h3>Locations <button class="sa-btn gh" style="float:right" onclick="RLM.addLoc()">+ Add location</button></h3><div id="rlm-locs"></div></div>
   <div class="sa-card"><h3>Names / people <button class="sa-btn gh" style="float:right" onclick="RLM.addUser()">+ Add person</button></h3>
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Display name &amp; Mr./Mrs. shown in "Welcome …". Leave roles/locations empty to allow all. For Agent / HRMS roles enter the Agent username / Employee ID this person should open <i>without</i> logging in again.</div>
@@ -4105,6 +4119,27 @@ html,body,#admin-app{width:100%;min-width:0;}
   </div>
 </div>
 
+
+<div class="page" id="page-recycle-bin">
+  <div class="page-header"><div><div class="page-title">♻️ Recycle Bin / Restore Center</div><div class="page-sub">Anything deleted or wiped on any portal (users, agents, students, HRMS, invoices, "Reset Factory") is kept here. Restore puts it back on its portal with all original data. <b>Purge</b> erases it for good — it can never be restored.</div></div>
+    <div class="actions-row"><button class="btn btn-ghost" onclick="RB_LOAD()">⟳ Refresh</button></div></div>
+  <div class="card" style="padding:14px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <select id="rb-status" class="form-input" style="width:auto" onchange="RB_LOAD()"><option value="deleted">In Recycle Bin</option><option value="restored">Restored</option><option value="purged">Purged (gone)</option><option value="all">All</option></select>
+      <select id="rb-source" class="form-input" style="width:auto" onchange="RB_LOAD()"><option value="">All portals / data</option></select>
+      <div class="search-bar"><input type="text" id="rb-q" placeholder="Search name or ID..." oninput="RB_DEBOUNCE()"></div>
+      <span id="rb-batch-chip" style="display:none;font-size:12px;background:#fff8e1;border:1px solid #c9a227;border-radius:999px;padding:3px 10px"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <button class="btn btn-gold" onclick="RB_RESTORE_SELECTED()">♻️ Restore selected</button>
+      <input type="password" id="rb-pw" class="form-input" style="width:230px" placeholder="Super Admin password (to purge)" autocomplete="current-password">
+      <button class="btn btn-danger" onclick="RB_PURGE_SELECTED()">🗑 Purge selected</button>
+      <button class="btn btn-danger" onclick="RB_PURGE_ALL()">Empty Recycle Bin</button>
+      <span id="rb-total" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
+    <div style="overflow:auto"><table class="data-table"><thead><tr><th style="width:30px"><input type="checkbox" id="rb-all" onchange="RB_TOGGLE_ALL(this.checked)"></th><th>Record</th><th>Portal / data</th><th>Why</th><th>Deleted by</th><th>When</th><th>Status</th><th>Action</th></tr></thead><tbody id="rb-body"><tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:22px">Loading…</td></tr></tbody></table></div>
+  </div>
+</div>
 
 <div class="page" id="page-theme-appearance">
   <div class="page-header"><div><div class="page-title">🎨 Theme &amp; Appearance</div><div class="page-sub">Change the dashboard and login colours from here. The theme will persist the next time you open the application after saving.</div></div></div>
@@ -6336,8 +6371,8 @@ function SUBMIT_ROLE_LOCATION(){
   // Keep the role/location combination explicit so users cannot be sent to
   // an unrelated workspace by an unexpected dropdown value.
   var destinations = {
-    'PFMS Portal|Pansalla': 'PFMS_login.html',
-    'Super Admin|Pansalla': 'Super_Admin_Dashboard.html'
+    'PFMS Portal|Pansalla': 'pfms',
+    'Super Admin|Pansalla': 'dashboard'
   };
   var destination = destinations[role + '|' + location];
   if(!destination){
@@ -6345,7 +6380,7 @@ function SUBMIT_ROLE_LOCATION(){
     return;
   }
 
-  window.location.href = destination;
+  window.AnmolNav.go(destination);
 }
 
 document.addEventListener('keydown',function(event){
@@ -6417,7 +6452,7 @@ function DO_LOGOUT(){
   LOG_ACTIVITY('🚪 Admin logout: '+currentAdmin.name);
   currentAdmin = null;
   SHOW_TOAST('👋 Logout ho gaye!');
-  window.location.href = 'index.html';
+  window.location.href = '/';
 }
 
 function UPDATE_SIDEBAR_ADMIN_AVATAR(){
@@ -6528,6 +6563,7 @@ function GOTO(page){
   if(page==='control-access') RENDER_CONTROL_ACCESS();
   if(page==='pending-regs') LOAD_PENDING_REGS();
   if(page==='backup-restore') INIT_BACKUP_RESTORE_PAGE();
+  if(page==='recycle-bin' && window.RB_LOAD) RB_LOAD();
   // Close mobile sidebar
   if(window.innerWidth<=768){ var sb=document.getElementById('sidebar');sb.classList.remove('mobile-open');document.getElementById('sidebar-overlay').classList.remove('show'); }
   // Scroll to top
@@ -9321,7 +9357,7 @@ function SEND_CREDENTIALS_MSG(via, mobile, name, uid, pwd){
   if(via==='whatsapp'){
     // Professional Hindi click-to-chat message with a direct, clickable portal login link
     var portal = String((window.ANMOL_CONFIG && (window.ANMOL_CONFIG.PORTAL_URL || window.ANMOL_CONFIG.SITE_URL)) || 'https://anmol-libmatrix.onrender.com').replace(/\/+$/,'');
-    var loginLink = portal + '/agent-login';
+    var loginLink = portal + '/';   /* shared links point to the public home page; per-session portal links expire */
     var waMsg = 'नमस्ते! Anmol LibMatrix में आपका स्वागत है। आपका रजिस्ट्रेशन अप्रूव कर दिया गया है।\n'+
       'आपकी यूजर डिटेल्स नीचे दी गई हैं:\n'+
       '- User ID: '+uid+'\n'+
@@ -11689,11 +11725,11 @@ function PUSH_NAV_BUTTONS_PUBLIC(list){
 //    jaati hai (wahi purani links) taaki kuch bhi na tootey.
 // ══════════════════════════════════════════════════════════════════
 const DEFAULT_LOGIN_OPTIONS = [
-  {id:'admin_login', icon:'🛡', title:'Admin Login', sub:'Full control & system management', url:'Admin_Login.html'},
-  {id:'agent_login', icon:'📖', title:'Agent Login', sub:'Book distribution & services', url:'Agent_Login.html'},
-  {id:'hrms_login', icon:'🧑‍💼', title:'HRMS Login', sub:'Staff, attendance & HR management', url:'HRMS_login.html'},
-  {id:'student_login', icon:'🎓', title:'Student Login', sub:'Books, fees, attendance & services', url:'Student_Attendance.html'},
-  {id:'invoice_login', icon:'📦', title:'Invoice Generator', sub:'Materials, invoices & stock', url:'INVOICE_LOGIN.html'}
+  {id:'admin_login', icon:'🛡', title:'Admin Login', sub:'Full control & system management', url:'nav:admin'},
+  {id:'agent_login', icon:'📖', title:'Agent Login', sub:'Book distribution & services', url:'nav:agent'},
+  {id:'hrms_login', icon:'🧑‍💼', title:'HRMS Login', sub:'Staff, attendance & HR management', url:'nav:hrms'},
+  {id:'student_login', icon:'🎓', title:'Student Login', sub:'Books, fees, attendance & services', url:'nav:student'},
+  {id:'invoice_login', icon:'📦', title:'Invoice Generator', sub:'Materials, invoices & stock', url:'nav:invoice'}
 ];
 var _loginOptionsList = null;
 
@@ -11923,8 +11959,8 @@ function SAVE_HOMEPAGE_CONTENT(){
 // 📱 APP DOWNLOAD MANAGER (Sabhi apps — defaults + custom)
 // ══════════════════════════════════════════════════════════════════
 const DEFAULT_APPS = [
-  {id:'student_app', icon:'🎓', title:'Student Attendance App download', sub:'View your attendance', url:'Student_Attendance.html'},
-  {id:'hrms_app', icon:'🧑‍💼', title:'HRMS App Download', sub:'Staff & HR management access', url:'HRMS_login.html'}
+  {id:'student_app', icon:'🎓', title:'Student Attendance App download', sub:'View your attendance', url:'nav:student'},
+  {id:'hrms_app', icon:'🧑‍💼', title:'HRMS App Download', sub:'Staff & HR management access', url:'nav:hrms'}
 ];
 var _appsList = null;
 
@@ -12014,18 +12050,16 @@ function CHANGE_ADMIN_PWD(){
   var nw=document.getElementById('s-new-pwd').value;
   var conf=document.getElementById('s-conf-pwd').value;
   if(!old||!nw||!conf){ SHOW_TOAST('Please fill in all fields.'); return; }
-  if(old!==currentAdmin.password){ SHOW_TOAST('The current password is incorrect.'); return; }
-  if(nw.length<4){ SHOW_TOAST('⚠️ New password min 4 characters!'); return; }
+  if(nw.length<8){ SHOW_TOAST('The new password must be at least 8 characters.'); return; }
   if(nw!==conf){ SHOW_TOAST('The new passwords do not match.'); return; }
-  var admins=DB.get('admins')||[];
-  var idx=admins.findIndex(a=>a.id===currentAdmin.id);
-  if(idx>-1){ admins[idx].password=nw;currentAdmin.password=nw; }
-  DB.set('admins',admins);
-  document.getElementById('s-old-pwd').value='';
-  document.getElementById('s-new-pwd').value='';
-  document.getElementById('s-conf-pwd').value='';
-  LOG_ACTIVITY('🔒 Admin password changed: '+currentAdmin.name);
-  SHOW_TOAST('The password has been changed successfully.');
+  if(nw===old){ SHOW_TOAST('The new password must be different from the current one.'); return; }
+  // The current password is checked by the server (bcrypt). Comparing it here could never work: the browser only has the hash.
+  API.post('/auth/change-password',{currentPassword:old,newPassword:nw}).then(function(r){
+    ['s-old-pwd','s-new-pwd','s-conf-pwd'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+    try{ LOG_ACTIVITY(' Admin password changed: '+(currentAdmin&&currentAdmin.name)); }catch(e){}
+    SHOW_TOAST((r&&r.message)||'Password changed. Please log in again.');
+    setTimeout(function(){ try{ if(window.AnmolIdle) window.AnmolIdle.expire('Password changed. All sessions were signed out — please log in with your new password.', true); }catch(e){} try{ AnmolPortal.clearSession(); }catch(e){} window.location.href='/'; },1800);
+  }).catch(function(err){ SHOW_TOAST((err&&err.message)||'Could not change the password.'); });
 }
 
 function CHECK_PWD_STRENGTH(v){
@@ -13874,7 +13908,7 @@ var AUTO_LOGOUT_ADMIN = (function(){
     var app = document.getElementById('admin-app');
     if (app) app.classList.remove('visible');
     try { AnmolPortal.notifyLogout(); AnmolPortal.clearSession(); } catch(e){}
-    window.location.replace('/admin-login');
+    window.AnmolNav.go('admin', '', true);
     return;
     var passField = document.getElementById('l-pass');
     if (passField) passField.value = '';
@@ -15467,7 +15501,7 @@ function put(path,body){return apiFetch(path,{method:'PUT',body:JSON.stringify(b
 function slug(s){return String(s||'').toLowerCase().replace(/[^a-z0-9_]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40);}
 
 /* ───────────── 1. SESSION BOOT ───────────── */
-function toLogin(){ try{AnmolPortal.clearSession();}catch(e){} window.location.replace('/admin-login'); }
+function toLogin(){ try{AnmolPortal.clearSession();}catch(e){} window.AnmolNav.go('admin', '', true); }
 function setBoot(t){var b=$('sa-boot'); if(b){var p=b.querySelector('p'); if(p)p.textContent=t;}}
 function enter(user){
   var admins=[]; try{admins=DB.get('admins')||[];}catch(e){}
@@ -15511,13 +15545,13 @@ window.DO_LOGOUT=function(){
   try{AUTO_LOGOUT_ADMIN.stop();}catch(e){}
   currentAdmin=null; try{AUTH_TOKEN=null;}catch(e){}
   try{AnmolPortal.notifyLogout();AnmolPortal.clearSession();}catch(e){}
-  window.location.href='index.html';
+  window.location.href='/';
 };
-window.BACK_TO_GATE=function(){ window.location.href='/admin-login'; };
+window.BACK_TO_GATE=function(){ window.AnmolNav.go('admin'); };
 
 /* ───────────── 2. ROLE & LOCATION MANAGER ───────────── */
 var DEFAULT_GATE={popup:{heading:'Anmol LibMatrix Secure Access',welcomeTemplate:'Welcome {title} {name}',subtitle:'Select your role and location to continue',roleLabel:'Select Role',locationLabel:'Select Location',continueLabel:'Continue'},
- roles:[{id:'super_admin',label:'Admin',portal:'admin',target:'/admin-dashboard',enabled:true},{id:'pfms',label:'PFMS Portal',portal:'pfms',target:'/pfms-login',enabled:true},{id:'agent',label:'Agent Login',portal:'agent',target:'/agent-login',enabled:true},{id:'hrms',label:'HRMS',portal:'hrms',target:'/hrms-login',enabled:true},{id:'student',label:'Student Attendance',portal:'student',target:'/student-login',enabled:true},{id:'invoice',label:'Invoice Login',portal:'invoice',target:'/invoice-login',enabled:true}],
+ roles:[{id:'super_admin',label:'Admin',portal:'admin',target:'dashboard',enabled:true},{id:'pfms',label:'PFMS Portal',portal:'pfms',target:'pfms',enabled:true},{id:'agent',label:'Agent Login',portal:'agent',target:'agent',enabled:true},{id:'hrms',label:'HRMS',portal:'hrms',target:'hrms',enabled:true},{id:'student',label:'Student Attendance',portal:'student',target:'student',enabled:true},{id:'invoice',label:'Invoice Login',portal:'invoice',target:'invoice',enabled:true}],
  locations:[{id:'begusarai',label:'Begusarai',enabled:true},{id:'pansalla',label:'Pansalla',enabled:true}],users:[]};
 var POPUP_FIELDS=[['heading','Heading'],['welcomeTemplate','Welcome text ({title} {name})'],['subtitle','Sub-heading'],['roleLabel','Role label'],['locationLabel','Location label'],['continueLabel','Button text']];
 var G=null, GU=[];
@@ -15561,7 +15595,7 @@ var RLM=window.RLM={
      '<div class="sa-btn" style="display:block">'+esc(G.popup.continueLabel)+' →</div>';
   },
   chip:function(i,key,id){var a=G.users[i][key]=G.users[i][key]||[];var p=a.indexOf(id);if(p>=0)a.splice(p,1);else a.push(id);RLM.render();},
-  addRole:function(){G.roles.push({id:'',label:'New role',portal:'admin',target:'/admin-dashboard',enabled:true});RLM.render();},
+  addRole:function(){G.roles.push({id:'',label:'New role',portal:'admin',target:'dashboard',enabled:true});RLM.render();},
   addLoc:function(){G.locations.push({id:'',label:'New location',enabled:true});RLM.render();},
   addUser:function(){G.users.push({username:'',name:'',title:'Mr.',roles:[],locations:[],actAs:{}});RLM.render();},
   del:function(k,i){G[k].splice(i,1);RLM.render();},
@@ -15608,7 +15642,7 @@ var ABOUT_FIELDS=[
 var TABS=[['home','🏠 Home'],['about','ℹ️ About'],['ticker','📰 Tickers'],['notices','🔔 Notices'],['theme','🎨 Theme'],['apps','📱 App Downloads'],['login','🔐 Login Menu'],['footer','🔻 Footer'],['dash','📊 Dashboard cards'],['gallery','🖼 Gallery']];
 var LIM=window.LIM={
   load:function(){
-    $('lim-msg').textContent=''; var fr=$('lim-frame'); if(fr&&!fr.src) fr.src='index.html?t='+Date.now();
+    $('lim-msg').textContent=''; var fr=$('lim-frame'); if(fr&&!fr.src) fr.src='/?t='+Date.now();
     apiFetch('/admin/cms').then(function(r){CMS=r.data||{};}).catch(function(){return API.get('/site-data').then(function(r){CMS=r||{};}).catch(function(){CMS={};});}).then(function(){LIM.render();});
   },
   reloadFrame:function(){var f=$('lim-frame');if(f)f.src='index.html?t='+Date.now();},
@@ -16417,5 +16451,68 @@ PREG_MAT_RENDER();
 [data-theme="dark"] #admin-app .ref-panel,[data-theme="dark"] #admin-app .ref-panel-title{background:var(--card-bg)!important;color:var(--text-main)!important;border-color:var(--x-line)!important}
 [data-theme="dark"] #admin-app .search-bar,[data-theme="dark"] #admin-app .form-input{background:var(--input-bg)}
 </style>
+<script>
+/* ♻️ Recycle Bin / Restore Center (server: /api/recycle-bin) */
+(function(){
+  var NAMES={'kv_admin_entities:students':'Students','kv_admin_entities:agents':'Agents','kv_admin_entities:staff':'Staff','kv_admin_entities:admins':'Admins','kv_admin_entities:agent_logins':'Agent logins',
+    'kv_blob:hrms_employees':'HRMS employees','kv_blob:hrms_pending_registrations':'HRMS pending','kv_blob:hrms_salary_slips':'HRMS salary slips','kv_blob:hrms_attendance':'HRMS attendance','kv_blob:hrms_leaves':'HRMS leaves','kv_blob:hrms_salary_claims':'HRMS salary claims',
+    'kv_blob:att_records':'Attendance records','kv_blob:fee_records':'Fee records','kv_blob:members':'Members','kv_blob:salary_claims':'Salary claims','kv_blob:pending_staff':'Pending staff','kv_blob:staff_att':'Staff attendance','kv_blob:leave_requests':'Leave requests',
+    'kv_blob:material_categories':'Material Master','kv_blob:notices':'Notices','kv_blob:agent_pending_registrations':'Agent registrations','kv_blob:customer_pending_registrations':'Customer registrations',
+    'material_users':'Invoice / Material users','material_bills':'Invoices (bills)','material_user_requests':'Material sign-up requests','pfms_users':'PFMS users','payout_requests':'PFMS payouts','agent_wallets':'Agent wallets','transactions':'Transactions','attendance_records':'Attendance (table)','fee_payments':'Fee payments'};
+  var st={items:[],sel:{},batch:'',t:null};
+  function $(id){return document.getElementById(id);}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function nm(src){return NAMES[src]||src;}
+  function toast(m){try{SHOW_TOAST(m);}catch(e){alert(m);}}
+  function when(v){try{var d=new Date(v);return isNaN(d)?'':d.toLocaleString();}catch(e){return '';}}
+  window.RB_DEBOUNCE=function(){clearTimeout(st.t);st.t=setTimeout(RB_LOAD,300);};
+  window.RB_LOAD=function(){
+    var q=['limit=300'],s=$('rb-status').value,src=$('rb-source').value,t=$('rb-q').value.trim();
+    q.push('status='+encodeURIComponent(s)); if(src)q.push('source='+encodeURIComponent(src)); if(t)q.push('q='+encodeURIComponent(t)); if(st.batch)q.push('batch='+encodeURIComponent(st.batch));
+    var chip=$('rb-batch-chip'); if(chip){chip.style.display=st.batch?'inline-block':'none'; chip.innerHTML=st.batch?'Showing one wipe/batch · <a href="#" onclick="RB_BATCH(\'\');return false">show all</a>':'';}
+    API.get('/recycle-bin?'+q.join('&')).then(function(r){
+      st.items=r.items||[]; st.sel={}; var sel=$('rb-source'),cur=sel.value;
+      if(!src){var h='<option value="">All portals / data</option>';(r.counts||[]).forEach(function(c){h+='<option value="'+esc(c.source)+'">'+esc(nm(c.source))+' ('+c.n+')</option>';});sel.innerHTML=h;sel.value=cur;}
+      $('rb-total').textContent=(r.total||0)+' record(s)'; var all=$('rb-all'); if(all)all.checked=false; draw();
+    }).catch(function(e){toast('Recycle Bin: '+(e.message||'could not load'));});
+  };
+  function draw(){
+    var b=$('rb-body'); if(!st.items.length){b.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:22px">Nothing here. Deleted records will appear in this list.</td></tr>';return;}
+    b.innerHTML=st.items.map(function(x){
+      var live=x.status==='deleted', why=x.reason==='wipe'?'<span style="color:#b3261e;font-weight:700">Wiped / reset</span>':'Deleted';
+      var stt=x.status==='deleted'?'<span style="color:#b45f06;font-weight:700">In bin</span>':x.status==='restored'?'<span style="color:#0f6e56;font-weight:700">Restored</span>':'<span style="color:#888">Purged</span>';
+      var act=live?'<button class="btn btn-gold btn-sm" onclick="RB_RESTORE('+x.id+')">♻️ Restore</button> <button class="btn btn-danger btn-sm" onclick="RB_PURGE('+x.id+')">🗑</button>'+(x.reason==='wipe'&&x.batch_id?' <button class="btn btn-ghost btn-sm" title="Restore everything removed in this wipe" onclick="RB_RESTORE_BATCH(\''+esc(x.batch_id)+'\')">Whole wipe</button>':''):'—';
+      return '<tr><td>'+(live?'<input type="checkbox" '+(st.sel[x.id]?'checked ':'')+'onchange="RB_SEL('+x.id+',this.checked)">':'')+'</td><td><b>'+esc(x.label||x.record_key)+'</b><div style="font-size:11px;color:var(--text-muted)">ID: '+esc(x.record_key)+'</div></td><td>'+esc(nm(x.source))+'</td><td>'+why+'</td><td>'+esc(x.deleted_by||'')+'</td><td style="white-space:nowrap">'+esc(when(x.deleted_at))+'</td><td>'+stt+'</td><td style="white-space:nowrap">'+act+'</td></tr>';
+    }).join('');
+  }
+  window.RB_SEL=function(id,on){if(on)st.sel[id]=1;else delete st.sel[id];};
+  window.RB_TOGGLE_ALL=function(on){st.sel={};st.items.forEach(function(x){if(x.status==='deleted'&&on)st.sel[x.id]=1;});draw();};
+  window.RB_BATCH=function(b){st.batch=b||'';RB_LOAD();};
+  function ids(){return Object.keys(st.sel).map(Number);}
+  function refreshCaches(items){
+    try{var seen={};(items||st.items).forEach(function(x){var k=String(x.source).split(':')[1];if(k&&!seen[k]&&window.FBSync&&FBSync.pull){seen[k]=1;FBSync.pull(k,function(){});}});}catch(e){}
+    try{['RENDER_STUDENTS','RENDER_AGENTS','RENDER_STAFF','RENDER_ADMINS','RENDER_MATERIAL_USERS'].forEach(function(f){if(typeof window[f]==='function')setTimeout(window[f],400);});}catch(e){}
+  }
+  function report(r){
+    var m=(r.restored||0)+' record(s) restored'; if(r.failed&&r.failed.length)m+=' · '+r.failed.length+' skipped: '+r.failed[0].error; toast(m);
+  }
+  window.RB_RESTORE=function(id){
+    var it=st.items.filter(function(x){return x.id===id;});
+    API.post('/recycle-bin/'+id+'/restore',{}).then(function(r){toast(r.message||'Restored.');refreshCaches(it);RB_LOAD();}).catch(function(e){toast(e.message||'Restore failed.');});
+  };
+  window.RB_RESTORE_SELECTED=function(){var l=ids();if(!l.length)return toast('Select at least one record.');
+    API.post('/recycle-bin/restore-batch',{ids:l}).then(function(r){report(r);refreshCaches();RB_LOAD();}).catch(function(e){toast(e.message);});};
+  window.RB_RESTORE_BATCH=function(b){if(!confirm('Restore EVERYTHING that was removed in this wipe?'))return;
+    API.post('/recycle-bin/restore-batch',{batch:b}).then(function(r){report(r);refreshCaches();RB_LOAD();}).catch(function(e){toast(e.message);});};
+  function purge(url,body,msg){
+    var pw=$('rb-pw').value; if(!pw)return toast('Enter your Super Admin password in the box above to purge.');
+    if(!confirm(msg+'\n\nThis is PERMANENT — purged records can never be restored.'))return;
+    body.password=pw; API.post(url,body).then(function(r){toast(r.message||((r.purged||0)+' record(s) purged permanently.'));$('rb-pw').value='';RB_LOAD();}).catch(function(e){toast(e.message||'Purge failed.');});
+  }
+  window.RB_PURGE=function(id){purge('/recycle-bin/'+id+'/purge',{},'Permanently purge this record?');};
+  window.RB_PURGE_SELECTED=function(){var l=ids();if(!l.length)return toast('Select at least one record.');purge('/recycle-bin/purge',{ids:l},'Permanently purge '+l.length+' selected record(s)?');};
+  window.RB_PURGE_ALL=function(){purge('/recycle-bin/purge',{all:true},'Permanently empty the ENTIRE Recycle Bin?');};
+})();
+</script>
 </body>
 </html>
