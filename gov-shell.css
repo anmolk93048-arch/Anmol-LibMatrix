@@ -92,3 +92,17 @@ body.gov-on #loginGate .login-logo-frame,body.gov-on #s-login .logo-area{display
 body.gov-on #login-screen .login-card{margin-top:auto;margin-bottom:auto}
 
 .gov-brand .tx{display:flex;flex-direction:column;justify-content:center;min-width:0}.gov-brand .tx .t1{line-height:1.1}.gov-brand .tx .t2{font-size:10.5px;line-height:1.1;color:#4a5a78;font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gov-brand img{max-width:140px}
+
+/* ── Login error alert: clean red box, says WHICH field is wrong ── */
+.anmol-auth-err{display:block!important;box-sizing:border-box;width:100%;margin:10px 0 12px!important;padding:10px 12px 10px 38px!important;position:relative;text-align:left!important;
+  background:#fdecec!important;border:1px solid #f1b0b0!important;border-left:4px solid #d93025!important;border-radius:8px!important;color:#8a1c14!important;
+  font:600 13px/1.45 'Segoe UI',Roboto,Arial,sans-serif!important;overflow-wrap:break-word;word-wrap:break-word;animation:anmolErrIn .18s ease-out}
+.anmol-auth-err::before{content:"!";position:absolute;left:11px;top:11px;width:18px;height:18px;border-radius:50%;background:#d93025;color:#fff;font:800 12px/18px Arial,sans-serif;text-align:center}
+.anmol-auth-err .aae-title,.anmol-auth-err .aae-msg{padding-left:28px!important}
+.anmol-auth-err .aae-title{display:block;font-weight:800;font-size:12px;letter-spacing:.2px;text-transform:uppercase;color:#b3261e;margin-bottom:2px}
+.anmol-auth-err .aae-msg{display:block;font-weight:600}
+.anmol-field-err{border-color:#d93025!important;box-shadow:0 0 0 3px rgba(217,48,37,.22)!important;background-color:#fff7f6!important}
+.anmol-field-err input{background:transparent!important;box-shadow:none!important;outline:none!important}
+@keyframes anmolErrIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+html[data-theme="dark"] .anmol-auth-err{background:#3a1414!important;border-color:#7a2a2a!important;border-left-color:#ff5a4d!important;color:#ffd5d1!important}
+html[data-theme="dark"] .anmol-auth-err .aae-title{color:#ff8f86}

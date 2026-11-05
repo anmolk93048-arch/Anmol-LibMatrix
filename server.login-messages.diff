@@ -1,0 +1,74 @@
+23c23,31
+< const security = require('./security'); // 🔒 cookies, CSRF, login rate-limit, headers (see security.js) // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
+---
+> const security = require('./security');
+> // 🔑 One set of login messages for every portal (the UI colours the matching field red)
+> const AUTH_MSG = {
+>     NO_USER:    'User ID is not registered in the system.',
+>     BAD_PASS:   'Invalid Password. Please check your credentials and try again.',
+>     BAD_MOBILE: 'Invalid Mobile Number. Please check your credentials and try again.',
+>     NO_PASS:    'No password has been set for this account. Please contact the administrator.',
+>     NO_MOBILE:  'No mobile number is registered for this ID. Please contact the administrator.'
+> }; // 🔒 cookies, CSRF, login rate-limit, headers (see security.js) // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
+1995c2003
+<                 if (!rows || !rows.length) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+---
+>                 if (!rows || !rows.length) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+1997,1999d2004
+<                 if (u.status === 'blocked') {
+<                     return res.status(403).json({ error: 'This ID has been blocked by the administrator.' });
+<                 }
+2005c2010,2013
+<                     return res.status(401).json({ error: 'Invalid mobile number or password.' });
+---
+>                     return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+>                 }
+>                 if (u.status === 'blocked') {
+>                     return res.status(403).json({ error: 'This ID has been blocked by the administrator.', code: 'BLOCKED' });
+2181,2183c2189,2191
+<             if (!stud || !studMobile || studMobile !== wantMobile) {
+<                 return res.status(401).json({ error: 'Student ID and mobile number do not match.' });
+<             }
+---
+>             if (!stud) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+>             if (!studMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+>             if (studMobile !== wantMobile) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
+2203,2205c2211,2213
+<             if (!emp || !empMobile || empMobile !== wantMobile) {
+<                 return res.status(401).json({ error: 'Employee ID and mobile number do not match.' });
+<             }
+---
+>             if (!emp) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+>             if (!empMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+>             if (empMobile !== wantMobile) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
+2233c2241
+<             if (!u) return res.status(401).json({ error: 'User ID is not registered in the system.' });
+---
+>             if (!u) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+2235c2243
+<             if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+---
+>             if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+2254,2255c2262,2263
+<         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
+<         if (!user || !user.password) return res.status(401).json({ error: 'User ID is not registered in the system.' });
+---
+>         if (!user) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+>         if (!user.password) return res.status(401).json({ error: AUTH_MSG.NO_PASS, code: 'NO_PASSWORD' });
+2274c2282,2283
+<         if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+---
+>         if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+>         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
+3529c3538
+<         if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+---
+>         if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+4327c4336
+<         if (!acc) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+---
+>         if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+4356c4365
+<         if (!acc) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+---
+>         if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });

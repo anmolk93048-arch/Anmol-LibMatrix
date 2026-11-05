@@ -20,7 +20,15 @@ const path = require('path'); // 🆕 404.html ka absolute path resolve karne ke
 const fs = require('fs'); // 🆕 static/page file lookup ke liye
 const crypto = require('crypto');
 const supabasePortals = require('./supabase-portals');
-const security = require('./security'); // 🔒 cookies, CSRF, login rate-limit, headers (see security.js) // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
+const security = require('./security');
+// 🔑 One set of login messages for every portal (the UI colours the matching field red)
+const AUTH_MSG = {
+    NO_USER:    'User ID is not registered in the system.',
+    BAD_PASS:   'Invalid Password. Please check your credentials and try again.',
+    BAD_MOBILE: 'Invalid Mobile Number. Please check your credentials and try again.',
+    NO_PASS:    'No password has been set for this account. Please contact the administrator.',
+    NO_MOBILE:  'No mobile number is registered for this ID. Please contact the administrator.'
+}; // 🔒 cookies, CSRF, login rate-limit, headers (see security.js) // 🆕 supabase-js layer for all 6 portals // 🆕 PII encryption/hash (pehle yeh file mein neeche require hota tha)
 
 // ══════════════════════════════════════════════════════════════════
 // 🛡️ PROCESS-LEVEL SAFETY NET — sabse pehli cheez jo file mein chalti
@@ -1992,17 +2000,17 @@ app.post('/api/material/login', (req, res) => {
         db.query('SELECT * FROM material_users WHERE userid = ?', [String(userId)], (err, rows) => {
             try {
                 if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-                if (!rows || !rows.length) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+                if (!rows || !rows.length) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
                 const u = rows[0];
-                if (u.status === 'blocked') {
-                    return res.status(403).json({ error: 'This ID has been blocked by the administrator.' });
-                }
                 const mobileMatches = String(u.mobile || '').replace(/\D/g, '').slice(-10) === secondFactor.replace(/\D/g, '').slice(-10);
                 const passwordMatches = (u.password_hash && typeof u.password_hash === 'string')
                     ? bcrypt.compareSync(secondFactor, u.password_hash)
                     : false;
                 if (!mobileMatches && !passwordMatches) {
-                    return res.status(401).json({ error: 'Invalid mobile number or password.' });
+                    return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+                }
+                if (u.status === 'blocked') {
+                    return res.status(403).json({ error: 'This ID has been blocked by the administrator.', code: 'BLOCKED' });
                 }
                 // 🔒 FIX: pehle "u.userId" (camelCase) padha jaata tha jo Postgres
                 // row mein hamesha undefined hota hai (asli key "userid" hai) —
@@ -2178,9 +2186,9 @@ app.post('/api/auth/login', (req, res) => {
             const wantMobile = String(mobile).replace(/\D/g, '').slice(-10);
             const stud = (list || []).find(s => s && (String(s.id) === String(username) || String(s.studentId) === String(username)));
             const studMobile = stud && String(stud.mobile || stud.phone || '').replace(/\D/g, '').slice(-10);
-            if (!stud || !studMobile || studMobile !== wantMobile) {
-                return res.status(401).json({ error: 'Student ID and mobile number do not match.' });
-            }
+            if (!stud) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+            if (!studMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+            if (studMobile !== wantMobile) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
             const token = jwt.sign({ role: 'student', username: String(username) }, JWT_SECRET, { expiresIn: '7d' });
             logLoginEvent('student', username); // 🆕 real-time login count ke liye
             res.json({ token });
@@ -2200,9 +2208,9 @@ app.post('/api/auth/login', (req, res) => {
             const wantMobile = String(mobile).replace(/\D/g, '').slice(-10);
             const emp = (list || []).find(e => e && String(e.empId || '').toUpperCase() === String(username).toUpperCase());
             const empMobile = emp && String(emp.phone || emp.mobile || '').replace(/\D/g, '').slice(-10);
-            if (!emp || !empMobile || empMobile !== wantMobile) {
-                return res.status(401).json({ error: 'Employee ID and mobile number do not match.' });
-            }
+            if (!emp) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+            if (!empMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+            if (empMobile !== wantMobile) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
             // 🔒 FIX (Issue #3 — verification check in login): sirf wahi
             // employee login kar sakta hai jiska Admin verification poora
             // ho chuka ho (status==='active'). Yeh record yahan 'hrms_employees'
@@ -2230,9 +2238,9 @@ app.post('/api/auth/login', (req, res) => {
         db.query('SELECT * FROM pfms_users WHERE username = ?', [username], (err, rows) => {
             if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
             const u = rows && rows[0];
-            if (!u) return res.status(401).json({ error: 'User ID is not registered in the system.' });
+            if (!u) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
             if (u.status === 'inactive') return res.status(403).json({ error: 'This account has been deactivated by the administrator.' });
-            if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+            if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
             const token = jwt.sign({ role: 'pfms', username: u.username }, JWT_SECRET, { expiresIn: '7d' });
             logLoginEvent('pfms', u.username); // 🆕 real-time login count ke liye
             res.json({ token });
@@ -2251,8 +2259,8 @@ app.post('/api/auth/login', (req, res) => {
         const wantU = _lcT(username);
         const idx = list.findIndex(u => u && [u.username, u.email, u.id, u.agentId, u.empId].some(f => f && _lcT(f) === wantU));
         const user = idx >= 0 ? list[idx] : null;
-        if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
-        if (!user || !user.password) return res.status(401).json({ error: 'User ID is not registered in the system.' });
+        if (!user) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        if (!user.password) return res.status(401).json({ error: AUTH_MSG.NO_PASS, code: 'NO_PASSWORD' });
 
         let ok = false;
         if (looksHashed(user.password)) {
@@ -2271,7 +2279,8 @@ app.post('/api/auth/login', (req, res) => {
                 );
             }
         }
-        if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+        if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
+        if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
         const _isAdminLogin = roleKey === 'admin';
         const token = _isAdminLogin
             ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
@@ -3526,7 +3535,7 @@ app.post('/api/admin/full-system-reset', requireRole('admin'), (req, res) => {
         const me = admins.find(a => a && a.username === req.authUser.username);
         if (!me || !me.password) return res.status(401).json({ error: 'Admin record not found.' });
         const ok = looksHashed(me.password) ? bcrypt.compareSync(password, me.password) : security.safeEqual(me.password, password);
-        if (!ok) return res.status(401).json({ error: 'Invalid password. Please enter the correct password.' });
+        if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
 
         // ── Entity keys (kv_admin_entities) — 'admins' aur 'agent_logins'
         //    ('agent_logins' credentials hain, isliye bacha lete hain) ──
@@ -4324,7 +4333,7 @@ async function forgotPasswordHandler(req, res) {
         if (!contact) return res.status(400).json({ error: 'Please provide your registered email or phone number to recover access.' });
         if (!userId) return res.status(400).json({ error: 'Please enter your valid User ID.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
-        if (!acc) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+        if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
         if (!(await smsConfigured())) return res.status(501).json({ error: 'The SMS gateway is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
@@ -4353,7 +4362,7 @@ async function resetPasswordHandler(req, res) {
         if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         if (newPassword.length < 6) return res.status(400).json({ error: 'Passwords do not match or fields are empty.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
-        if (!acc) return res.status(404).json({ error: 'User ID is not registered in the system.' });
+        if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const o = await _otpStore.get(key);
         if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }

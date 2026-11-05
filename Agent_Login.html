@@ -591,29 +591,6 @@ body.dark .calc-sum{background:#0a0f1e}
 </style>
 <!-- Razorpay Checkout — Agent Subscription renewal payment ke liye -->
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script>
-/* Razorpay branding: every checkout popup (agent registration in reg-pay.js, customer registration, subscriptions)
-   shows the official Anmol LibMatrix logo + title. The logo must be reachable by URL: keep anmol_libmatrix_logo.png next to this page. */
-(function(){
-  var Orig = window.Razorpay; if (typeof Orig !== 'function') return;
-  var LOGO = new URL('anmol_libmatrix_logo.png', location.href).href;
-  var AGENT_NAME = 'Anmol LibMatrix Agent Registration', BRAND = 'Anmol LibMatrix';
-  // a valid merchant name is a real text string; numbers, "1", "1 1", blanks, null/undefined are all rejected
-  function badName(n){ return typeof n !== 'string' || /^[\s\d.,-]*$/.test(n); }
-  function Wrapped(opts){
-    opts = opts || {};
-    opts.image = LOGO;
-    var ctx = String(opts.description || '') + ' ' + JSON.stringify(opts.notes || {});
-    var isAgentReg = /agent/i.test(ctx) && /regist/i.test(ctx);
-    if (isAgentReg) opts.name = AGENT_NAME;
-    else if (badName(opts.name)) opts.name = BRAND;
-    return new Orig(opts);
-  }
-  Wrapped.prototype = Orig.prototype;
-  Object.keys(Orig).forEach(function(k){ try { Wrapped[k] = Orig[k]; } catch(e){} });
-  window.Razorpay = Wrapped;
-})();
-</script>
 <!-- jsPDF — Subscription payment ke baad automatic PDF receipt banane ke liye -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
@@ -1576,6 +1553,7 @@ body.dark #pg-dash .two .card .fbr{color:#a6b6ca}body.dark #pg-dash .two .card .
         📋 Customer Registration
       </button>
       <div style="text-align:center;margin-top:7px;font-size:10px;color:rgba(255,255,255,.3)">Submit your registration for a new membership</div>
+      <button type="button" onclick="OPEN_AGENT_REG()" id="agent-reg-btn" style="width:100%;margin-top:10px;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid rgba(154,107,0,.55);background:rgba(201,162,39,.14);color:#7a5600">🏢 Register as New Agent / Library</button>
 
     </div>
 
@@ -3878,6 +3856,7 @@ function DO_LOGIN() {
   var rolesToTry = found ? [found.role === 'Staff' ? 'staff' : 'agent'] : ['agent', 'staff'];
   var usernameToSend = found && found.user ? found.user : u;
   var lastError = null;
+  var bestError = null;   // prefer a password error (account exists) over a not-registered error from the other role
 
   function restoreButton() {
     if (loginBtn) {
@@ -3962,7 +3941,7 @@ function DO_LOGIN() {
     if (index >= rolesToTry.length) {
       stopWakeupWatch();
       restoreButton();
-      uiErr(lastError && lastError.message ? lastError.message : 'Invalid username or password.');
+      var fin = bestError || lastError; uiErr(fin && fin.message ? fin.message : 'User ID is not registered in the system.');
       return;
     }
 
@@ -4011,16 +3990,17 @@ function DO_LOGIN() {
         // Offline demo fallback is available only for the exact legacy demo
         // credentials and only if this is a local file or the backend is unreachable.
         lastError = e || new Error('Login request failed.');
+        if (/invalid password/i.test(String(lastError.message || ''))) bestError = lastError;   // the ID exists → stop here, do not try the other role
         if (tryOfflineDemoLogin(lastError)) return;
         // Don't retry another role for a known account; for an unknown account
         // the first request may simply have used the other valid role.
-        if (!found && index + 1 < rolesToTry.length) {
+        if (!found && !bestError && index + 1 < rolesToTry.length) {
           loginAttempt(index + 1);
           return;
         }
         stopWakeupWatch();
         restoreButton();
-        var message = lastError && lastError.message ? lastError.message : 'Login request failed.';
+        var message = (bestError || lastError) && (bestError || lastError).message ? (bestError || lastError).message : 'Login request failed.';
         if (/failed to fetch|networkerror|load failed|fetch failed/i.test(message)) {
           message = 'Unable to sign in at the moment. Please try again shortly.';
         }
@@ -8652,11 +8632,11 @@ var AUTO_LOGOUT_AGENT = (function(){
         <button type="button" id="cr-mode-track" onclick="CR_SET_MODE('track')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;background:transparent;color:#0d1e3d">Track Application Status</button>
       </div>
       <div id="cr-track" style="display:none">
-        <div class="cr-field"><label for="cr-track-id">Application ID / Tracking ID *</label><input type="text" id="cr-track-id" autocomplete="off" placeholder="Tracking ID (e.g. AGT001)" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="cr-field"><label for="cr-track-id">Application ID / Tracking ID *</label><input type="text" id="cr-track-id" autocomplete="off" placeholder="Application ID or Tracking ID (TRK-…)"></div>
         <div class="cr-field"><label for="cr-track-mobile">Registered Mobile Number *</label><input type="tel" id="cr-track-mobile" inputmode="numeric" maxlength="10" autocomplete="tel" placeholder="10-digit mobile number"></div>
-        <div id="cr-track-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:700"></div>
+        <div id="cr-track-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:700;margin:8px 0"></div>
         <button type="button" id="cr-track-btn" onclick="TRACK_APPLICATION()" style="width:100%;padding:11px;border:none;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;background:#0d1e3d;color:#c9a227">Check Status</button>
-        <div id="cr-track-result" style="display:none;border-radius:12px;padding:14px;font-size:13px;line-height:1.5"></div>
+        <div id="cr-track-result" style="display:none;margin-top:14px;border-radius:12px;padding:14px;font-size:13px;line-height:1.5"></div>
       </div>
       <div id="cust-reg-main">
       <div id="cust-reg-success" style="display:none;background:#E1F5EE;border:2px solid #0F6E56;border-radius:12px;padding:18px;text-align:center;margin-bottom:14px">
@@ -8699,7 +8679,7 @@ var AUTO_LOGOUT_AGENT = (function(){
         <div class="cr-field">
           <label for="cr-aadhaar">Aadhaar Number *</label>
           <input type="text" id="cr-aadhaar" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="Enter 12-digit Aadhaar number" aria-label="12 digit Aadhaar Number" required>
-          <small>Your Aadhaar is encrypted on our server and is never stored in plain text. One Aadhaar can be registered only once.</small>
+          <small>For privacy, only the last 4 digits are sent to the server when the form is submitted.</small>
         </div>
         <!-- PAN -->
         <div class="cr-field">
@@ -8727,28 +8707,6 @@ var AUTO_LOGOUT_AGENT = (function(){
   </div>
 </div>
 
-<style id="cr-track-spacing-fix">
-#cr-track{padding:2px 0 4px}
-#cr-track .cr-field{margin:0 0 16px!important;min-width:0}
-#cr-track .cr-field label{display:block;font-size:10px;font-weight:800;color:#50677c;margin:0 0 7px;text-transform:uppercase;letter-spacing:.055em;line-height:1.3}
-#cr-track .cr-field input{display:block;width:100%;box-sizing:border-box;min-width:0;padding:11px 12px;border:1px solid #d7e2ec;border-radius:10px;background:#fbfdff;color:#102a43;font-size:13px;outline:none;transition:border-color .18s,box-shadow .18s}
-#cr-track .cr-field input:focus{border-color:#2c78b9;box-shadow:0 0 0 3px rgba(44,120,185,.10)}
-#cr-track #cr-track-err{margin:0 0 14px!important;padding:9px 12px;background:#FCEBEB;border:1px solid #fecaca;border-radius:8px;line-height:1.4}
-#cr-track #cr-track-btn{display:block;width:100%;box-sizing:border-box;margin:0;padding:12px;line-height:1.2}
-#cr-track #cr-track-btn:disabled{opacity:.65;cursor:wait}
-#cr-track #cr-track-result{margin:16px 0 0!important;box-sizing:border-box;word-break:break-word}
-#cr-track #cr-track-result .tr-row{margin-top:10px;font-size:12px;color:#4a5568;line-height:1.5}
-#cr-track #cr-track-result .tr-cred{margin-top:14px;background:#fff;border-radius:10px;padding:12px;line-height:1.7}
-.cr-receipt{background:#fff;border:1.5px dashed #0F6E56;border-radius:12px;padding:14px;margin:14px 0 4px;text-align:left;font-size:12px;color:#1a202c}
-.cr-receipt h4{margin:0 0 10px;font-size:13px;color:#0d1e3d;text-align:center;letter-spacing:.04em;text-transform:uppercase}
-.cr-receipt .rc-tok{text-align:center;font-size:20px;font-weight:900;letter-spacing:1px;color:#0F6E56;background:#E1F5EE;border-radius:8px;padding:8px;margin-bottom:10px;user-select:all}
-.cr-receipt .rc-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #eef1f6}
-.cr-receipt .rc-row:last-child{border-bottom:0}
-.cr-receipt .rc-row span{color:#4a5568}.cr-receipt .rc-row b{text-align:right;word-break:break-all}
-.cr-receipt-actions{display:flex;gap:10px;margin-top:12px}
-.cr-receipt-actions button{flex:1;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none}
-@media print{body.cr-printing *{visibility:hidden}body.cr-printing #cr-receipt-print,body.cr-printing #cr-receipt-print *{visibility:visible}body.cr-printing #cr-receipt-print{position:absolute;left:0;top:0;width:100%;border:1px solid #000}}
-</style>
 <script>
 // ═══ CUSTOMER REGISTRATION FUNCTIONS ═══
 // ══ MEMBERSHIP PLANS: live se Admin Panel ke mem_plans ke saath sync ══
@@ -8757,19 +8715,17 @@ function RENDER_PLAN_PREF_OPTIONS() {
   var sel = document.getElementById('cr-plan-pref');
   if (!sel) return;
   var current = sel.value;
-  var plans = (window.MEM_PLANS || []).filter(function(p){ return p && p.id && p.name && p.active !== false && Number(p.price) >= 0; });
-  var escH = function(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var plans = window.MEM_PLANS || [];
   var opts = '<option value="">-- Select Plan --</option>';
   if (plans.length) {
     opts += plans.map(function(p){
-      return '<option value="' + escH(p.id) + '">' + escH(p.name) + ' — \u20b9' + escH(p.price) + ' / ' + escH(p.days) + ' days</option>';
+      return '<option value="' + p.id + '">' + p.name + ' — ' + p.days + ' days (\u20b9' + p.price + ')</option>';
     }).join('');
   } else {
     opts += '<option value="" disabled>⚠️ No plans are available. Please contact the Admin</option>';
   }
   sel.innerHTML = opts;
   sel.value = current || '';
-  try { UPDATE_CR_PLAN_PRICE(); } catch (e) {}
 }
 // 🔒 FIX: pehle yeh Firebase (shdl/mem_plans) se load hota tha — jo Admin
 // Panel ke asli plans se disconnected tha (Admin Panel plans backend mein
@@ -8946,7 +8902,6 @@ function OPEN_CUST_REG() {
   document.getElementById('cr-email').value = '';
   document.getElementById('cr-address').value = '';
   document.getElementById('cr-district').value = '';
-  document.getElementById('cr-aadhaar').value = ''; document.getElementById('cr-pan').value = '';
   RENDER_PLAN_PREF_OPTIONS();
   document.getElementById('cr-plan-pref').value = '';
   document.getElementById('cr-plan-price').style.display = 'none';
@@ -9004,20 +8959,15 @@ function TRACK_APPLICATION() {
     btn.disabled = false; btn.textContent = 'Check Status';
     var colors = { approved: ['#E1F5EE', '#0F6E56'], rejected: ['#FCEBEB', '#A32D2D'], pending: ['#FFF8E1', '#9a6b00'] };
     var c = colors[r.status] || colors.pending;
-    var html = '<div style="font-weight:900;color:' + c[1] + ';font-size:14px">Status: ' + esc(String(r.status).toUpperCase()) + '</div>' +
-      '<div style="margin-top:6px;color:#1a202c">' + esc(r.message || '') + '</div>' +
-      '<div class="tr-row">' +
-        (r.trackingId ? 'Tracking ID: <b>' + esc(r.trackingId) + '</b><br>' : '') +
-        'Applicant: <b>' + esc(r.name) + '</b>' + (r.type ? ' &middot; ' + esc(r.type) : '') +
-        (r.planName ? '<br>Plan: ' + esc(r.planName) : '') +
-        (r.amount != null && r.paymentRef ? '<br>Paid: &#8377;' + esc(r.amount) + ' &middot; Ref: ' + esc(r.paymentRef) : '') +
-      '</div>';
+    var html = '<div style="font-weight:900;color:' + c[1] + ';margin-bottom:6px">Status: ' + esc(String(r.status).toUpperCase()) + '</div>' +
+      '<div style="color:#1a202c">' + esc(r.message || '') + '</div>' +
+      '<div style="margin-top:8px;font-size:12px;color:#4a5568">Applicant: ' + esc(r.name) + (r.type ? ' &middot; ' + esc(r.type) : '') + (r.planName ? ' &middot; Plan: ' + esc(r.planName) : '') + '</div>';
     if (r.credentials) {
-      html += '<div class="tr-cred" style="border:1px dashed ' + c[1] + '">' +
-        '<div style="font-size:11px;color:#4a5568;font-weight:800;letter-spacing:.04em">YOUR LOGIN CREDENTIALS</div>' +
-        '<div style="margin-top:6px">User ID: <strong style="user-select:all">' + esc(r.credentials.userId) + '</strong></div>' +
-        (r.credentials.password ? '<div>Password: <strong style="user-select:all">' + esc(r.credentials.password) + '</strong></div>' : '<div style="font-size:12px;color:#4a5568">Password: the one you set at registration (use “Forgot password” if needed).</div>') +
-        '<div style="margin-top:8px;font-size:11px;color:#A32D2D">Please save these details now and change your password after your first login.</div></div>';
+      html += '<div style="margin-top:12px;background:#fff;border:1px dashed ' + c[1] + ';border-radius:10px;padding:10px">' +
+        '<div style="font-size:11px;color:#4a5568;font-weight:700">YOUR LOGIN CREDENTIALS</div>' +
+        '<div style="margin-top:4px">User ID: <strong>' + esc(r.credentials.userId) + '</strong></div>' +
+        (r.credentials.password ? '<div>Password: <strong>' + esc(r.credentials.password) + '</strong></div>' : '<div style="font-size:12px;color:#4a5568">Password: the one you set at registration (use “Forgot password” if needed).</div>') +
+        '<div style="margin-top:6px;font-size:11px;color:#A32D2D">Please save these details now and change your password after your first login.</div></div>';
     }
     box.style.background = c[0]; box.style.border = '1.5px solid ' + c[1];
     box.innerHTML = html; box.style.display = 'block';
@@ -9047,6 +8997,7 @@ function SUBMIT_CUST_REG() {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
   if (!aadhaar || !/^\d{12}$/.test(aadhaar)) { errEl.textContent = '⚠️ Please enter a valid 12-digit Aadhaar number.'; errEl.style.display = 'block'; return; }
   if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) { errEl.textContent = '⚠️ Please enter a valid PAN format, for example ABCDE1234F.'; errEl.style.display = 'block'; return; }
+  if (!agentId) { errEl.textContent = '⚠️ Please open this form using your library’s personalized registration link.'; errEl.style.display = 'block'; return; }
   if (!planId) { errEl.textContent = '⚠️ Please select a Membership Plan.'; errEl.style.display = 'block'; return; }
 
   var submitBtn = document.querySelector('#cust-reg-form button[type="submit"]');
@@ -9061,7 +9012,7 @@ function SUBMIT_CUST_REG() {
   // queue (customer_pending_registrations) mein daalta hai.
   API.post('/customer-registrations/order', {
     name: name, firstName: firstName, lastName: lastName, mobile: mobile, email: email, address: address, district: district, state: state,
-    aadhaar: aadhaar, pan: pan, agentId: agentId, planId: planId
+    aadhaarRedacted: aadhaar.slice(-4), pan: pan, agentId: agentId, planId: planId
   }).then(function(order){
     if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit Registration & Continue to Payment'; }
     if (!order || !order.orderId || (!order.free && !order.key)) {
@@ -9094,7 +9045,13 @@ function SUBMIT_CUST_REG() {
           razorpay_payment_id: response.razorpay_payment_id,
           razorpay_signature: response.razorpay_signature
         }).then(function(vr){
-          CR_SHOW_RECEIPT(vr || {}, order, { name: name, mobile: mobile, email: email, planName: order.plan ? order.plan.name : '', response: response });
+          var _appId = (vr && vr.id) || '';
+          document.getElementById('cust-reg-success').innerHTML =
+            '<div style="font-size:36px;margin-bottom:8px">✅</div>' +
+            '<div style="font-size:15px;font-weight:900;color:#0d1e3d;margin-bottom:4px">' + (order.free ? 'Registration Submitted (no fee).' : 'Payment Successful. Registration Submitted.') + '</div>' +
+            '<div style="font-size:12px;color:#4a5568">Your application will be reviewed shortly. Use the Application ID below with your mobile number under "Track Application Status".</div>' +
+            (_appId ? '<div style="margin-top:10px;font-size:14px;font-weight:900;letter-spacing:.5px;background:#fff;border:1px dashed #0F6E56;border-radius:8px;padding:8px;user-select:all">' + _appId + '</div>' : '') +
+            '<button onclick="CLOSE_CUST_REG()" style="margin-top:14px;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:#0d1e3d;color:#c9a227">Close</button>';
         }).catch(function(err2){
           document.getElementById('cust-reg-success').innerHTML =
             '<div style="font-size:36px;margin-bottom:8px">⚠️</div>' +
@@ -9110,41 +9067,6 @@ function SUBMIT_CUST_REG() {
     errEl.textContent = '⚠️ ' + (err.message || 'Unable to create the order. Please try again.');
     errEl.style.display = 'block';
   });
-}
-function CR_SHOW_RECEIPT(vr, order, f) {
-  var esc = function(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
-  var r = vr.receipt || {};
-  var token = vr.trackingId || r.trackingId || vr.id || '';
-  var amt = (r.amount != null ? r.amount : (order && order.fee != null ? order.fee : 0));
-  var paidOn = r.paidOn ? new Date(r.paidOn) : new Date();
-  var row = function(k, v){ return '<div class="rc-row"><span>' + k + '</span><b>' + esc(v) + '</b></div>'; };
-  var ok = document.getElementById('cust-reg-success');
-  ok.innerHTML =
-    '<div style="font-size:36px;margin-bottom:6px">✅</div>' +
-    '<div style="font-size:15px;font-weight:900;color:#0d1e3d;margin-bottom:6px">Application Submitted Successfully</div>' +
-    '<div style="font-size:12px;color:#4a5568;line-height:1.5">' + esc(vr.message || 'Your application has been submitted and sent to the Super Admin panel for approval.') +
-    ' Keep your Tracking ID safe — use it with your registered mobile number under <b>Track Application Status</b> to see your status and, once approved, your User ID and Password.</div>' +
-    '<div class="cr-receipt" id="cr-receipt-print"><h4>Payment Receipt / Slip</h4>' +
-      '<div class="rc-tok">' + esc(token) + '</div>' +
-      row('Receipt No.', r.receiptNo || ('RCP-' + token)) +
-      row('Name', r.name || f.name) +
-      row('Mobile', r.mobile || f.mobile) +
-      row('Plan', r.planName || f.planName || '—') +
-      row('Amount Paid', '\u20b9' + amt) +
-      row('Payment Status', r.paymentStatus || (order && order.free ? 'No payment required' : 'Paid')) +
-      row('Payment Mode', r.paymentMode || (order && order.free ? 'No fee' : 'Online')) +
-      row('Payment / Txn ID', r.paymentRef || (f.response && f.response.razorpay_payment_id) || '—') +
-      row('Date & Time', paidOn.toLocaleString('en-IN')) +
-      row('Application Status', 'Pending — sent to Super Admin') +
-    '</div>' +
-    '<div class="cr-receipt-actions"><button type="button" onclick="CR_PRINT_RECEIPT()" style="background:#0F6E56;color:#fff">🖨️ Print / Save Receipt</button>' +
-    '<button type="button" onclick="CLOSE_CUST_REG()" style="background:#0d1e3d;color:#c9a227">Close</button></div>';
-  ok.style.display = 'block';
-  try { document.getElementById('cr-track-id').value = token; document.getElementById('cr-track-mobile').value = r.mobile || f.mobile; } catch (e) {}
-}
-function CR_PRINT_RECEIPT() {
-  var done = function(){ document.body.classList.remove('cr-printing'); window.removeEventListener('afterprint', done); };
-  document.body.classList.add('cr-printing'); window.addEventListener('afterprint', done); window.print();
 }
 // ESC se modal band karo
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') CLOSE_CUST_REG(); });
@@ -10537,13 +10459,8 @@ function HRMS_VIEW_SLIP(id){
     hr.forEach(function(s){if(s&&String(s.agentId||'').trim()===aid)all.push({type:'Staff / HRMS',data:s,registeredBy:'HRMS • Agent '+aid,status:s.status||'pending'});});
     return all;
   }
-  // Aadhaar is NEVER displayed in full: first 8 digits hidden, only the last 4 shown (XXXX-XXXX-1234).
-  function maskAad(d){
-    var v=digits(getAad(d)); var l4=v.length>=4?v.slice(-4):digits(String((d&&(d.aadhaarLast4||d.aadhaarRedacted))||'')).slice(-4);
-    return l4.length===4?'XXXX-XXXX-'+l4:'Not available';
-  }
   function view(rec){
-    var d=rec.data||{};var lines=['Type: '+rec.type,'Name: '+(d.name||d.fullName||'—'),'Mobile: '+(d.mobile||'—'),'Aadhaar: '+maskAad(d),'Agent ID: '+getAgentId(),'Registered By: '+rec.registeredBy,'Status: '+rec.status];
+    var d=rec.data||{};var lines=['Type: '+rec.type,'Name: '+(d.name||d.fullName||'—'),'Mobile: '+(d.mobile||'—'),'Aadhaar: '+(digits(getAad(d))||'—'),'Agent ID: '+getAgentId(),'Registered By: '+rec.registeredBy,'Status: '+rec.status];
     if(d.email)lines.push('Email: '+d.email);if(d.address||d.addr)lines.push('Address: '+(d.address||d.addr));if(d.empid)lines.push('Employee ID: '+d.empid);if(d.studentId||d.id)lines.push('ID: '+(d.studentId||d.id));
     alert('📋 Aadhaar Search Details\n\n'+lines.join('\n'));
   }
@@ -10562,7 +10479,7 @@ function HRMS_VIEW_SLIP(id){
   }
   function downloadPdf(rec){
     var d=rec.data||{};var title='Aadhaar Search — '+(d.name||d.fullName||'Record');var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#0d1e3d}h1{font-size:20px;border-bottom:2px solid #c9a227;padding-bottom:8px}.grid{display:grid;grid-template-columns:160px 1fr;gap:8px 14px;font-size:13px}.k{font-weight:700;color:#667085}.v{font-weight:700}</style></head><body><h1>Anmol LibMatrix — Aadhaar Search Profile</h1><div class="grid">';
-    var vals={Type:rec.type,'Full Name':d.name||d.fullName||'—',Mobile:d.mobile||'—',Aadhaar:maskAad(d),'Agent ID':getAgentId(),'Registered By':rec.registeredBy,Status:rec.status||'—',Email:d.email||'—',Address:d.address||d.addr||'—','Student/Employee ID':d.studentId||d.empid||d.empId||d.id||'—'};
+    var vals={Type:rec.type,'Full Name':d.name||d.fullName||'—',Mobile:d.mobile||'—',Aadhaar:digits(getAad(d))||'—','Agent ID':getAgentId(),'Registered By':rec.registeredBy,Status:rec.status||'—',Email:d.email||'—',Address:d.address||d.addr||'—','Student/Employee ID':d.studentId||d.empid||d.empId||d.id||'—'};
     Object.keys(vals).forEach(function(k){html+='<div class="k">'+esc(k)+'</div><div class="v">'+esc(vals[k])+'</div>';});html+='</div><script>window.onload=function(){setTimeout(function(){window.print();},250)};<\\/script></body></html>';
     var w=window.open('','_blank','width=850,height=700');if(!w){alert('Pop-up blocked. Please allow pop-ups in your browser.');return;}w.document.write(html);w.document.close();
   }
@@ -10570,7 +10487,7 @@ function HRMS_VIEW_SLIP(id){
     var tb=document.getElementById('agent-aadhaar-results');if(!tb)return;
     if(!list.length){tb.innerHTML='<tr><td colspan="7" style="padding:30px;text-align:center;color:#be123c;font-weight:800">Record not found. This Aadhaar is not within your Agent scope.</td></tr>';return;}
     window.__AGENT_AADHAAR_RESULTS=list;
-    tb.innerHTML=list.map(function(r,i){var d=r.data||{};var masked=maskAad(d);var id=d.studentId||d.empid||d.empId||d.id||'—';return '<tr><td>'+esc(r.type)+'</td><td><b>'+esc(d.name||d.fullName||'—')+'</b></td><td>'+masked+'</td><td>'+esc((d.mobile||'')+' · '+id)+'</td><td>'+esc(r.registeredBy)+'</td><td>'+esc(r.status)+'</td><td style="white-space:nowrap"><button class="agent-aadhaar-action primary" onclick="AGENT_AADHAAR_ACTION('+i+',\'view\')">View</button><button class="agent-aadhaar-action" onclick="AGENT_AADHAAR_ACTION('+i+',\'edit\')">Edit</button><button class="agent-aadhaar-action" onclick="AGENT_AADHAAR_ACTION('+i+',\'print\')">Print</button><button class="agent-aadhaar-action pdf" onclick="AGENT_AADHAAR_ACTION('+i+',\'pdf\')">PDF</button></td></tr>';}).join('');
+    tb.innerHTML=list.map(function(r,i){var d=r.data||{};var av=digits(getAad(d));var masked=av.length===12?'XXXX XXXX '+av.slice(-4):'Not available';var id=d.studentId||d.empid||d.empId||d.id||'—';return '<tr><td>'+esc(r.type)+'</td><td><b>'+esc(d.name||d.fullName||'—')+'</b></td><td>'+masked+'</td><td>'+esc((d.mobile||'')+' · '+id)+'</td><td>'+esc(r.registeredBy)+'</td><td>'+esc(r.status)+'</td><td style="white-space:nowrap"><button class="agent-aadhaar-action primary" onclick="AGENT_AADHAAR_ACTION('+i+',\'view\')">View</button><button class="agent-aadhaar-action" onclick="AGENT_AADHAAR_ACTION('+i+',\'edit\')">Edit</button><button class="agent-aadhaar-action" onclick="AGENT_AADHAAR_ACTION('+i+',\'print\')">Print</button><button class="agent-aadhaar-action pdf" onclick="AGENT_AADHAAR_ACTION('+i+',\'pdf\')">PDF</button></td></tr>';}).join('');
   }
   window.AGENT_AADHAAR_SEARCH=function(){
     hideMsg();var input=document.getElementById('agent-aadhaar-input');var needle=digits(input&&input.value);var aid=getAgentId();var scope=document.getElementById('agent-aadhaar-scope');if(scope)scope.textContent='Scope: Agent '+(aid||'Not available');
@@ -12170,14 +12087,5 @@ body.dark .agent-profile-title{color:#e2eefe}body.dark .agent-profile-card{backg
   if (document.readyState === 'complete') setTimeout(go, 50); else window.addEventListener('load', function(){ setTimeout(go, 50); });
 })();
 </script>
-<style id="cr-modal-scroll-fix">
-/* Registration / Track modal: card = header + body. The BODY scrolls, never the page, never clipped. */
-#cust-reg-modal{align-items:center!important;justify-content:center!important;overflow:hidden!important}
-#cust-reg-modal>div{display:flex!important;flex-direction:column!important;max-height:85vh!important;max-height:85dvh!important;overflow:hidden!important;min-height:0!important}
-#cust-reg-modal>div>div:first-child{flex:0 0 auto!important;position:static!important}
-#cust-reg-modal>div>div:nth-child(2){flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:18px 18px 28px!important}
-#cust-reg-modal>div>div:nth-child(2) *{max-width:100%}
-#cust-reg-modal #cust-reg-success,#cust-reg-modal #cr-track-result{overflow:visible!important}
-</style>
 </body>
 </html>

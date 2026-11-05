@@ -262,3 +262,68 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
+
+/* Login error alerts — classifies the message (User ID vs Password vs Mobile) and highlights the matching field. */
+(function () {
+  var ERR_SEL = '#l-err,#login-err,#e-err,#loginError,.l-err,.login-err,.login-error';
+  var SKIP_IDS = { regError: 1, regSuccess: 1, regTrackError: 1, cmError: 1 };
+  var USER_IDS = ['l-user', 'login-user', 'e-user', 'loginUserId', 'l-mobile'];
+  var SECRET_IDS = ['l-pass', 'login-pass', 'e-mobile', 'loginMobile', 'l-phone'];
+  var mo = null, OPTS = { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['style'] };
+  function box(id) {
+    var i = document.getElementById(id); if (!i) return null;
+    var b = i.closest('[id$="-box"]'); if (b) return b;
+    for (var n = i, k = 0; n && k < 3 && n !== document.body; n = n.parentElement, k++) {          // nearest ancestor that draws the field border
+      var cs = getComputedStyle(n);
+      if (parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none' && n.getBoundingClientRect().width >= i.getBoundingClientRect().width) return n;
+    }
+    return i;
+  }
+  function clear(ids) { ids.forEach(function (id) { var b = box(id); if (b) b.classList.remove('anmol-field-err'); }); }
+  function mark(ids) {
+    ids.forEach(function (id) {
+      var i = document.getElementById(id); if (!i || !i.offsetParent) return;
+      var b = box(id); if (b) b.classList.add('anmol-field-err');
+      if (!i.__anmolErrBound) { i.__anmolErrBound = 1; i.addEventListener('input', function () { var x = box(id); if (x) x.classList.remove('anmol-field-err'); }); }
+    });
+  }
+  function classify(t) {
+    if (/not registered|not found|does not exist/i.test(t)) return ['user', 'Incorrect User ID'];
+    if (/invalid password|incorrect password|wrong password/i.test(t)) return ['secret', 'Incorrect Password'];
+    if (/invalid mobile|mobile number does not match|mobile.*not match/i.test(t)) return ['secret', 'Incorrect Mobile Number'];
+    if (/captcha/i.test(t)) return ['captcha', 'Captcha Error'];
+    if (/too many/i.test(t)) return ['limit', 'Too Many Attempts'];
+    if (/blocked|inactive|deactivated|suspended|pending|expired/i.test(t)) return ['status', 'Account Status'];
+    return ['other', 'Login Error'];
+  }
+  function enhance(el) {
+    var shown = el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+    var msgEl = el.querySelector(':scope > .aae-msg');
+    var raw = msgEl ? msgEl.textContent : (function () { var d = document.createElement('div'); d.innerHTML = el.innerHTML.replace(/<br\s*\/?>/gi, ' '); return d.textContent || ''; })();
+    var txt = raw.replace(/^[\s❌⚠️⛔🚫!]+/, '').replace(/\s+/g, ' ').trim();
+    if (!txt || !shown) {
+      if (el.classList.contains('anmol-auth-err')) { el.classList.remove('anmol-auth-err'); el.removeAttribute('data-aae'); if (msgEl) el.textContent = ''; clear(USER_IDS.concat(SECRET_IDS)); }   // only the alert we own may reset the field highlight
+      return;
+    }
+    if (msgEl && el.getAttribute('data-aae') === txt) return;               // already rendered
+    if (/^(⏳|🔄|✅|loading|please wait|sending|verifying|checking|signing in|authenticating|otp sent|success)/i.test(txt) && !msgEl) return;   // progress / success notes are not errors
+    var c = classify(txt);
+    el.setAttribute('role', 'alert'); el.setAttribute('aria-live', 'assertive'); el.setAttribute('data-aae', txt);
+    el.classList.add('anmol-auth-err');
+    el.textContent = '';
+    var t = document.createElement('span'); t.className = 'aae-title'; t.textContent = c[1];
+    var m = document.createElement('span'); m.className = 'aae-msg'; m.textContent = txt;
+    el.appendChild(t); el.appendChild(m);
+    clear(USER_IDS.concat(SECRET_IDS));
+    if (c[0] === 'user') mark(USER_IDS); else if (c[0] === 'secret') mark(SECRET_IDS);
+  }
+  function scan() {
+    var a = document.querySelectorAll(ERR_SEL);
+    for (var i = 0; i < a.length; i++) { if (/^(INPUT|BUTTON|SCRIPT|STYLE)$/.test(a[i].tagName) || SKIP_IDS[a[i].id]) continue; enhance(a[i]); }
+  }
+  function start() {
+    mo = new MutationObserver(function () { mo.disconnect(); try { scan(); } finally { mo.observe(document.body, OPTS); } });   // our own edits are never observed → no loop
+    scan(); mo.observe(document.body, OPTS);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();

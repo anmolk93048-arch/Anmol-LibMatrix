@@ -1607,14 +1607,14 @@ function SEND_OTP_CLICK() {
   }
   var found = realStudents.find(function(s){ return (s.studentId||s.id||'').toUpperCase() === mobile; }) || null;
   if(!found) {
-    err.innerHTML='❌ User ID is not registered in the system.<br><small>ID entered: <b>'+mobile+'</b>. Please enter a valid Student ID. You can verify the ID in the Admin panel.</small>';
+    err.innerHTML='User ID is not registered in the system.<br><small>ID entered: <b>'+mobile.replace(/[<>&"]/g,'')+'</b>. Please enter a valid Student ID.</small>';
     err.style.display='block'; document.getElementById('l-mobile').value=''; document.getElementById('l-phone').value=''; return;
   }
 
   // ── MOBILE NUMBER VERIFICATION ──
   var regPhone = ((found.mobile || found.phone || '')+'').replace(/[^0-9]/g,'').slice(-10);
   if(!regPhone || regPhone !== phone) {
-    err.innerHTML='The mobile number does not match the registered ID.<br><small>Please enter the correct registered mobile number.</small>';
+    err.innerHTML='Invalid Mobile Number. Please check your credentials and try again.';
     err.style.display='block'; document.getElementById('l-phone').value=''; return;
   }
 

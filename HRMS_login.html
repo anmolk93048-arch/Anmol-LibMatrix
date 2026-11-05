@@ -1339,12 +1339,12 @@ function DO_LOGIN_EMP(ev){
   if (!found){
     var pend = PENDING_REGISTRATIONS.find(function(p){ return String(p.empId||'').trim().toUpperCase()===u; });
     if (pend){ err.textContent='Your registration is awaiting Administrator approval. Please log in after it has been approved.'; GEN_CAPTCHA('e'); return false; }
-    err.textContent='Employee ID was not found or is inactive.'; GEN_CAPTCHA('e'); return false;
+    err.textContent='User ID is not registered in the system.'; GEN_CAPTCHA('e'); return false;
   }
-  if (found.status==='inactive'){ err.textContent='Employee ID was not found or is inactive.'; GEN_CAPTCHA('e'); return false; }
+  if (found.status==='inactive'){ err.textContent='This Employee ID is blocked or inactive. Please contact the administrator.'; GEN_CAPTCHA('e'); return false; }
   if (!/^\d{10}$/.test(mobile)){ err.textContent='Please enter the full 10-digit registered mobile number.'; GEN_CAPTCHA('e'); return false; }
   var regMobile = String(found.phone||'').replace(/\D/g,'').slice(-10); // ignores +91 etc.
-  if (!regMobile || regMobile !== mobile){ err.textContent='The mobile number does not match.'; GEN_CAPTCHA('e'); return false; }
+  if (!regMobile || regMobile !== mobile){ err.textContent='Invalid Mobile Number. Please check your credentials and try again.'; GEN_CAPTCHA('e'); return false; }
 
   // 🔒 SECURITY: ab backend (POST /api/auth/login, role='employee') se
   // asli verification hoti hai (Postgres 'hrms_employees' data ke against)
