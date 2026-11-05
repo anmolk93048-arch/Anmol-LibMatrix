@@ -1565,6 +1565,45 @@ db.getConnection((err, connection) => {
 }
 runTableSetup(); // create/verify all tables at boot
 
+// ═══════════════════════════════════════════════════════════════════════
+// ♻️ VACANT-ID RECYCLING / SEQUENTIAL GAP-FILLING  (one reusable allocator for every ID series)
+//   Old behaviour: next ID = highest existing number + 1  (deleted IDs were lost forever).
+//   New behaviour: next ID = the LOWEST positive number not currently in use.
+//     existing 1,2,3,5 → 4   |   existing 2,3 → 1   |   existing 1,2,3 (no gap) → 4
+//   A short-lived in-memory "hold" stops two simultaneous requests from receiving the same
+//   vacant number before the first record has been written (see ID_HOLD_MS).
+// ═══════════════════════════════════════════════════════════════════════
+const ID_HOLD_MS = 2 * 60 * 1000;
+const _idHolds = Object.create(null);
+function lowestVacantNumber(usedNumbers) {
+    const used = new Set();
+    (usedNumbers || []).forEach(function (n) { n = Number(n); if (Number.isInteger(n) && n > 0) used.add(n); });
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+}
+// scope: independent series name · prefix: e.g. 'EMP' / 'SHL-' · ids: every ID string currently in use for that series
+// opts.pad (default 3) · opts.reserve=false for read-only previews (no hold is placed)
+function allocateVacantId(scope, prefix, ids, opts) {
+    opts = opts || {};
+    const pad = opts.pad || 3;
+    const re = new RegExp('^' + String(prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)$', 'i');
+    const holds = _idHolds[scope] || (_idHolds[scope] = new Map());
+    const now = Date.now();
+    holds.forEach(function (exp, n) { if (exp <= now) holds.delete(n); });
+    const nums = [];
+    (ids || []).forEach(function (id) { const m = re.exec(String(id == null ? '' : id).trim()); if (m) nums.push(parseInt(m[1], 10)); });
+    holds.forEach(function (exp, n) { nums.push(n); });
+    const n = lowestVacantNumber(nums);
+    if (opts.reserve !== false) holds.set(n, now + ID_HOLD_MS);
+    return prefix + String(n).padStart(pad, '0');
+}
+function releaseVacantId(scope, id, prefix) {
+    const holds = _idHolds[scope]; if (!holds) return;
+    const m = new RegExp('^' + String(prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)$', 'i').exec(String(id || ''));
+    if (m) holds.delete(parseInt(m[1], 10));
+}
+
 // ── Helpers: MU0001-style userId aur ek random 6-char password ──
 function genMaterialUserId(cb) {
     // 🔒 FIX: Postgres mein unquoted column names hamesha lowercase mein fold
@@ -1576,12 +1615,8 @@ function genMaterialUserId(cb) {
     // (approve/register fail) hota tha.
     db.query("SELECT userid FROM material_users WHERE userid LIKE 'MU%'", (err, rows) => {
         if (err) return cb(err);
-        let max = 0;
-        (rows || []).forEach(r => {
-            const num = parseInt(String(r.userid).replace('MU', ''), 10) || 0;
-            if (num > max) max = num;
-        });
-        cb(null, 'MU' + String(max + 1).padStart(3, '0'));
+        // ♻️ lowest vacant MU number (gap-filling) instead of max+1
+        cb(null, allocateVacantId('MU', 'MU', (rows || []).map(r => r.userid)));
     });
 }
 // 🔒 FIX: "duplicate key value violates unique constraint material_users_
@@ -1714,12 +1749,9 @@ app.post('/api/material/register', noStore, asyncRoute(async (req, res) => {
 let _invQueue = Promise.resolve();
 function nextInvTrackingId() {
     const run = _invQueue.then(async function () {
-        let n = Number(await xBlobGet('inv_counter', 0)) || 0;
+        // ♻️ lowest vacant INV number (gap-filling); the unique index + the caller's retry loop remain the final guard
         const rows = await dbq("SELECT tracking_id FROM material_user_requests WHERE tracking_id LIKE 'INV%'", []);
-        rows.forEach(function (r) { const m = /^INV(\d+)$/i.exec(String(r.tracking_id || '')); if (m) n = Math.max(n, parseInt(m[1], 10)); });
-        n += 1;
-        await xBlobSet('inv_counter', n);
-        return 'INV' + String(n).padStart(3, '0');
+        return allocateVacantId('INV', 'INV', rows.map(function (r) { return r.tracking_id; }));
     });
     _invQueue = run.catch(function () {});
     return run;
@@ -2839,9 +2871,8 @@ app.post('/api/hr/registrations/:id/approve', (req, res) => {
         const finalAgentUsername = (isAdmin && req.body && req.body.agentUsername) ? req.body.agentUsername : reg.agentUsername;
         hrGetBlob('hrms_employees', (err2, employees) => {
             if (err2) return res.status(500).json({ error: 'DB error: ' + err2.message });
-            let max = 0;
-            employees.forEach(e => { const n = parseInt(String(e.empId || '').replace('EMP', ''), 10) || 0; if (n > max) max = n; });
-            const empId = 'EMP' + String(max + 1).padStart(3, '0');
+            // ♻️ lowest vacant EMP number (gap-filling) instead of max+1
+            const empId = allocateVacantId('EMP', 'EMP', (employees || []).map(e => e && e.empId));
             const newEmp = {
                 empId, name: reg.name, phone: reg.phone, email: reg.email || '', address: reg.address || '',
                 photo: reg.photo || '', designation: reg.designation || '', department: reg.department || '',
@@ -4462,13 +4493,9 @@ app.get('/api/students/next-id', (req, res) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         let students = [];
         try { students = rows && rows.length ? JSON.parse(rows[0].value) : []; } catch (e) {}
-        let maxNum = 0;
-        (students || []).forEach(s => {
-            const sid = (s && (s.studentId || s.id)) || '';
-            const m = /SHL-(\d+)/i.exec(sid);
-            if (m) { const n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; }
-        });
-        res.json({ nextId: 'SHL-' + String(maxNum + 1).padStart(3, '0') });
+        // ♻️ lowest vacant SHL number (gap-filling). Read-only preview → no hold is placed.
+        const used = (students || []).map(s => (s && (s.studentId || s.id)) || '');
+        res.json({ nextId: allocateVacantId('SHL', 'SHL-', used, { reserve: false }) });
     });
 });
 app.get('/api/settings', (req, res) => kvGet('kv_blob', 'settings', res));
@@ -4958,7 +4985,7 @@ async function walletCredit(userId, amount, note, ref) {
 //    a verified one-time Razorpay unlock token (older flow) is still honoured if the client sends one.
 //    Not enough balance → 402 { insufficientBalance:true } so the portal can offer a top-up.
 //    Returns { ok:true, ... } or sends 402 and returns { ok:false }.
-async function enforceInvoiceFee(req, res, ownerUserId) {
+async function enforceInvoiceFee(req, res, ownerUserId, billNo) {
     const f = await materialInvoiceFeeFor(ownerUserId);
     if (!f.paymentRequired) return { ok: true, fee: 0 };
     const tok = String((req.body && req.body.unlockToken) || req.get('x-invoice-unlock') || '');
@@ -4969,7 +4996,7 @@ async function enforceInvoiceFee(req, res, ownerUserId) {
             [dec.orderId, ownerUserId, f.fee]);
         if (used.length) return { ok: true, fee: f.fee, orderId: dec.orderId };
     }
-    const bal = await walletDebit(ownerUserId, f.fee, 'Invoice fee', 'invoice');
+    const bal = await walletDebit(ownerUserId, f.fee, 'Bill generation fee' + (billNo ? ' — Bill No. ' + cleanText(String(billNo), 60) : ''), 'invoice');
     if (bal === null) {
         const have = await walletBalanceOf(ownerUserId);
         res.status(402).json({ error: 'Insufficient credit balance: the invoice fee is ₹' + f.fee + ' and your balance is ₹' + have + '. Please add credit to your wallet.', feeRequired: true, insufficientBalance: true, fee: f.fee, balance: have });
@@ -5035,6 +5062,57 @@ app.post('/api/material/wallet/request', requireActiveMaterialUser, asyncRoute(a
     if (Number(pend[0] && pend[0].n) >= 3) return res.status(429).json({ error: 'You already have pending top-up requests. Please wait for the Super Admin to respond.' });
     await dbq('INSERT INTO material_wallet_requests (owner_user_id, amount, note) VALUES (?,?,?)', [owner, amt, cleanText((req.body && req.body.note) || '', 255) || null]);
     res.json({ success: true });
+}));
+
+
+// ── 📒 Wallet LEDGER (full history): transaction ID · credit / debit · exact amount · timestamp · running balance ──
+//    Same data feeds the portal user's "Wallet Ledger" and the Super Admin "Invoice Wallet & Credit" history.
+function walletTxnShape(r) {
+    const type = String(r.type || '').toLowerCase() === 'credit' ? 'credit' : 'debit';
+    const ref = String(r.ref || '');
+    let category;
+    if (ref === 'invoice') category = 'bill';
+    else if (ref === 'refund') category = 'refund';
+    else if (ref === 'admin') category = type === 'credit' ? 'admin_credit' : 'admin_debit';
+    else category = type === 'credit' ? 'topup' : 'other_debit';
+    return {
+        id: r.id, txnId: 'WTX' + String(r.id).padStart(6, '0'),
+        userId: r.userId, userName: r.userName || '',
+        type, category, amount: Math.round(Number(r.amount) * 100) / 100,
+        balanceAfter: r.balanceAfter === null || r.balanceAfter === undefined ? null : Math.round(Number(r.balanceAfter) * 100) / 100,
+        note: r.note || '', ref, createdAt: r.createdAt
+    };
+}
+async function walletLedgerQuery(userId, from, to, limit) {
+    const where = [], params = [];
+    if (userId) { where.push('t.owner_user_id = ?'); params.push(String(userId)); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from || '')) { where.push('t.created_at >= ?'); params.push(from); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to || '')) { const d = new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); where.push('t.created_at < ?'); params.push(d.toISOString().slice(0, 10)); }
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 2000, 1), 5000);
+    const rows = await dbq('SELECT t.id, t.owner_user_id AS "userId", u.name AS "userName", t.type, t.amount, t.balance_after AS "balanceAfter", t.note, t.ref, t.created_at AS "createdAt" FROM material_wallet_txns t LEFT JOIN material_users u ON u.userid = t.owner_user_id' +
+        (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY t.id DESC LIMIT ' + lim, params);
+    const list = rows.map(walletTxnShape);
+    const summary = { count: list.length, credits: 0, debits: 0 };
+    list.forEach(function (r) { if (r.type === 'credit') summary.credits += r.amount; else summary.debits += r.amount; });
+    summary.credits = Math.round(summary.credits * 100) / 100; summary.debits = Math.round(summary.debits * 100) / 100;
+    return { rows: list, summary };
+}
+// Portal user: own ledger (Admin may pass ?ownerUserId=)
+app.get('/api/material/wallet/ledger', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const { owner } = invoiceOwnerFromReq(req);
+    if (!owner) return res.status(400).json({ error: 'ownerUserId is required.' });
+    const out = await walletLedgerQuery(owner, req.query.from, req.query.to, req.query.limit);
+    const u = (await dbq('SELECT userid AS "userId", name, mobile FROM material_users WHERE userid = ?', [owner]))[0] || { userId: owner, name: '', mobile: '' };
+    const f = await materialInvoiceFeeFor(owner);
+    res.json({ user: u, balance: await walletBalanceOf(owner), fee: f.fee, rows: out.rows, summary: out.summary });
+}));
+// Super Admin: one user's ledger (?userId=) or every user's (no userId)
+app.get('/api/admin/material/wallet-ledger', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const userId = cleanText(req.query.userId, 50);
+    const out = await walletLedgerQuery(userId, req.query.from, req.query.to, req.query.limit);
+    let user = null, balance = null;
+    if (userId) { user = (await dbq('SELECT userid AS "userId", name, mobile FROM material_users WHERE userid = ?', [userId]))[0] || { userId, name: '', mobile: '' }; balance = await walletBalanceOf(userId); }
+    res.json({ user, balance, rows: out.rows, summary: out.summary });
 }));
 
 // ── 💰 Wallet: Super Admin endpoints ──
@@ -5990,7 +6068,7 @@ app.post('/api/material/bills', requireActiveMaterialUser, asyncRoute(async (req
     if (!ownerUserId) return res.status(400).json({ error: 'ownerUserId is required.' });
     body.ownerUserId = ownerUserId;
     // 🔒 FEE GATE: ₹0 → instant save; fee > 0 → verified one-time payment required (checked on the server)
-    const gate = await enforceInvoiceFee(req, res, ownerUserId);
+    const gate = await enforceInvoiceFee(req, res, ownerUserId, body.billNo);
     if (!gate.ok) return;
     // 🆕 FIX: pehle yahan har save par HAMESHA naya row INSERT hota tha —
     // chahe wahi Bill No dobara save kiya jaaye. Frontend isi behavior ki
@@ -6083,7 +6161,7 @@ app.put('/api/material/bills/:id', requireActiveMaterialUser, (req, res) => {
         }
         // 🔒 EDIT => RE-PAYMENT: changes are NOT saved until the active fee is paid (₹0 → saved instantly)
         let gate;
-        try { gate = await enforceInvoiceFee(req, res, rows[0].owneruserid || ''); } catch (gErr) { return res.status(500).json({ error: 'Fee check failed: ' + gErr.message }); }
+        try { let _bn = newBody && newBody.billNo; if (!_bn) { try { _bn = JSON.parse(rows[0].data).billNo; } catch (e) {} } gate = await enforceInvoiceFee(req, res, rows[0].owneruserid || '', _bn); } catch (gErr) { return res.status(500).json({ error: 'Fee check failed: ' + gErr.message }); }
         if (!gate.ok) return;
         let merged = {};
         try { merged = JSON.parse(rows[0].data); } catch (e) {}
@@ -7126,16 +7204,13 @@ app.get('/api/health/deep', requireRole('admin'), async (req, res) => { // 🔒 
 let _agtQueue = Promise.resolve();
 function nextAgtId() {
     const run = _agtQueue.then(async function () {
-        let n = Number(await xBlobGet('agt_counter', 0)) || 0;
-        if (!n) {
-            const re = /^AGT(\d+)$/i;
-            const scan = function (list) { (Array.isArray(list) ? list : []).forEach(function (r) { const m = r && re.exec(String(r.trackingId || '')); if (m) n = Math.max(n, parseInt(m[1], 10)); }); };
-            scan(await xBlobGet('tracking_records', []));
-            scan(await xBlobGet('customer_pending_registrations', []));
-        }
-        n += 1;
-        await xBlobSet('agt_counter', n);
-        return 'AGT' + String(n).padStart(3, '0');
+        // ♻️ lowest vacant AGT number (gap-filling) across every list that carries an AGT tracking ID
+        const used = [];
+        const scan = function (list) { (Array.isArray(list) ? list : []).forEach(function (r) { if (r && r.trackingId) used.push(r.trackingId); }); };
+        scan(await xBlobGet('tracking_records', []));
+        scan(await xBlobGet('customer_pending_registrations', []));
+        scan(await xBlobGet('agent_pending_registrations', []));
+        return allocateVacantId('AGT', 'AGT', used);
     });
     _agtQueue = run.catch(function () {});
     return run;

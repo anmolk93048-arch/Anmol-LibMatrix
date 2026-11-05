@@ -759,8 +759,28 @@
   <div class="wl-right">
     <span class="wl-pill" id="walletPill" title="Prepaid credit balance — the invoice fee is deducted from this"><span class="wl-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a2 2 0 0 1 2 2v1.5"/><path d="M3 7.5V17a2 2 0 0 0 2 2h13.5a1.5 1.5 0 0 0 1.5-1.5V10a1.5 1.5 0 0 0-1.5-1.5H5.5A2.5 2.5 0 0 1 3 6"/><circle cx="16.5" cy="13.7" r="1.1" fill="currentColor" stroke="none"/></svg></span><span id="walletChip">Credit: …</span></span>
     <button type="button" class="wl-add" onclick="walletAddCredit()"><span class="plus">+</span> Add Credit</button>
+    <button type="button" class="wl-ghost" onclick="openWalletLedger()" title="Your recharges, bill fees and balance history">📒 Wallet Ledger</button>
     <button type="button" class="wl-ghost" onclick="openChangeMobileModal()">📱 Change Mobile Number</button>
     <button type="button" class="wl-ghost danger" onclick="logoutPortal()">🚪 Logout</button>
+  </div>
+</div>
+
+<!-- ============ WALLET LEDGER / TRANSACTION HISTORY ============ -->
+<style>
+  #walletLedgerModal .al-tbl th{background:#eef2f8!important;color:#0b2a5b!important}
+  #walletLedgerModal .al-f select option{color:#111;background:#fff}
+  @media (max-width:640px){#walletLedgerModal{padding:0!important}#walletLedgerModal>div{max-height:100vh!important;height:100%;border-radius:0!important}}
+</style>
+<div id="walletLedgerModal" class="no-print" role="dialog" aria-modal="true" aria-labelledby="wlg-title" style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(11,37,69,0.55);align-items:center;justify-content:center;padding:12px;" onclick="if(event.target===this)closeWalletLedger()">
+  <div style="background:#fff;color:#1a202c;width:100%;max-width:1000px;max-height:94vh;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,.4);">
+    <div style="background:var(--gov-navy,#0b2a5b);color:#fff;padding:12px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+      <div style="min-width:0">
+        <h3 id="wlg-title" style="font-size:15px;font-weight:800;margin:0">📒 Wallet Ledger &amp; Transaction History</h3>
+        <p id="wlg-sub" style="font-size:12px;color:#cfe0ff;margin:3px 0 0">Your credit recharges, bill-generation fees and remaining balance.</p>
+      </div>
+      <button type="button" onclick="closeWalletLedger()" aria-label="Close" style="background:none;border:0;color:#fff;font-size:24px;line-height:1;cursor:pointer">&times;</button>
+    </div>
+    <div id="wlg-body" style="padding:14px;overflow:auto;flex:1 1 auto"></div>
   </div>
 </div>
 
@@ -1056,9 +1076,17 @@
 <!-- ============ SAVED BILLS SIDEBAR ============ -->
 <div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40" onclick="toggleSidebar()"></div>
 <aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
-  <div class="bg-[var(--gov-navy)] text-white px-4 py-3 flex items-center justify-between sticky top-0">
-    <h2 class="font-bold text-sm">📂 Saved Bills</h2>
-    <button onclick="toggleSidebar()" class="text-white text-xl leading-none">&times;</button>
+  <div class="sticky top-0 z-10">
+    <div class="bg-[var(--gov-navy)] text-white px-4 py-3 flex items-center justify-between">
+      <h2 class="font-bold text-sm">📂 Saved Bills</h2>
+      <button onclick="toggleSidebar()" class="text-white text-xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="bg-white border-b border-gray-200 px-3 py-2">
+      <label for="savedSearch" class="sr-only">Search saved bills</label>
+      <input id="savedSearch" type="search" autocomplete="off" oninput="renderSidebar()" placeholder="🔍 Search Bill No., Date or Client name"
+             class="w-full border border-gray-300 rounded px-3 py-2 text-base sm:text-sm focus:outline-none focus:border-[var(--gov-blue)]">
+      <p id="savedSearchInfo" class="text-[11px] text-gray-500 mt-1 hidden"></p>
+    </div>
   </div>
   <button id="cloudResetBtn" type="button" onclick="BACK_RESET_NEW_BILL()" style="display:none;width:calc(100% - 24px);margin:10px 12px 0;padding:10px;background:#b45309;color:#fff;font-weight:800;font-size:13px;border-radius:6px;border:none;cursor:pointer">← Back</button>
   <div id="savedBillsList" class="p-3 space-y-2 text-sm"></div>
@@ -2506,27 +2534,51 @@ async function deleteBill(idx){
   }
 }
 
+/* Saved Bills search — matches Bill No., Bill Date (ISO, dd-mm-yyyy, dd/mm/yyyy), Client / Work name, Vendor name and saved date; updates as you type */
+function _sbNorm(v){ return String(v == null ? '' : v).toLowerCase().replace(/[\/.]/g, '-').replace(/\s+/g, ' ').trim(); }
+function _sbEsc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function _billMatches(b, q){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b.billDate || ''));
+  const dates = m ? [b.billDate, m[3] + '-' + m[2] + '-' + m[1], String(+m[3]) + '-' + String(+m[2]) + '-' + m[1]] : [b.billDate];
+  const saved = b.savedAt ? new Date(b.savedAt).toLocaleString('en-IN') : '';
+  const hay = _sbNorm([b.billNo, b.customerName, b.workName, b.businessName, b.vendorName].concat(dates, [saved]).join(' | '));
+  return q.split(' ').every(function(t){ return !t || hay.indexOf(t) >= 0; });
+}
 function renderSidebar(){
   const list = cloudBillsCache;
   const rb = document.getElementById('cloudResetBtn'); if(rb) rb.style.display = currentEditingBillId ? 'block' : 'none';
   document.getElementById('savedCount').textContent = list.length;
   const container = document.getElementById('savedBillsList');
+  const qEl = document.getElementById('savedSearch'), info = document.getElementById('savedSearchInfo');
+  const q = _sbNorm(qEl ? qEl.value : '');
 
   if(!cloudSyncOK){
     container.innerHTML = '<p class="text-amber-600 text-center text-xs pt-6 px-2">⚠️ Could not connect to the server.<br>Please check your internet connection.</p>';
+    if(info) info.classList.add('hidden');
     return;
   }
   if(list.length === 0){
     container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">No saved bills yet.</p>';
+    if(info) info.classList.add('hidden');
     return;
   }
-  container.innerHTML = list.map((b,i)=>{
+  // keep each bill's ORIGINAL index so Edit / Print / Delete still act on the right record while filtered
+  const shown = list.map(function(b,i){ return { b:b, i:i }; }).filter(function(x){ return !q || _billMatches(x.b, q); });
+  if(info){ info.classList.toggle('hidden', !q); info.textContent = shown.length + ' of ' + list.length + ' bills match'; }
+  if(shown.length === 0){
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6 px-2">No saved bill matches “' + _sbEsc(qEl ? qEl.value.trim() : '') + '”.<br>Try a Bill No., a date (e.g. 05-11-2026) or a client name.</p>';
+    return;
+  }
+  container.innerHTML = shown.map(function(x){
+    const b = x.b, i = x.i;
     const dt = b.savedAt ? new Date(b.savedAt).toLocaleString('en-IN') : '';
+    const client = b.customerName || b.workName || '';
     return `
       <div class="border border-gray-300 rounded p-2.5 hover:bg-gray-50">
-        <p class="font-semibold text-[var(--gov-navy)] text-[13px]">${b.businessName || '(No vendor name)'}</p>
-        <p class="text-[11px] text-gray-600">Bill No: ${b.billNo || '—'} &nbsp;|&nbsp; Date: ${b.billDate || '—'}</p>
-        <p class="text-[10px] text-gray-400">☁️ Saved: ${dt}</p>
+        <p class="font-semibold text-[var(--gov-navy)] text-[13px]">${_sbEsc(b.businessName) || '(No vendor name)'}</p>
+        ${client ? `<p class="text-[11px] text-gray-700">Client / Work: ${_sbEsc(client)}</p>` : ''}
+        <p class="text-[11px] text-gray-600">Bill No: ${_sbEsc(b.billNo) || '—'} &nbsp;|&nbsp; Date: ${_sbEsc(b.billDate) || '—'}</p>
+        <p class="text-[10px] text-gray-400">☁️ Saved: ${_sbEsc(dt)}</p>
         <div class="flex gap-2 mt-1.5">
           <button onclick="loadBill(${i})" class="flex-1 text-[11px] font-semibold px-2 py-1 rounded bg-[var(--gov-blue)] text-white hover:opacity-90">✏️ Edit</button>
           <button onclick="printSavedBill(${i})" title="Print this bill" class="text-[11px] font-semibold px-2 py-1 rounded border border-blue-500 text-blue-700 hover:bg-blue-50">🖨️ Print</button>
@@ -2548,8 +2600,10 @@ function printSavedBill(idx){
 }
 
 function toggleSidebar(){
-  document.getElementById('savedSidebar').classList.toggle('translate-x-full');
+  const sb = document.getElementById('savedSidebar');
+  sb.classList.toggle('translate-x-full');
   document.getElementById('sidebarOverlay').classList.toggle('hidden');
+  if(!sb.classList.contains('translate-x-full') && window.innerWidth >= 640){ setTimeout(function(){ const i = document.getElementById('savedSearch'); if(i) i.focus(); }, 320); }
 }
 
 /* init — डिफ़ॉल्ट रूप से सिर्फ़ 1 रो; बाकी रो सिर्फ़ '+ ADD MATERIAL ROW' बटन दबाने पर जुड़ेंगी */
@@ -3521,6 +3575,305 @@ document.addEventListener('dragstart', function(e){ e.preventDefault(); });
 })();
 </script>
 
+<script id="anmol-ledger-lib">
+/* ═══ Anmol LibMatrix — Wallet Ledger component (shared by the Invoice Portal and the Super Admin dashboard) ═══
+   • mount(el, cfg) draws filters + summary + ledger table + "Print History" / "Download PDF" buttons.
+   • Print opens a clean, print-only document; PDF is generated in the browser (no external library, works offline). */
+(function () {
+  if (window.AnmolLedger) return;
+
+  var CAT = { topup: 'Top-up', bill: 'Bill fee', refund: 'Refund', admin_credit: 'Admin credit', admin_debit: 'Admin deduction', other_debit: 'Debit' };
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function num(v) { var n = Number(v); return isFinite(n) ? Math.round(n * 100) / 100 : 0; }
+  function money(v) { return num(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function rs(v) { return '₹' + money(v); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function toDate(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? null : d; }
+  function fmtDT(iso) {
+    var d = toDate(iso); if (!d) return '—';
+    var h = d.getHours(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad(h) + ':' + pad(d.getMinutes()) + ' ' + ap;
+  }
+  function dayKey(iso) { var d = toDate(iso); return d ? d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) : ''; }
+  function label(r) { return CAT[r.category] || (r.type === 'credit' ? 'Credit' : 'Debit'); }
+
+  /* ───────── filtering ───────── */
+  function filterRows(rows, f) {
+    f = f || {};
+    var q = String(f.q || '').trim().toLowerCase();
+    return (rows || []).filter(function (r) {
+      if (f.type === 'credit' && r.type !== 'credit') return false;
+      if (f.type === 'debit' && r.type !== 'debit') return false;
+      if (f.type === 'topup' && r.category !== 'topup') return false;
+      if (f.type === 'bill' && r.category !== 'bill') return false;
+      if (f.type === 'refund' && r.category !== 'refund') return false;
+      if (f.type === 'admin' && r.category !== 'admin_credit' && r.category !== 'admin_debit') return false;
+      var k = dayKey(r.createdAt);
+      if (f.from && (!k || k < f.from)) return false;
+      if (f.to && (!k || k > f.to)) return false;
+      if (q) {
+        var hay = [r.txnId, r.note, r.ref, r.userId, r.userName, label(r), money(r.amount), fmtDT(r.createdAt), k].join(' ').toLowerCase();
+        if (hay.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+  }
+  function totals(rows) {
+    var t = { credits: 0, debits: 0, count: rows.length };
+    rows.forEach(function (r) { if (r.type === 'credit') t.credits += num(r.amount); else t.debits += num(r.amount); });
+    t.credits = num(t.credits); t.debits = num(t.debits); return t;
+  }
+
+  /* ───────── on-screen table ───────── */
+  function tableHTML(rows, showUser) {
+    var cols = showUser ? 8 : 7;
+    var body = rows.map(function (r) {
+      var cr = r.type === 'credit';
+      return '<tr><td class="mono">' + esc(r.txnId) + '</td><td class="mono">' + esc(fmtDT(r.createdAt)) + '</td>' +
+        (showUser ? '<td><b>' + esc(r.userName || '—') + '</b><div class="mono">' + esc(r.userId) + '</div></td>' : '') +
+        '<td>' + esc(label(r)) + '</td><td>' + esc(r.note || '—') + '</td>' +
+        '<td class="r al-cr">' + (cr ? '+ ' + money(r.amount) : '') + '</td><td class="r al-dr">' + (cr ? '' : '− ' + money(r.amount)) + '</td>' +
+        '<td class="r"><b>' + (r.balanceAfter == null ? '—' : money(r.balanceAfter)) + '</b></td></tr>';
+    }).join('');
+    return '<table class="al-tbl"><thead><tr><th>Txn ID</th><th>Date &amp; Time</th>' + (showUser ? '<th>User</th>' : '') +
+      '<th>Type</th><th>Description</th><th class="r">Credit (₹)</th><th class="r">Debit (₹)</th><th class="r">Balance (₹)</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="' + cols + '" class="al-empty">No transactions match the selected filters.</td></tr>') + '</tbody></table>';
+  }
+
+  /* ───────── print ───────── */
+  function printHTML(o) {
+    var t = totals(o.rows);
+    var meta = (o.meta || []).map(function (m) { return '<div><span>' + esc(m[0]) + '</span> <b>' + esc(m[1]) + '</b></div>'; }).join('');
+    return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(o.title) + '</title><style>' +
+      '*{box-sizing:border-box}body{font-family:"Segoe UI",Roboto,Arial,sans-serif;color:#111;margin:0;padding:18px;font-size:12px}' +
+      '.brand{font-size:20px;font-weight:800;color:#0b2a5b}h1{font-size:15px;margin:2px 0 8px}' +
+      '.meta{display:flex;flex-wrap:wrap;gap:4px 22px;margin-bottom:8px;color:#333}.meta span{color:#666}' +
+      '.sum{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.sum div{border:1px solid #bbb;border-radius:6px;padding:6px 12px}.sum small{display:block;color:#666}' +
+      'table{width:100%;border-collapse:collapse}th{background:#e9eef7;color:#0b2a5b;text-align:left}th,td{border:1px solid #c9ced8;padding:5px 7px;vertical-align:top}' +
+      '.r{text-align:right;white-space:nowrap}.cr{color:#15803d}.dr{color:#b91c1c}.mono{font-family:Consolas,monospace;font-size:11px;white-space:nowrap}' +
+      'tr{page-break-inside:avoid}thead{display:table-header-group}.foot{margin-top:12px;color:#666;font-size:10.5px}' +
+      '@page{size:A4 ' + (o.showUser ? 'landscape' : 'portrait') + ';margin:10mm}</style></head><body>' +
+      '<div class="brand">Anmol LibMatrix</div><h1>' + esc(o.title) + '</h1><div class="meta">' + meta + '</div>' +
+      '<div class="sum"><div><small>Total credits</small><b class="cr">' + rs(t.credits) + '</b></div><div><small>Total debits</small><b class="dr">' + rs(t.debits) + '</b></div>' +
+      '<div><small>Transactions</small><b>' + t.count + '</b></div>' + (o.balance == null ? '' : '<div><small>Current balance</small><b>' + rs(o.balance) + '</b></div>') + '</div>' +
+      tableHTML(o.rows, o.showUser).replace(/class="al-tbl"/, '').replace(/class="mono"/g, 'class="mono"').replace(/al-cr/g, 'cr').replace(/al-dr/g, 'dr').replace(/class="al-empty"/g, 'style="text-align:center;padding:14px"') +
+      '<div class="foot">Generated on ' + esc(fmtDT(new Date().toISOString())) + ' · Anmol LibMatrix · This is a system-generated statement.</div></body></html>';
+  }
+  function printLedger(o) {
+    var f = document.createElement('iframe');
+    f.setAttribute('aria-hidden', 'true');
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(f);
+    var d = f.contentWindow.document; d.open(); d.write(printHTML(o)); d.close();
+    var go = function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { alert('Unable to open the print dialog.'); } setTimeout(function () { try { f.remove(); } catch (e) {} }, 60000); };
+    setTimeout(go, 250);
+  }
+
+  /* ───────── PDF (hand-built, Helvetica, no dependencies) ───────── */
+  var HW = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584];
+  function ascii(s) {
+    return String(s == null ? '' : s).replace(/\u20b9/g, 'Rs.').replace(/[\u2013\u2014\u2212]/g, '-').replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\u2026/g, '...').replace(/[\s\u00a0]+/g, ' ')
+      .replace(/[^\x20-\x7e]/g, '?').replace(/\?{2,}/g, '?');
+  }
+  function tw(s, size) { var w = 0; for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); w += HW[c - 32] || 556; } return w * size / 1000; }
+  function wrap(s, maxW, size) {
+    s = ascii(s); var out = [], line = '';
+    s.split(' ').forEach(function (word) {
+      while (tw(word, size) > maxW && word.length > 1) {         // break an over-long token
+        var k = word.length; while (k > 1 && tw(word.slice(0, k), size) > maxW) k--;
+        if (line) { out.push(line); line = ''; }
+        out.push(word.slice(0, k)); word = word.slice(k);
+      }
+      var t = line ? line + ' ' + word : word;
+      if (tw(t, size) <= maxW) line = t; else { if (line) out.push(line); line = word; }
+    });
+    if (line || !out.length) out.push(line);
+    return out;
+  }
+  function pe(s) { return ascii(s).replace(/([\\()])/g, '\\$1'); }
+  function buildPdf(o) {
+    var land = !!o.showUser, PW = land ? 842 : 595, PH = land ? 595 : 842, M = 34, UW = PW - 2 * M;
+    var cols = [{ t: 'Txn ID', w: 58 }, { t: 'Date & Time', w: 92 }];
+    if (o.showUser) cols.push({ t: 'User', w: 110 });
+    cols.push({ t: 'Type', w: 56 }, { t: 'Description', w: 0 }, { t: 'Credit (Rs.)', w: 58, r: 1 }, { t: 'Debit (Rs.)', w: 58, r: 1 }, { t: 'Balance (Rs.)', w: 62, r: 1 });
+    var fixed = cols.reduce(function (a, c) { return a + c.w; }, 0);
+    cols.forEach(function (c) { if (!c.w) c.w = UW - fixed; });
+    var x = M; cols.forEach(function (c) { c.x = x; x += c.w; });
+
+    var pages = [], cur = null, y = 0;
+    function newPage() { cur = []; pages.push(cur); y = PH - M; }
+    function txt(s, tx, ty, size, bold, rgb) { cur.push('BT /F' + (bold ? 2 : 1) + ' ' + size + ' Tf ' + (rgb || '0 0 0') + ' rg ' + tx.toFixed(2) + ' ' + ty.toFixed(2) + ' Td (' + pe(s) + ') Tj ET'); }
+    function rect(rx, ry, w, h, rgb) { cur.push(rgb + ' rg ' + rx.toFixed(2) + ' ' + ry.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2) + ' re f'); }
+    function hline(ty, rgb) { cur.push('0.4 w ' + rgb + ' RG ' + M + ' ' + ty.toFixed(2) + ' m ' + (PW - M) + ' ' + ty.toFixed(2) + ' l S'); }
+    function tableHead() {
+      rect(M, y - 16, UW, 16, '0.91 0.93 0.97');
+      cols.forEach(function (c) { var s = ascii(c.t); txt(s, c.r ? c.x + c.w - 4 - tw(s, 8) : c.x + 4, y - 11.5, 8, true, '0.04 0.16 0.36'); });
+      y -= 16;
+    }
+    newPage();
+    txt('Anmol LibMatrix', M, y - 14, 17, true, '0.04 0.16 0.36'); y -= 24;
+    txt(o.title, M, y - 10, 12, true); y -= 18;
+    (o.meta || []).forEach(function (m) { txt(m[0] + ': ' + m[1], M, y - 8, 9, false, '0.2 0.2 0.2'); y -= 12; });
+    var t = totals(o.rows);
+    y -= 4;
+    var sum = 'Total credits: Rs. ' + money(t.credits) + '  |  Total debits: Rs. ' + money(t.debits) + '  |  Transactions: ' + t.count + (o.balance == null ? '' : '  |  Current balance: Rs. ' + money(o.balance));
+    txt(sum, M, y - 9, 9.5, true); y -= 20;
+    tableHead();
+    var minY = M + 22;
+    o.rows.forEach(function (r) {
+      var cr = r.type === 'credit';
+      var cells = { 'Txn ID': r.txnId, 'Date & Time': fmtDT(r.createdAt), 'User': (/[A-Za-z0-9]/.test(ascii(r.userName)) ? ascii(r.userName) + ' (' + r.userId + ')' : String(r.userId || '')), 'Type': label(r), 'Description': r.note || '-',
+        'Credit (Rs.)': cr ? '+ ' + money(r.amount) : '', 'Debit (Rs.)': cr ? '' : '- ' + money(r.amount), 'Balance (Rs.)': r.balanceAfter == null ? '-' : money(r.balanceAfter) };
+      var wrapped = cols.map(function (c) { return wrap(cells[c.t], c.w - 8, 8); });
+      var lines = wrapped.reduce(function (a, w) { return Math.max(a, w.length); }, 1);
+      var h = lines * 10.5 + 6;
+      if (y - h < minY) { newPage(); tableHead(); }
+      cols.forEach(function (c, i) {
+        var color = c.t === 'Credit (Rs.)' ? '0.08 0.5 0.24' : (c.t === 'Debit (Rs.)' ? '0.72 0.11 0.11' : '0 0 0');
+        wrapped[i].forEach(function (ln, k) { txt(ln, c.r ? c.x + c.w - 4 - tw(ln, 8) : c.x + 4, y - 10 - k * 10.5, 8, c.t === 'Balance (Rs.)', color); });
+      });
+      y -= h; hline(y, '0.8 0.82 0.86');
+    });
+    if (!o.rows.length) txt('No transactions match the selected filters.', M + 4, y - 14, 9, false, '0.4 0.4 0.4');
+
+    var gen = 'Generated on ' + fmtDT(new Date().toISOString()) + '  |  Anmol LibMatrix  |  System-generated statement';
+    var total = pages.length;
+    pages.forEach(function (p, i) { cur = p; txt(gen, M, M - 10, 7.5, false, '0.4 0.4 0.4'); var s = 'Page ' + (i + 1) + ' of ' + total; txt(s, PW - M - tw(s, 7.5), M - 10, 7.5, false, '0.4 0.4 0.4'); });
+
+    var objs = [];
+    objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+    objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+    var kids = [];
+    pages.forEach(function (p, i) {
+      var cn = 5 + 2 * i, pn = 6 + 2 * i, stream = p.join('\n');
+      objs[cn] = '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream';
+      objs[pn] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>';
+      kids.push(pn + ' 0 R');
+    });
+    objs[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + pages.length + ' >>';
+    var out = '%PDF-1.4\n', offs = [];
+    for (var n = 1; n < objs.length; n++) { offs[n] = out.length; out += n + ' 0 obj\n' + objs[n] + '\nendobj\n'; }
+    var xref = out.length;
+    out += 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
+    for (var m = 1; m < objs.length; m++) out += String(offs[m]).padStart(10, '0') + ' 00000 n \n';
+    out += 'trailer\n<< /Size ' + objs.length + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+    var bytes = new Uint8Array(out.length); for (var i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+    return bytes;
+  }
+  function downloadPdf(o, filename) {
+    var bytes = buildPdf(o), blob = new Blob([bytes], { type: 'application/pdf' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename || 'Wallet_Ledger.pdf';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+
+  /* ───────── component ───────── */
+  function injectCss() {
+    if (document.getElementById('al-css')) return;
+    var s = document.createElement('style'); s.id = 'al-css';
+    s.textContent = '.al-wrap{font-size:13px;color:inherit}.al-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:10px}' +
+      '.al-f{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 140px}.al-f.grow{flex:2 1 210px}.al-f label{font-size:11px;font-weight:700;opacity:.75}' +
+      '.al-f input,.al-f select{width:100%;min-width:0;max-width:100%;padding:7px 9px;border:1px solid rgba(128,128,128,.45);border-radius:8px;font:inherit;background:transparent;color:inherit}' +
+      '.al-f select option{color:#111;background:#fff}' +
+      '.al-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin:10px 0}.al-chip{border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:8px 10px}' +
+      '.al-chip small{display:block;font-size:10.5px;opacity:.7;font-weight:700}.al-chip b{font-size:15px}.al-cr{color:#15803d}.al-dr{color:#b91c1c}' +
+      '.al-scroll{overflow:auto;border:1px solid rgba(128,128,128,.35);border-radius:10px;max-height:46vh;-webkit-overflow-scrolling:touch}' +
+      '.al-tbl{width:100%;border-collapse:collapse;min-width:680px;font-size:12.5px}.al-tbl th{position:sticky;top:0;z-index:1;background:#eef2f8;color:#0b2a5b;text-align:left;font-size:11.5px}' +
+      'html[data-theme="dark"] .al-tbl th{background:#26314d;color:#dbe6ff}' +
+      '.al-tbl th,.al-tbl td{padding:7px 9px;border-bottom:1px solid rgba(128,128,128,.22);vertical-align:top;overflow-wrap:anywhere}.al-tbl .r{text-align:right;white-space:nowrap}' +
+      '.al-tbl .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:nowrap}.al-empty{text-align:center;padding:24px!important;opacity:.7}' +
+      '.al-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;justify-content:flex-end}.al-btn{padding:8px 14px;border-radius:8px;border:1px solid #0b2a5b;background:#fff;color:#0b2a5b;font:inherit;font-weight:700;cursor:pointer}' +
+      '.al-btn.pri{background:#0b2a5b;color:#fff}.al-btn:disabled{opacity:.5;cursor:not-allowed}.al-note{font-size:11px;opacity:.7;margin-top:6px}';
+    document.head.appendChild(s);
+  }
+  function mount(el, cfg) {
+    injectCss();
+    var st = { rows: [], ctx: {} };
+    el.innerHTML = '<div class="al-wrap">' +
+      '<div class="al-bar">' +
+      '<div class="al-f"><label>From date</label><input type="date" data-k="from"></div>' +
+      '<div class="al-f"><label>To date</label><input type="date" data-k="to"></div>' +
+      '<div class="al-f"><label>Type</label><select data-k="type"><option value="all">All transactions</option><option value="credit">Credits only</option><option value="debit">Debits only</option>' +
+      '<option value="topup">Top-ups / recharges</option><option value="bill">Bill generation fees</option><option value="admin">Admin adjustments</option><option value="refund">Refunds</option></select></div>' +
+      '<div class="al-f grow"><label>Search</label><input type="search" data-k="q" placeholder="Txn ID, description, bill no., amount, date…"></div>' +
+      '<div class="al-f" style="flex:0 0 auto;min-width:0"><label>&nbsp;</label><button type="button" class="al-btn" data-a="reset">Reset</button></div></div>' +
+      '<div class="al-sum" data-r="sum"></div><div class="al-scroll" data-r="tbl"></div>' +
+      '<div class="al-actions"><button type="button" class="al-btn" data-a="print">🖨️ Print History</button><button type="button" class="al-btn pri" data-a="pdf">⬇️ Download PDF</button></div>' +
+      '<div class="al-note" data-r="note"></div></div>';
+    var q = function (s) { return el.querySelector(s); };
+    function filters() { return { from: q('[data-k=from]').value, to: q('[data-k=to]').value, type: q('[data-k=type]').value, q: q('[data-k=q]').value }; }
+    function view() { return filterRows(st.rows, filters()); }
+    function render() {
+      var rows = view(), t = totals(rows);
+      q('[data-r=sum]').innerHTML =
+        '<div class="al-chip"><small>Total credits</small><b class="al-cr">' + rs(t.credits) + '</b></div>' +
+        '<div class="al-chip"><small>Total debits</small><b class="al-dr">' + rs(t.debits) + '</b></div>' +
+        '<div class="al-chip"><small>Transactions</small><b>' + t.count + '</b></div>' +
+        (st.ctx.balance == null ? '' : '<div class="al-chip"><small>Current balance</small><b>' + rs(st.ctx.balance) + '</b></div>');
+      q('[data-r=tbl]').innerHTML = tableHTML(rows, cfg.showUser);
+      q('[data-a=print]').disabled = q('[data-a=pdf]').disabled = false;
+      q('[data-r=note]').textContent = rows.length + ' of ' + st.rows.length + ' transactions shown. Print / PDF include only the rows currently shown.';
+    }
+    function docOpts() {
+      var f = filters(), meta = (cfg.getMeta ? cfg.getMeta(st.ctx) : []).slice();
+      var per = (f.from || f.to) ? ((f.from || 'start') + ' to ' + (f.to || 'today')) : 'All dates';
+      meta.push(['Period', per]);
+      var opt = q('[data-k=type]'); if (f.type !== 'all') meta.push(['Type', opt.options[opt.selectedIndex].text]);
+      if (f.q.trim()) meta.push(['Search', f.q.trim()]);
+      return { title: cfg.title || 'Wallet Transaction History', meta: meta, rows: view(), balance: st.ctx.balance, showUser: !!cfg.showUser };
+    }
+    if (el.__alH) { el.removeEventListener('input', el.__alH.i); el.removeEventListener('change', el.__alH.i); el.removeEventListener('click', el.__alH.c); }   /* re-mounting the same container never doubles the handlers */
+    var onInput = function (e) { if (e.target.matches('[data-k]')) render(); };
+    var onClick = function (e) {
+      var b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.getAttribute('data-a') === 'reset') { ['from', 'to', 'q'].forEach(function (k) { q('[data-k=' + k + ']').value = ''; }); q('[data-k=type]').value = 'all'; render(); }
+      if (b.getAttribute('data-a') === 'print') printLedger(docOpts());
+      if (b.getAttribute('data-a') === 'pdf') { var d = new Date(); downloadPdf(docOpts(), (cfg.fileBase || 'Wallet_Ledger') + '_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.pdf'); }
+    };
+    el.addEventListener('input', onInput); el.addEventListener('change', onInput); el.addEventListener('click', onClick);
+    el.__alH = { i: onInput, c: onClick };
+    return {
+      setData: function (rows, ctx) { st.rows = rows || []; st.ctx = ctx || {}; render(); },
+      setLoading: function (msg) { q('[data-r=tbl]').innerHTML = '<div class="al-empty" style="padding:24px;text-align:center;opacity:.7">' + esc(msg || 'Loading…') + '</div>'; q('[data-r=sum]').innerHTML = ''; },
+      setError: function (msg) { q('[data-r=tbl]').innerHTML = '<div class="al-empty" style="padding:24px;text-align:center;color:#b91c1c">' + esc(msg) + '</div>'; q('[data-r=sum]').innerHTML = ''; },
+      setFilter: function (k, v) { var i = q('[data-k=' + k + ']'); if (i) { i.value = v; render(); } },
+      render: render
+    };
+  }
+  window.AnmolLedger = { mount: mount, filterRows: filterRows, totals: totals, buildPdf: buildPdf, printHTML: printHTML, fmtDT: fmtDT };
+})();
+
+</script>
+<script id="wallet-ledger-ui">
+/* ---------------- 📒 Wallet Ledger (user) ---------------- */
+let _wlgCtl = null;
+async function openWalletLedger(){
+  const m = document.getElementById('walletLedgerModal'); if(!m) return;
+  m.style.display = 'flex';
+  if(!_wlgCtl){
+    _wlgCtl = AnmolLedger.mount(document.getElementById('wlg-body'), {
+      showUser:false, title:'Wallet Transaction History', fileBase:'Wallet_Ledger',
+      getMeta:function(c){
+        const u = c.user || {}, out = [['Name', u.name || (loggedInUser && loggedInUser.name) || '—'], ['User ID', u.userId || (loggedInUser && loggedInUser.userId) || '—']];
+        if(u.mobile) out.push(['Mobile', u.mobile]);
+        if(c.fee != null) out.push(['Fee per bill', 'Rs. ' + Number(c.fee).toFixed(2)]);
+        return out;
+      }
+    });
+  }
+  _wlgCtl.setLoading('Loading your ledger…');
+  try{
+    const d = await API.get('/material/wallet/ledger?limit=5000&_=' + Date.now());
+    _wlgCtl.setData(d.rows || [], { balance:d.balance, user:d.user, fee:d.fee });
+    walletBalance = Number(d.balance) || 0; updateWalletChip();
+    const sub = document.getElementById('wlg-sub');
+    if(sub) sub.textContent = 'Remaining balance ' + '₹' + Number(d.balance || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) + (d.fee > 0 ? '  ·  Fee per bill ₹' + Number(d.fee).toLocaleString('en-IN') : '');
+  }catch(e){ _wlgCtl.setError('Unable to load the ledger: ' + (e && e.message || e)); }
+}
+function closeWalletLedger(){ const m = document.getElementById('walletLedgerModal'); if(m) m.style.display = 'none'; }
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const m = document.getElementById('walletLedgerModal'); if(m && m.style.display !== 'none') closeWalletLedger(); } });
+</script>
 <script src="portal-shell.js"></script>
 <script src="gov-shell.js"></script>
 </body>
