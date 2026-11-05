@@ -700,6 +700,19 @@ function SHDL_OFFLINE_READ_ALIAS(path) {
   if (path === '/admin-entities/agent_logins' && typeof USERS !== 'undefined' && Array.isArray(USERS)) return USERS.slice();
   return null;
 }
+/* ♻️ VACANT-ID RECYCLING / SEQUENTIAL GAP-FILLING (same rule as server.js allocateVacantId):
+   next ID = LOWEST positive number not in use (1,2,4 -> 3 ; 2,3 -> 1 ; 1,2,3 -> 4). */
+function LIB_ID_SET(prefix, ids){
+  var set = {}, re = new RegExp('^' + String(prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)$', 'i');
+  (ids || []).forEach(function(v){ var m = re.exec(String(v == null ? '' : v).trim()); if (m) set[parseInt(m[1], 10)] = 1; });
+  return set;
+}
+function LIB_PICK_VACANT(prefix, set, pad){
+  var n = 1; while (set[n]) n++;
+  set[n] = 1;                                   /* mark used so several IDs handed out in one pass never repeat */
+  return prefix + String(n).padStart(pad || 3, '0');
+}
+function LIB_NEXT_VACANT(prefix, ids, pad){ return LIB_PICK_VACANT(prefix, LIB_ID_SET(prefix, ids), pad); }
 function SHDL_OFFLINE_DEFAULT(path) {
   if (/^\/(admin-entities\/(agents|staff|students|agent_logins)|hr\/registrations|hr\/employees|hr\/salary-slips|hrms-salary\/claims|agent\/payout-requests|wallet\/(my-direct-payments|my-salary-payments|withdrawals\/mine|salary-claims)|notifications|blob\/(members|agent_plans|mem_plans|agent_payments|pending_staff|selfies|attendance_locations|student_photos|hrms_attendance|hrms_leaves|hrms_salary_claims|hrms_salary_slips|hrms_employees|salary_claims|att_records|fee_records))$/.test(path)) return [];
   if (path === '/wallet/me') return { approved_balance: 0, pending_balance: 0, total_earned: 0 };
@@ -707,12 +720,12 @@ function SHDL_OFFLINE_DEFAULT(path) {
   if (path === '/blob/razorpay_config') return {};
   if (path === '/blob/agent_plans' || path === '/blob/mem_plans') return [];
   if (path === '/students/next-id') {
-    var max = 0;
+    var _ids = [];
     try {
       var st = SHDL_OFFLINE_PARSE(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students'), []) || [];
-      st.forEach(function(x){ var m = String((x && (x.id || x.studentId)) || '').match(/SHL-(\d+)/i); if (m) max = Math.max(max, Number(m[1]) || 0); });
+      st.forEach(function(x){ _ids.push((x && (x.id || x.studentId)) || ''); });
     } catch (e) {}
-    return { nextId: 'SHL-' + String(max + 1).padStart(3, '0') };
+    return { nextId: LIB_NEXT_VACANT('SHL-', _ids) };
   }
   return null;
 }
@@ -4427,7 +4440,7 @@ function LOAD_ADMIN_STUDENTS() {
 function AUTO_SAVE_STUDENTS() {
   var rows = document.querySelectorAll('#stb tr[data-b]');
   var students = [];
-  var counter = 1;
+  var _usedShl = LIB_ID_SET('SHL-', Array.prototype.map.call(rows, function(x){ return x.getAttribute('data-stu-id'); }));
   rows.forEach(function(r) {
     if(r.id === 'stb-e' || r.id === 'stb-empty') return;
     var nameEl = r.querySelector('strong');
@@ -4454,10 +4467,9 @@ function AUTO_SAVE_STUDENTS() {
     // Get or assign SHL ID
     var id = r.getAttribute('data-stu-id');
     if(!id || id.trim() === '') {
-      id = 'SHL-' + String(counter).padStart(3, '0');
+      id = LIB_PICK_VACANT('SHL-', _usedShl);   /* ♻️ lowest vacant SHL number */
       r.setAttribute('data-stu-id', id);
     }
-    counter++;
     var _rec = {
       id: id, name: name, cls: cls, batch: String(batch),
       mobile: mobile, seat: seat, status: 'active',
@@ -4510,20 +4522,13 @@ function GEN_SHL_ID(cb) {
 // na ho, bas is rare case mein duplicate-ID ka thoda risk rehta hai.
 function GEN_SHL_ID_LOCAL_FALLBACK() {
   var rows = document.querySelectorAll('#stb tr[data-stu-id]');
-  var maxNum = 0;
-  rows.forEach(function(r) {
-    var sid = r.getAttribute('data-stu-id') || '';
-    var match = sid.match(/SHL-(\d+)/i);
-    if(match) { var n = parseInt(match[1]); if(n > maxNum) maxNum = n; }
-  });
+  var ids = [];
+  rows.forEach(function(r) { ids.push(r.getAttribute('data-stu-id') || ''); });
   try {
     var saved = JSON.parse(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students') || '[]');
-    saved.forEach(function(s) {
-      if(s.id) { var m = s.id.match(/SHL-(\d+)/i); if(m) { var n=parseInt(m[1]); if(n>maxNum) maxNum=n; } }
-    });
+    saved.forEach(function(s) { if(s && s.id) ids.push(s.id); });
   } catch(e){}
-  maxNum++;
-  return 'SHL-' + String(maxNum).padStart(3, '0');
+  return LIB_NEXT_VACANT('SHL-', ids);   /* ♻️ lowest vacant SHL number */
 }
 
 // 🪪 Global Identity Number check (blocks the same Aadhaar/ID being registered under two agents/libraries)
@@ -5249,18 +5254,10 @@ function RESTORE_PENDING_STAFF_ROWS(){
   }, 12000);
 })();
 function GEN_NEXT_EMP_ID(){
-  var max=0;
-  document.querySelectorAll("#stftb tr[data-empid]").forEach(function(row){
-    var v=row.getAttribute("data-empid")||"";
-    var m=v.match(/(\d+)$/);
-    if(m){ var num=parseInt(m[1],10); if(num>max) max=num; }
-  });
-  (window.PENDING_STAFF||[]).forEach(function(p){
-    var m=(p.empid||"").match(/(\d+)$/);
-    if(m){ var num=parseInt(m[1],10); if(num>max) max=num; }
-  });
-  var next=max+1;
-  return "EMP"+String(next).padStart(3,"0");
+  var ids=[];
+  document.querySelectorAll("#stftb tr[data-empid]").forEach(function(row){ ids.push(row.getAttribute("data-empid")||""); });
+  (window.PENDING_STAFF||[]).forEach(function(p){ ids.push((p&&p.empid)||""); });
+  return LIB_NEXT_VACANT("EMP", ids);   /* ♻️ lowest vacant EMP number */
 }
 function ADD_STF_CORE(){
   var n=document.getElementById("sfn").value.trim();
@@ -7882,7 +7879,7 @@ function SYNC_STU_TO_MOBILE() {
   var rows = document.querySelectorAll('#stb tr[data-b]');
   if(rows.length === 0) { alert('No students found.'); return; }
   var students = [];
-  var counter = 1;
+  var _usedShl = LIB_ID_SET('SHL-', Array.prototype.map.call(rows, function(x){ return x.getAttribute('data-stu-id'); }));
   rows.forEach(function(r) {
     var nameEl = r.querySelector('strong');
     var tds = r.querySelectorAll('td');
@@ -7897,10 +7894,9 @@ function SYNC_STU_TO_MOBILE() {
     // Use existing SHL ID if present, else assign new one
     var id = r.getAttribute('data-stu-id');
     if(!id || id.trim() === '') {
-      id = 'SHL-' + String(counter).padStart(3, '0');
+      id = LIB_PICK_VACANT('SHL-', _usedShl);   /* ♻️ lowest vacant SHL number */
       r.setAttribute('data-stu-id', id);
     }
-    counter++;
     // Get expiry date from data-exp attribute
     var expiry = r.getAttribute('data-exp') || '';
     // Determine status from expiry
@@ -9883,12 +9879,7 @@ function HRMS_SAVE_REG_EDIT(){
 // do employee record ya duplicate approval nahi banega, aur baaki sabhi pending
 // registrations bilkul untouched rehte hain (poori list kabhi overwrite nahi hoti).
 function _genNextHrmsEmpId(){
-  var maxN = 0;
-  (HRMS_EMPLOYEES||[]).forEach(function(e){
-    var m = /^EMP(\d+)$/i.exec(String(e.empId||'').trim());
-    if (m) maxN = Math.max(maxN, parseInt(m[1],10));
-  });
-  return 'EMP' + String(maxN+1).padStart(3,'0');
+  return LIB_NEXT_VACANT('EMP', (HRMS_EMPLOYEES||[]).map(function(e){ return e && e.empId; }));   /* ♻️ lowest vacant EMP number */
 }
 function HRMS_APPROVE_REG(id){
   var r = (HRMS_PENDING_REGS||[]).find(function(x){ return x.id===id; });
