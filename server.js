@@ -1645,7 +1645,7 @@ function insertMaterialUserWithRetry(buildParams, callback, attemptsLeft) {
 function genMuPassword() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let pwd = '';
-    for (let i = 0; i < 6; i++) pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (let i = 0; i < 6; i++) pwd += chars.charAt(crypto.randomInt(chars.length));   // 🔒 CSPRNG — this password is sent over WhatsApp
     return pwd;
 }
 
@@ -1817,6 +1817,7 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
             const credEnc = piiReady() ? piiEncrypt(plainPassword) : null;
             db.query("UPDATE material_user_requests SET status='approved', reviewed_at=CURRENT_TIMESTAMP, approved_userid=?, aadhaar_enc=NULL, aadhaar_hash=NULL, cred_enc=?, cred_at=?, cred_views=0 WHERE id = ?", [userId, credEnc, credEnc ? Date.now() : null, reqId], () => {
                 auditPii(req, 'material_approve', userId, 'request=' + reqId);
+                notifyAccount({ kind: 'credentials', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) });   // 💬 WhatsApp the approved applicant (fire-and-forget)
                 res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '' });
             });
         }
@@ -1956,6 +1957,7 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
+            notifyAccount({ kind: 'credentials', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) });   // 💬 WhatsApp the new Invoicing user (fire-and-forget)
             res.status(201).json({ success: true, userId, password: plainPassword });
         }
     );
@@ -2485,10 +2487,11 @@ function kvSetCore(table, key, value, res) {
         db.query(`SELECT value FROM ${table} WHERE \`key\` = ?`, [key], (err, rows) => {
             let merged = val, prevList = [];
             if (!err && rows && rows.length) { try { prevList = JSON.parse(rows[0].value); merged = preservePasswordsFromExisting(val, prevList); } catch (e) { merged = val; } }
-            if (key === 'agents') {
-                // New agent created / approved by the Super Admin: SMS the User ID, password and portal link (best effort).
+            if (WA_NOTIFY_ENTITIES.indexOf(key) >= 0) {
+                // New account created / password set or reset by Super Admin, Admin or an Agent (admins / agents / staff / students):
+                // WhatsApp the User ID, password and portal link (SMS fallback, best effort, bounded to 9 s).
                 const t = new Promise(r => setTimeout(r, 9000));
-                return Promise.race([autoSendAgentCredentials(merged, prevList, process.env.PORTAL_URL || process.env.FRONTEND_URL || ''), t]).catch(() => {}).then(() => finishRaw(merged));
+                return Promise.race([autoNotifyEntityCredentials(key, merged, prevList, process.env.PORTAL_URL || process.env.FRONTEND_URL || ''), t]).catch(() => {}).then(() => finishRaw(merged));
             }
             finishRaw(merged);
         });
@@ -2885,6 +2888,7 @@ app.post('/api/hr/registrations/:id/approve', (req, res) => {
                 if (sErr) return res.status(500).json({ error: 'DB error: ' + sErr.message });
                 hrSetBlob('hrms_pending_registrations', pending, (sErr2) => {
                     if (sErr2) return res.status(500).json({ error: 'DB error: ' + sErr2.message });
+                    notifyAccount({ kind: 'hr_approved', mobile: reg.phone, name: reg.name, userId: empId });   // 💬 WhatsApp the employee (Admin or Agent approval)
                     res.json({ success: true, empId });
                 });
             });
@@ -3043,6 +3047,8 @@ app.post('/api/admin/pfms-users', requireRole('admin'), (req, res) => {
                 }
                 return res.status(500).json({ error: 'DB error: ' + err.message });
             }
+            // 💬 PFMS users have no mobile column — if the admin form sends one, WhatsApp the login details
+            if ((req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || username, userId: username, password: password, link: portalLink(req) });
             res.status(201).json({ success: true, id: result.insertId });
         }
     );
@@ -3061,6 +3067,7 @@ app.put('/api/admin/pfms-users/:id', requireRole('admin'), (req, res) => {
     params.push(req.params.id);
     db.query(`UPDATE pfms_users SET ${sets.join(', ')} WHERE id=?`, params, (err) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+        if (password && (req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || (req.body || {}).username, userId: (req.body || {}).username || String(req.params.id), password: password, link: portalLink(req) });
         res.json({ success: true });
     });
 });
@@ -4305,7 +4312,8 @@ app.post('/api/admin/agent-registrations/:id/decision', requireRole('admin'), as
 // ═══════════════════════════════════════════════════════════════════════
 // 🔐 CREDENTIAL RECOVERY (4-digit OTP via SMS) + AGENT CREDENTIAL SMS + ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════
-const OTP_TTL_MS = 60 * 1000;
+const OTP_TTL_MS = 10 * 60 * 1000;            // 📲 OTP validity — 10 minutes (must match the WhatsApp template's code_expiration_minutes)
+const OTP_RESEND_MS = 60 * 1000;               // minimum gap between two OTP requests for the same account
 const OTP_MAX_TRIES = 5;
 // OTP store lives in the database so it works on serverless (no shared memory between instances).
 let _otpTableReady = null;
@@ -4355,6 +4363,146 @@ async function findRecoveryAccount(userId, contact, scope) {
 function recoveryScope(req) { return /\/material\//.test(req.path) ? 'material' : (/\/agent\//.test(req.path) ? 'entity' : 'any'); }
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
+// ══════════════════════════════════════════════════════════════════
+// 💬 WHATSAPP OTP — Meta WhatsApp Business Cloud API (AUTHENTICATION template)
+//   Secrets only from Render Environment (never in code / DB):
+//     WA_ACCESS_TOKEN      – permanent System-User token (whatsapp_business_messaging)
+//     WA_PHONE_NUMBER_ID   – sender Phone Number ID (not the phone number itself)
+//     WA_OTP_TEMPLATE      – approved template name            (default: libmatrix_login_otp)
+//     WA_TEMPLATE_LANG     – template language code            (default: en)
+//     WA_API_VERSION       – Graph API version                 (default: v21.0)
+//     WA_DEFAULT_CC        – country code for 10-digit numbers (default: 91)
+//     WA_OTP_ENABLED       – set "false" to force SMS only
+//   The one-tap-autofill app signature (Abc123Xyz99) and the 10-minute expiry live INSIDE the approved
+//   template (see setup-wa-template.js) — they are not part of the per-message payload.
+//   If WhatsApp is not configured or the send fails, the OTP is delivered by SMS (Fast2SMS gateway) instead.
+// ══════════════════════════════════════════════════════════════════
+function waConfig() {
+    return {
+        token: process.env.WA_ACCESS_TOKEN || '',
+        phoneId: process.env.WA_PHONE_NUMBER_ID || '',
+        template: process.env.WA_OTP_TEMPLATE || 'libmatrix_login_otp',
+        lang: process.env.WA_TEMPLATE_LANG || 'en',
+        version: process.env.WA_API_VERSION || 'v21.0',
+        cc: String(process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91',
+        enabled: String(process.env.WA_OTP_ENABLED || 'true').toLowerCase() !== 'false'
+    };
+}
+function waConfigured() { const c = waConfig(); return c.enabled && !!(c.token && c.phoneId); }
+function httpsPostJson(urlStr, headers, body, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const u = new URL(urlStr), payload = JSON.stringify(body);
+        const rq = require('https').request(u, { method: 'POST', timeout: timeoutMs || 12000, headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }, headers) }, (resp) => {
+            let data = '';
+            resp.on('data', (c) => { data += c; });
+            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
+        });
+        rq.on('timeout', () => rq.destroy(new Error('WhatsApp API timed out.')));
+        rq.on('error', reject);
+        rq.write(payload); rq.end();
+    });
+}
+// Generic template sender: bodyParams → {{1}}, {{2}} … of the body; urlButtonParam (optional) → the Copy-code / URL button.
+async function waSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
+    const c = waConfig();
+    if (!waConfigured()) throw new Error('WhatsApp is not configured (WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID).');
+    const num = String(mobile || '').replace(/\D/g, '').slice(-10);
+    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
+    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
+    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
+    const body = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: c.cc + num,
+        type: 'template',
+        template: { name: templateName, language: { code: c.lang }, components: components }
+    };
+    const r = await httpsPostJson('https://graph.facebook.com/' + c.version + '/' + encodeURIComponent(c.phoneId) + '/messages', { Authorization: 'Bearer ' + c.token }, body);
+    if (r.status < 200 || r.status >= 300 || !(r.json && r.json.messages && r.json.messages.length)) {
+        const e = (r.json && r.json.error) || {};
+        throw new Error('WhatsApp API ' + r.status + (e.code ? ' (code ' + e.code + ')' : '') + ': ' + (e.message || 'send failed'));   // the OTP / token are never logged
+    }
+    return r.json.messages[0].id;
+}
+function sendWhatsAppOtp(mobile, otp) { return waSendTemplate(mobile, waConfig().template, [otp], otp); }   // authentication template (+ Copy-code button)
+
+// ── 🔔 Account notifications: login credentials / approvals / password changes ─────────────────────────────
+//   Templates (UTILITY category, approved in WhatsApp Manager — bodies are in setup-wa-template.js):
+//     WA_CRED_TEMPLATE   (default libmatrix_credentials)    {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal link
+//     WA_NOTICE_TEMPLATE (default libmatrix_account_notice) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link
+//   Every send is best-effort: WhatsApp first → SMS fallback → never throws, never blocks or fails the registration itself.
+const waTxt = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 500) || '-';
+const NOTICE_TEXT = {
+    approved: 'your account has been approved. Please sign in with the password you chose at registration.',
+    password_changed: 'your password was changed successfully. If this was not you, please contact the administrator immediately.',
+    hr_approved: 'your HRMS profile has been approved.'
+};
+async function notifyAccount(ev) {
+    try {
+        const mobile = last10(ev.mobile);
+        if (mobile.length !== 10) return null;
+        const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId), link = waTxt(ev.link || process.env.PORTAL_URL || process.env.FRONTEND_URL || '');
+        let template, params, sms;
+        if (ev.kind === 'credentials') {
+            template = process.env.WA_CRED_TEMPLATE || 'libmatrix_credentials';
+            params = [name, uid, waTxt(ev.password), link];
+            const cfg = await loadSmsConfig();
+            sms = buildCredentialsMessage(name, uid, String(ev.password), link, cfg.template && /\{pass\}/.test(cfg.template) ? cfg.template : '');
+        } else {
+            const text = NOTICE_TEXT[ev.kind] || String(ev.text || '');
+            template = process.env.WA_NOTICE_TEMPLATE || 'libmatrix_account_notice';
+            params = [name, waTxt(text), uid, link];
+            sms = 'Hello ' + name + ', ' + text + ' User ID: ' + uid + (link !== '-' ? ' Portal: ' + link : '');
+        }
+        if (waConfigured()) {
+            try { await waSendTemplate(mobile, template, params); return 'whatsapp'; }
+            catch (e) { console.warn('WhatsApp notification (' + ev.kind + ') failed, falling back to SMS:', e.message); }
+        }
+        if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
+        return null;
+    } catch (e) { console.warn('notifyAccount (' + (ev && ev.kind) + ') failed:', e.message); return null; }
+}
+// Saved lists (admins / agents / staff / students): a record that arrives with a NEW plain-text password (created or reset by
+// Super Admin / Admin / Agent) gets its credentials on WhatsApp; a freshly approved agent whose own password is already hashed gets
+// an approval notice. HMAC marker `credWaSig` on the record prevents the same password from being sent twice.
+const WA_NOTIFY_ENTITIES = ['admins', 'agents', 'staff', 'students'];
+const credSig = (uid, pwd) => crypto.createHmac('sha256', JWT_SECRET).update(String(uid) + '|' + String(pwd)).digest('hex').slice(0, 24);
+async function autoNotifyEntityCredentials(key, incoming, existing, link) {
+    if (!Array.isArray(incoming) || WA_NOTIFY_ENTITIES.indexOf(key) < 0) return;
+    if (!waConfigured() && !(await smsConfigured())) return;
+    const same = (o, r) => o && ((r.id != null && o.id === r.id) || (r.username && o.username === r.username) || (r.agentId && o.agentId === r.agentId) || (r.studentId && o.studentId === r.studentId) || (r.empId && o.empId === r.empId));
+    const jobs = [];
+    for (const rec of incoming) {
+        if (!rec || typeof rec !== 'object' || jobs.length >= 25) continue;
+        const mobile = last10(rec.mobile || rec.phone || rec.contact || rec.whatsapp);
+        const uid = rec.username || rec.agentId || rec.studentId || rec.empId || rec.id;
+        if (mobile.length !== 10 || !uid) continue;
+        const old = (existing || []).find(o => same(o, rec));
+        const pf = PASSWORD_FIELD_NAMES.find(f => typeof rec[f] === 'string' && rec[f] && !looksHashed(rec[f]));
+        if (pf) {
+            const pwd = rec[pf], sig = credSig(uid, pwd);
+            if (rec.credWaSig === sig) continue;
+            if (old && rec.credSmsSentAt && !rec.credWaSig) { rec.credWaSig = sig; continue; }     // already SMSed by the older flow
+            jobs.push(notifyAccount({ kind: 'credentials', mobile: mobile, name: rec.name || rec.fullName || rec.studentName, userId: uid, password: pwd, link: link })
+                .then(ch => { if (ch) { rec.credWaSig = sig; rec.credSmsSentAt = new Date().toISOString(); } }));
+        } else if (key === 'agents' && !old && !rec.credWaSig && !rec.credSmsSentAt && PASSWORD_FIELD_NAMES.some(f => rec[f])) {
+            jobs.push(notifyAccount({ kind: 'approved', mobile: mobile, name: rec.name, userId: uid, link: link })
+                .then(ch => { if (ch) { rec.credWaSig = 'notice'; rec.credSmsSentAt = new Date().toISOString(); } }));
+        }
+    }
+    await Promise.all(jobs);
+}
+// WhatsApp first, SMS fallback. Returns the channel that actually delivered the OTP.
+async function sendOtpMessage(mobile, otp) {
+    if (waConfigured()) {
+        try { await sendWhatsAppOtp(mobile, otp); return 'whatsapp'; }
+        catch (e) { console.warn('WhatsApp OTP failed, falling back to SMS:', e.message); }
+    }
+    if (!(await smsConfigured())) throw new Error('Neither WhatsApp nor the SMS gateway could be used.');
+    await sendSms(mobile, 'Your Anmol LibMatrix OTP is ' + otp + '. It is valid for 10 minutes. Do not share it with anyone.');
+    return 'sms';
+}
+
 async function forgotPasswordHandler(req, res) {
     try {
         if (hitRateLimit('otp:' + (req.ip || ''), 15, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
@@ -4366,17 +4514,17 @@ async function forgotPasswordHandler(req, res) {
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!(await smsConfigured())) return res.status(501).json({ error: 'The SMS gateway is not configured. Please contact the administrator.' });
+        if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'The OTP service (WhatsApp / SMS) is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const prev = await _otpStore.get(key);
-        if (prev && Date.now() - prev.sentAt < OTP_TTL_MS) {
-            return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_TTL_MS - (Date.now() - prev.sentAt)) / 1000) });
+        if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
+            return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
         }
         const otp = String(crypto.randomInt(1000, 10000));
-        await sendSms(acc.mobile, 'Your Anmol LibMatrix OTP is ' + otp + '. It is valid for 60 seconds. Do not share it with anyone.');
+        const channel = await sendOtpMessage(acc.mobile, otp);
         await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         const m = acc.mobile;
-        res.json({ success: true, message: 'A 4-digit OTP has been sent to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: 60, resendInSec: 60 });
+        res.json({ success: true, channel: channel, message: 'A 4-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
     } catch (e) {
         console.error('forgot-password error:', e.message);
         res.status(502).json({ error: 'Unable to send the OTP right now. Please try again.' });
@@ -4409,6 +4557,7 @@ async function resetPasswordHandler(req, res) {
         } else {
             await dbq('UPDATE material_users SET password_hash = ? WHERE id = ?', [hash, acc.rec.id]);
         }
+        notifyAccount({ kind: 'password_changed', mobile: acc.mobile, name: acc.rec && (acc.rec.name || acc.rec.fullName), userId: acc.userId });   // 💬 confirmation (never contains the password)
         res.json({ success: true, message: 'Password reset successful. Please sign in with your new password.' });
     } catch (e) {
         console.error('reset-password error:', e.message);
@@ -4438,30 +4587,16 @@ function buildCredentialsMessage(name, userId, password, link, template) {
     const base = template || 'Hello {name}, your Anmol LibMatrix login is ready. User ID: {user} Password: {pass} Portal: {link}';
     return base.replace(/\{name\}/g, name || 'User').replace(/\{user\}/g, userId).replace(/\{pass\}/g, password).replace(/\{link\}/g, link || '');
 }
-async function autoSendAgentCredentials(incoming, existing, link) {
-    if (!Array.isArray(incoming)) return;
-    if (!(await smsConfigured())) return;
-    const cfg = await loadSmsConfig();
-    const known = new Set((existing || []).map(a => a && lc(a.username)));
-    for (const rec of incoming) {
-        if (!rec || !rec.username || known.has(lc(rec.username)) || rec.credSmsSentAt) continue;
-        const pwd = rec.password;
-        if (!pwd || looksHashed(pwd) || last10(rec.mobile).length !== 10) continue;
-        try {
-            await sendSms(rec.mobile, buildCredentialsMessage(rec.name, rec.username, pwd, link, cfg.template && /\{pass\}/.test(cfg.template) ? cfg.template : ''));
-            rec.credSmsSentAt = new Date().toISOString();
-        } catch (e) { console.warn('Agent credentials SMS failed for ' + rec.username + ': ' + e.message); }
-    }
-}
+// (autoSendAgentCredentials was replaced by autoNotifyEntityCredentials — WhatsApp first, SMS fallback)
 app.post('/api/admin/send-agent-credentials', requireRole('admin'), async (req, res) => {
     try {
         const b = req.body || {};
         if (!b.userId || !b.password || last10(b.mobile).length !== 10) return res.status(400).json({ error: 'User ID, password and a valid 10-digit mobile number are required.' });
-        if (!(await smsConfigured())) return res.status(501).json({ error: 'The SMS gateway is not configured. Please complete the SMS API setup first.' });
-        const cfg = await loadSmsConfig();
-        await sendSms(b.mobile, buildCredentialsMessage(b.name, b.userId, b.password, portalLink(req), cfg.template && /\{pass\}/.test(cfg.template) ? cfg.template : ''));
-        res.json({ success: true });
-    } catch (e) { res.status(502).json({ error: 'Unable to send the SMS: ' + e.message }); }
+        if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'Neither WhatsApp nor the SMS gateway is configured. Please complete the setup first.' });
+        const channel = await notifyAccount({ kind: 'credentials', mobile: b.mobile, name: b.name, userId: b.userId, password: b.password, link: portalLink(req) });
+        if (!channel) return res.status(502).json({ error: 'Unable to deliver the credentials on WhatsApp or SMS.' });
+        res.json({ success: true, channel: channel });
+    } catch (e) { res.status(502).json({ error: 'Unable to send the message: ' + e.message }); }
 });
 
 // Announcement / ticker settings (public read, Super Admin write)
