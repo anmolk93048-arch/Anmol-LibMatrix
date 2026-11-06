@@ -1519,8 +1519,8 @@ body.dark #pg-dash .two .card .fbr{color:#a6b6ca}body.dark #pg-dash .two .card .
         </div>
       </div>
       <div class="agent-forgot-link-row" aria-label="Account recovery options">
-        <button type="button" class="agent-forgot-link" onclick="OPEN_FORGOT_USERNAME()">Forgot Username?</button>
-        <button type="button" class="agent-forgot-link" onclick="OPEN_FORGOT_PASSWORD()">Forgot Password?</button>
+        <button type="button" class="agent-forgot-link" onclick="return window.AnmolRecovery?AnmolRecovery.open({scope:'entity',mode:'userid'}):OPEN_FORGOT_USERNAME()">Forgot Username?</button>
+        <button type="button" class="agent-forgot-link" onclick="return window.AnmolRecovery?AnmolRecovery.open({scope:'entity',mode:'password',userId:(document.getElementById('login-user')||{}).value||''}):OPEN_FORGOT_PASSWORD()">Forgot Password?</button>
       </div>
 
       <!-- CAPTCHA -->

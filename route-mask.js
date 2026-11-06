@@ -128,7 +128,7 @@ function create(ctx) {
         ctx.getDbPage(slug, function (err, buf) { if (err || !buf) return cb(err, null); buf = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)); cb(null, { buf: buf, headEnd: headEndOf(buf) }); });
     }
     function send(req, res, ent, pageName, sid) {
-        const inj = Buffer.from('<script>window.__ANMOL_NAV=' + JSON.stringify(mapFor(sid)) + ';window.__ANMOL_NAV_TS=' + Date.now() + ';window.__ANMOL_PAGE=' + JSON.stringify(pageName) + ';</script><script src="/device-otp.js"></script><script src="/nav-mask.js"></script><script src="/idle-guard.js"></script><script src="/anmol-ids.js"></script>', 'utf8');
+        const inj = Buffer.from('<script>window.__ANMOL_NAV=' + JSON.stringify(mapFor(sid)) + ';window.__ANMOL_NAV_TS=' + Date.now() + ';window.__ANMOL_PAGE=' + JSON.stringify(pageName) + ';</script><script src="/nav-mask.js"></script><script src="/idle-guard.js"></script><script src="/anmol-ids.js"></script><script src="/anmol-recovery.js"></script>', 'utf8');
         res.status(200);
         res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Pragma': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow, noarchive', 'Referrer-Policy': 'same-origin', 'Content-Length': String(ent.buf.length + inj.length) });
         if (req.method === 'HEAD') return res.end();

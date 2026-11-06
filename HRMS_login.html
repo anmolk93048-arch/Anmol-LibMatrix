@@ -5,9 +5,6 @@
 <link rel="stylesheet" href="portal-shell.css">
 <link rel="stylesheet" href="gov-shell.css">
 <script src="config.js"></script>
-<link rel="stylesheet" href="theme.css">
-<script src="theme.js"></script>
-<script src="reg-pay.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>HRMS Portal</title>
@@ -493,6 +490,10 @@ body.dark .ae-row{background:#0a0f1e}
       </div>
       <div class="fr"><label class="fl">Enter Captcha</label><input class="finp" id="e-captcha-in" placeholder="Type code above" autocomplete="off"></div>
       <button class="login-btn" type="submit">Login</button>
+      <div style="display:flex;justify-content:space-between;gap:10px;margin-top:10px;font-size:12px;font-weight:700">
+        <a href="#" style="color:var(--gd)" onclick="return window.AnmolRecovery?(AnmolRecovery.open({scope:'any',mode:'userid'}),false):false">Forgot User ID?</a>
+        <a href="#" style="color:var(--gd)" onclick="return window.AnmolRecovery?(AnmolRecovery.open({scope:'any',mode:'password',userId:(document.getElementById('e-user')||{}).value||''}),false):false">Forgot Password?</a>
+      </div>
       <div class="login-err" id="e-err"></div>
     </form>
 
@@ -585,7 +586,7 @@ body.dark .ae-row{background:#0a0f1e}
             <div id="hrms-notif-list" style="padding:8px"><div style="text-align:center;padding:20px;font-size:11px;color:var(--t3)">No notifications 🎉</div></div>
           </div>
         </div>
-        <button id="dm-toggle" data-theme-toggle>🌙 Dark</button>
+        <button id="dm-toggle" onclick="TOGGLE_DARK()">🌙 Dark</button>
         <button id="mob-logout-btn" onclick="DO_LOGOUT()" title="Logout" style="display:none;background:rgba(163,45,45,.1);border:1px solid rgba(163,45,45,.3);color:var(--rd);font-size:15px;padding:6px 9px;border-radius:8px;cursor:pointer;flex-shrink:0">↩</button>
       </div>
 
@@ -1086,11 +1087,10 @@ function ADD_EMPLOYEE(){
     // Postgres backend par save hoti hai (POST /api/hr/register), Firebase
     // ki jagah. Yehi data Admin Panel aur Agent Login ke approval section
     // mein turant dikhta hai (dono ab isi backend se padhte hain).
-    REGPAY.pay('hrms', phone, agentUsername, 'HRMS registration fee').then(function(pay){ if(pay) rec.payment = pay; return API.post('/hr/register', rec); }).then(function(resp){
-      var _trk = (resp && resp.trackingId) ? ' Your Tracking ID: ' + resp.trackingId + ' — keep it safe and use it with your mobile number under Track Application Status on the Agent Login page.' : '';
+    API.post('/hr/register', rec).then(function(){
       PENDING_REGISTRATIONS.push(rec);
       try { localStorage.setItem('hrms_pending_registrations', JSON.stringify(PENDING_REGISTRATIONS)); } catch(e){}
-      showMsg(suc, 'Your registration has been submitted. Your Employee ID will be issued, and you can log in, after Admin/Agent approval.' + _trk);
+      showMsg(suc, 'Your registration has been submitted. Your Employee ID will be issued, and you can log in, after Admin/Agent approval.');
       document.getElementById('ae-name').value='';
       document.getElementById('ae-phone').value='';
       document.getElementById('ae-ident').value='';
@@ -1339,12 +1339,12 @@ function DO_LOGIN_EMP(ev){
   if (!found){
     var pend = PENDING_REGISTRATIONS.find(function(p){ return String(p.empId||'').trim().toUpperCase()===u; });
     if (pend){ err.textContent='Your registration is awaiting Administrator approval. Please log in after it has been approved.'; GEN_CAPTCHA('e'); return false; }
-    err.textContent='User ID is not registered in the system.'; GEN_CAPTCHA('e'); return false;
+    err.textContent='Employee ID was not found or is inactive.'; GEN_CAPTCHA('e'); return false;
   }
-  if (found.status==='inactive'){ err.textContent='This Employee ID is blocked or inactive. Please contact the administrator.'; GEN_CAPTCHA('e'); return false; }
+  if (found.status==='inactive'){ err.textContent='Employee ID was not found or is inactive.'; GEN_CAPTCHA('e'); return false; }
   if (!/^\d{10}$/.test(mobile)){ err.textContent='Please enter the full 10-digit registered mobile number.'; GEN_CAPTCHA('e'); return false; }
   var regMobile = String(found.phone||'').replace(/\D/g,'').slice(-10); // ignores +91 etc.
-  if (!regMobile || regMobile !== mobile){ err.textContent='Invalid Mobile Number. Please check your credentials and try again.'; GEN_CAPTCHA('e'); return false; }
+  if (!regMobile || regMobile !== mobile){ err.textContent='The mobile number does not match.'; GEN_CAPTCHA('e'); return false; }
 
   // 🔒 SECURITY: ab backend (POST /api/auth/login, role='employee') se
   // asli verification hoti hai (Postgres 'hrms_employees' data ke against)
@@ -1636,7 +1636,13 @@ function TOGGLE_SIDEBAR(force){
 }
 
 // ══════════════ DARK MODE ══════════════
-function TOGGLE_DARK(){ AnmolTheme.toggleDark(); }
+function TOGGLE_DARK(){
+  document.body.classList.toggle('dark');
+  var on = document.body.classList.contains('dark');
+  localStorage.setItem('hrms_dark', on ? '1':'0');
+  document.getElementById('dm-toggle').textContent = on ? '☀️ Light':'🌙 Dark';
+}
+if (localStorage.getItem('hrms_dark')==='1'){ document.body.classList.add('dark'); }
 
 // ══════════════ VIEW / PRINT PAYSLIP ══════════════
 function slipHTML(s){

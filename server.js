@@ -6,7 +6,7 @@ try { require('dotenv').config(); } catch (e) { console.log('dotenv not installe
     alias('PAYMENT_API_SECRET', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_API_SECRET');
     alias('DATABASE_URL', 'POSTGRES_URL_NON_POOLING', 'POSTGRES_URL', 'SUPABASE_DB_URL');
     alias('SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
-    alias('SMS_API_KEY', 'APP2SMS_API_KEY', 'FAST2SMS_API_KEY');
+    alias('SMS_API_KEY', 'APP2SMS_API_KEY');
     alias('PORTAL_URL', 'FRONTEND_URL');
 })();
 const express = require('express');
@@ -109,7 +109,7 @@ const CORS_OPTIONS = {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Anmol-Idle', 'X-Device-Id', 'X-Device-Otp'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Anmol-Idle'],
     maxAge: 86400
 };
 app.use(cors(CORS_OPTIONS));
@@ -1002,6 +1002,28 @@ function seedMasterAdmin(attempt) {
     });
 }
 setTimeout(() => seedMasterAdmin(1), 8000);
+
+// 🔒 Super Admin / Admin passwords must never sit in the database as plain text. Any record that still has one (e.g. typed in by
+// hand in Supabase) is converted to a bcrypt hash at boot; login keeps working with the same password.
+function hashPlainAdminPasswords(attempt) {
+    attempt = attempt || 1;
+    db.query('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['admins'], (err, rows) => {
+        if (err) { if (attempt < 6) setTimeout(() => hashPlainAdminPasswords(attempt + 1), 5000); return; }
+        let list; try { list = JSON.parse(rows && rows[0] && rows[0].value); } catch (e) { return; }
+        if (!Array.isArray(list)) return;
+        let changed = 0;
+        const out = list.map(rec => {
+            if (!rec || typeof rec !== 'object') return rec;
+            const c = { ...rec };
+            PASSWORD_FIELD_NAMES.forEach(f => { if (typeof c[f] === 'string' && c[f] && !looksHashed(c[f])) { c[f] = bcrypt.hashSync(c[f], 10); changed++; } });
+            return c;
+        });
+        if (!changed) return;
+        db.query('INSERT INTO kv_admin_entities ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', ['admins', JSON.stringify(out)],
+            (e2) => console.log(e2 ? 'Admin password hashing failed: ' + e2.message : '🔒 ' + changed + ' plain-text admin password(s) converted to bcrypt.'));
+    });
+}
+setTimeout(() => hashPlainAdminPasswords(1), 10000);
 
 // 🏷️ Multi-tenant branding: public library name/contact for payment links and receipts
 app.get('/api/library-branding/:agentId', (req, res) => {
@@ -2053,15 +2075,12 @@ app.post('/api/material/login', (req, res) => {
                 // hamesha skip ho jaata tha (blocked user bhi login ke baad kaam
                 // karta rehta tha), aur "मोबाइल नंबर बदलें" route bhi हमेशा
                 // "Yeh User ID nahi mila" error deta tha.
-                deviceGate(req, res, { role: 'material_user', username: u.userid, mobile: u.mobile }).then(ok => {   // 🔐 new-device WhatsApp OTP
-                    if (!ok) return;
-                    const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
-                    // never send the password hash or the encrypted Aadhaar data to the browser
-                    const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
-                    userSafe._docId = String(u.id);
-                    userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
-                    res.json({ user: userSafe, token });
-                }).catch(innerErr => { res.status(500).json({ error: 'An error occurred during login: ' + innerErr.message }); });
+                const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
+                // never send the password hash or the encrypted Aadhaar data to the browser
+                const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
+                userSafe._docId = String(u.id);
+                userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
+                res.json({ user: userSafe, token });
             } catch (innerErr) {
                 console.error('❌ /material/login inner error:', innerErr.message);
                 res.status(500).json({ error: 'An error occurred during login: ' + innerErr.message });
@@ -2207,99 +2226,6 @@ function parseEntityList(raw) {
 const _lcT = (x) => String(x == null ? '' : x).trim().toLowerCase();
 
 
-// ══════════════════════════════════════════════════════════════════
-// 🔐 DEVICE BINDING — first login from a new browser/laptop needs a WhatsApp OTP
-//   • The browser keeps a random 256-bit device id (device-otp.js → localStorage) and sends it as X-Device-Id.
-//   • Only AFTER the password / mobile check passes, an unknown device gets a 6-digit OTP (WhatsApp → SMS fallback) and the
-//     login answers 403 {code:'DEVICE_OTP_REQUIRED'}. The same login request is then repeated with X-Device-Otp.
-//   • A verified device is trusted for this account (only a hash of the device id is stored) → no more OTPs on that device,
-//     refreshes / re-logins all day, every day (sliding window: DEVICE_TRUST_DAYS, default 30).
-//   • Any other device / browser → OTP again. Password reset or Super-Admin "revoke" forgets all trusted devices.
-//   Env: DEVICE_OTP_ENABLED=false (kill switch) · DEVICE_OTP_EXEMPT_ROLES (default "student") · DEVICE_TRUST_DAYS ·
-//        DEVICE_MAX_PER_ACCOUNT (default 10) · DEVICE_OTP_NO_MOBILE=allow|block (account without a mobile; default allow)
-//   Roles: admin · agent · staff · employee (HRMS) · pfms · material_user (Invoice portal) · student (exempt by default)
-// ══════════════════════════════════════════════════════════════════
-let _devTableReady = null;
-function ensureDeviceTable() {
-    if (!_devTableReady) _devTableReady = dbq('CREATE TABLE IF NOT EXISTS trusted_devices (account_key VARCHAR(190) NOT NULL, device_hash VARCHAR(64) NOT NULL, ua VARCHAR(300), ip VARCHAR(64), created_at BIGINT NOT NULL, last_seen BIGINT NOT NULL, PRIMARY KEY (account_key, device_hash))', [])
-        .catch(e => { _devTableReady = null; throw e; });
-    return _devTableReady;
-}
-const DEV_OTP_TTL_MS = 10 * 60 * 1000, DEV_OTP_RESEND_MS = 60 * 1000;
-function deviceOtpExempt(role) {
-    const list = String(process.env.DEVICE_OTP_EXEMPT_ROLES == null ? 'student' : process.env.DEVICE_OTP_EXEMPT_ROLES).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    return list.indexOf(String(role).toLowerCase()) >= 0;
-}
-// Resolves true when the login may continue. Otherwise it has already answered the request and resolves false.
-async function deviceGate(req, res, a) {
-    try {
-        if (String(process.env.DEVICE_OTP_ENABLED || 'true').toLowerCase() === 'false' || deviceOtpExempt(a.role)) return true;
-        if (!waConfigured() && !(await smsConfigured())) { console.warn('Device OTP skipped — neither WhatsApp nor SMS is configured.'); return true; }
-        const mobile = last10(a.mobile);
-        if (mobile.length !== 10) {
-            if (String(process.env.DEVICE_OTP_NO_MOBILE || 'allow').toLowerCase() === 'block') { res.status(403).json({ error: 'No registered mobile number is available for device verification. Please contact the administrator.', code: 'DEVICE_NO_MOBILE' }); return false; }
-            console.warn('Device OTP skipped — no mobile number on record for ' + a.role + ':' + a.username);
-            return true;
-        }
-        const devId = String(req.headers['x-device-id'] || '').trim().toLowerCase();
-        if (!/^[a-f0-9]{32,64}$/.test(devId)) { res.status(400).json({ error: 'Device verification could not start. Please reload the page and try again.', code: 'DEVICE_ID_REQUIRED' }); return false; }
-        const acct = String(a.role).toLowerCase() + ':' + _lcT(a.username);
-        const dh = sha(devId + '|' + acct), now = Date.now();
-        const trustMs = Math.max(1, parseInt(process.env.DEVICE_TRUST_DAYS || '30', 10) || 30) * 86400000;
-        await ensureDeviceTable();
-        const rows = await dbq('SELECT last_seen FROM trusted_devices WHERE account_key = ? AND device_hash = ?', [acct, dh]);
-        if (rows && rows[0] && now - Number(rows[0].last_seen) < trustMs) {
-            if (now - Number(rows[0].last_seen) > 3600000) dbq('UPDATE trusted_devices SET last_seen = ? WHERE account_key = ? AND device_hash = ?', [now, acct, dh]).catch(() => {});
-            return true;
-        }
-        // ── unknown device ──
-        if (hitRateLimit('devotp-ip:' + (req.ip || ''), 40, 10 * 60 * 1000)) { res.status(429).json({ error: 'Too many attempts. Please try again later.' }); return false; }
-        const okey = 'dev|' + acct + '|' + dh;
-        const code = String(req.headers['x-device-otp'] || '').trim();
-        if (code) {
-            const o = await _otpStore.get(okey);
-            if (!o || now > o.exp) { await _otpStore.delete(okey); res.status(403).json({ error: 'The OTP has expired. Please request a new OTP.', code: 'DEVICE_OTP_EXPIRED' }); return false; }
-            o.tries = (o.tries || 0) + 1;
-            if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(okey); res.status(403).json({ error: 'Too many wrong attempts. Please request a new OTP.', code: 'DEVICE_OTP_EXPIRED' }); return false; }
-            await _otpStore.set(okey, o);
-            if (!/^\d{6}$/.test(code) || o.hash !== sha(code)) { res.status(401).json({ error: 'Incorrect OTP. ' + (OTP_MAX_TRIES - o.tries + 1) + ' attempt(s) left.', code: 'DEVICE_OTP_INVALID' }); return false; }
-            await _otpStore.delete(okey);
-            await dbq('INSERT INTO trusted_devices (account_key, device_hash, ua, ip, created_at, last_seen) VALUES (?,?,?,?,?,?) ON CONFLICT (account_key, device_hash) DO UPDATE SET last_seen = EXCLUDED.last_seen', [acct, dh, String(req.headers['user-agent'] || '').slice(0, 300), String(req.ip || '').slice(0, 64), now, now]);
-            const cap = Math.max(1, parseInt(process.env.DEVICE_MAX_PER_ACCOUNT || '10', 10) || 10);
-            dbq('DELETE FROM trusted_devices WHERE account_key = ? AND device_hash NOT IN (SELECT device_hash FROM trusted_devices WHERE account_key = ? ORDER BY last_seen DESC LIMIT ' + cap + ')', [acct, acct]).catch(() => {});
-            return true;
-        }
-        const prev = await _otpStore.get(okey);
-        const m4 = mobile.slice(-4);
-        if (prev && now - prev.sentAt < DEV_OTP_RESEND_MS) {
-            res.status(403).json({ error: 'A verification OTP was already sent to your WhatsApp. Please wait before requesting another.', code: 'DEVICE_OTP_REQUIRED', maskedMobile: 'XXXXXX' + m4, resendInSec: Math.ceil((DEV_OTP_RESEND_MS - (now - prev.sentAt)) / 1000), expiresInSec: Math.max(1, Math.round((prev.exp - now) / 1000)) });
-            return false;
-        }
-        const otp = String(crypto.randomInt(100000, 1000000));
-        const channel = await sendOtpMessage(mobile, otp);
-        await _otpStore.set(okey, { hash: sha(otp), sentAt: now, exp: now + DEV_OTP_TTL_MS, tries: 0 });
-        res.status(403).json({ error: 'New device detected. A 6-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered number ending ' + m4 + '.', code: 'DEVICE_OTP_REQUIRED', channel: channel, maskedMobile: 'XXXXXX' + m4, expiresInSec: Math.round(DEV_OTP_TTL_MS / 1000), resendInSec: Math.round(DEV_OTP_RESEND_MS / 1000) });
-        return false;
-    } catch (e) {
-        console.error('device gate error:', e.message);
-        res.status(502).json({ error: 'Unable to verify this device right now. Please try again.', code: 'DEVICE_GATE_ERROR' });   // fail closed
-        return false;
-    }
-}
-// forget every trusted device of an account (password reset, or Super Admin "revoke")
-async function revokeDevices(username, role) {
-    await ensureDeviceTable();
-    const u = _lcT(username);
-    if (!u) return 0;
-    const r = role ? await dbq('DELETE FROM trusted_devices WHERE account_key = ? RETURNING 1 AS n', [String(role).toLowerCase() + ':' + u]) : await dbq('DELETE FROM trusted_devices WHERE account_key LIKE ? RETURNING 1 AS n', ['%:' + u.replace(/[\\%_]/g, '\\$&')]);
-    return (r || []).length;
-}
-app.post('/api/admin/devices/revoke', requireRole('admin'), asyncRoute(async (req, res) => {
-    const b = req.body || {};
-    if (!b.username) return res.status(400).json({ error: 'username is required.' });
-    res.json({ success: true, revoked: await revokeDevices(b.username, b.role) });
-}));
-
 app.post('/api/auth/login', (req, res) => {
     const { role, username, password, mobile } = req.body || {};
     const roleKey = String(role || '').toLowerCase();
@@ -2354,12 +2280,9 @@ app.post('/api/auth/login', (req, res) => {
             if (emp.status && emp.status !== 'active') {
                 return res.status(403).json({ error: 'Your admin verification is still pending. You can log in only after verification.' });
             }
-            deviceGate(req, res, { role: 'employee', username: String(username).toUpperCase(), mobile: empMobile }).then(ok => {   // 🔐 new-device WhatsApp OTP
-                if (!ok) return;
-                const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
-                logLoginEvent('employee', username); // 🆕 real-time login count ke liye
-                res.json({ token });
-            });
+            const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent('employee', username); // 🆕 real-time login count ke liye
+            res.json({ token });
         });
         return;
     }
@@ -2374,12 +2297,9 @@ app.post('/api/auth/login', (req, res) => {
             if (!u) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
             if (u.status === 'inactive') return res.status(403).json({ error: 'This account has been deactivated by the administrator.' });
             if (!bcrypt.compareSync(password, u.password_hash)) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
-            deviceGate(req, res, { role: 'pfms', username: u.username, mobile: u.mobile || u.phone || '' }).then(ok => {   // 🔐 (pfms_users has no mobile column → skipped unless one exists)
-                if (!ok) return;
-                const token = jwt.sign({ role: 'pfms', username: u.username }, JWT_SECRET, { expiresIn: '7d' });
-                logLoginEvent('pfms', u.username); // 🆕 real-time login count ke liye
-                res.json({ token });
-            });
+            const token = jwt.sign({ role: 'pfms', username: u.username }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent('pfms', u.username); // 🆕 real-time login count ke liye
+            res.json({ token });
         });
         return;
     }
@@ -2417,15 +2337,12 @@ app.post('/api/auth/login', (req, res) => {
         }
         if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
-        deviceGate(req, res, { role: roleKey, username: String(user.username || username), mobile: user.mobile || user.phone }).then(ok => {   // 🔐 new-device WhatsApp OTP
-            if (!ok) return;
-            const _isAdminLogin = roleKey === 'admin';
-            const token = _isAdminLogin
-                ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
-                : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
-            logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
-            res.json({ token });
-        });
+        const _isAdminLogin = roleKey === 'admin';
+        const token = _isAdminLogin
+            ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
+            : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
+        logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
+        res.json({ token });
     });
 });
 
@@ -4608,6 +4525,15 @@ async function sendOtpMessage(mobile, otp) {
     return 'sms';
 }
 
+// 🆕 Recovery modal sends State + Mobile + Email together. When the stored record HAS an e-mail / state, they must match too
+// (mobile alone is already matched by findRecoveryAccount). Records without those fields are not blocked.
+function recoveryExtraOk(acc, b) {
+    if (!acc || !acc.rec) return false;
+    const r = acc.rec, mail = lc(b && b.email), st = lc(b && b.state);
+    if (mail && r.email && lc(r.email) !== mail) return false;
+    if (st && r.state && lc(r.state) !== st) return false;
+    return true;
+}
 async function forgotPasswordHandler(req, res) {
     try {
         if (hitRateLimit('otp:' + (req.ip || ''), 15, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
@@ -4617,7 +4543,7 @@ async function forgotPasswordHandler(req, res) {
         if (!contact) return res.status(400).json({ error: 'Please provide your registered email or phone number to recover access.' });
         if (!userId) return res.status(400).json({ error: 'Please enter your valid User ID.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
-        if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
         if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'The OTP service (WhatsApp / SMS) is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
@@ -4646,7 +4572,7 @@ async function resetPasswordHandler(req, res) {
         if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         if (newPassword.length < 6) return res.status(400).json({ error: 'Passwords do not match or fields are empty.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
-        if (!acc) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const o = await _otpStore.get(key);
         if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
@@ -4662,7 +4588,6 @@ async function resetPasswordHandler(req, res) {
         } else {
             await dbq('UPDATE material_users SET password_hash = ? WHERE id = ?', [hash, acc.rec.id]);
         }
-        revokeDevices(acc.userId).catch(() => {});   // 🔐 a reset password forgets every trusted device
         notifyAccount({ kind: 'password_changed', mobile: acc.mobile, name: acc.rec && (acc.rec.name || acc.rec.fullName), userId: acc.userId });   // 💬 confirmation (never contains the password)
         res.json({ success: true, message: 'Password reset successful. Please sign in with your new password.' });
     } catch (e) {
@@ -4673,10 +4598,10 @@ async function resetPasswordHandler(req, res) {
 async function forgotUsernameHandler(req, res) {
     try {
         if (hitRateLimit('fuid:' + (req.ip || ''), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-        const contact = String((req.body || {}).contact || '').trim();
+        const contact = String((req.body || {}).contact || (req.body || {}).mobile || (req.body || {}).email || '').trim();
         if (!contact) return res.status(400).json({ error: 'Please provide your registered email or phone number to recover access.' });
         const acc = await findRecoveryAccount('', contact, recoveryScope(req));
-        if (acc && acc.mobile.length === 10 && await smsConfigured()) {
+        if (acc && recoveryExtraOk(acc, req.body) && acc.mobile.length === 10 && await smsConfigured()) {
             await sendSms(acc.mobile, 'Your Anmol LibMatrix User ID is ' + acc.userId + '.');
         }
         res.json({ success: true, message: 'If the details match a registered account, the User ID has been sent to the registered mobile number.' });
