@@ -6,7 +6,7 @@ try { require('dotenv').config(); } catch (e) { console.log('dotenv not installe
     alias('PAYMENT_API_SECRET', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_API_SECRET');
     alias('DATABASE_URL', 'POSTGRES_URL_NON_POOLING', 'POSTGRES_URL', 'SUPABASE_DB_URL');
     alias('SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
-    alias('SMS_API_KEY', 'APP2SMS_API_KEY');
+    alias('SMS_API_KEY', 'APP2SMS_API_KEY', 'FAST2SMS_API_KEY');
     alias('PORTAL_URL', 'FRONTEND_URL');
 })();
 const express = require('express');
