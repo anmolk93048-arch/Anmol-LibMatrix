@@ -2234,7 +2234,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             <span class="input-end eye-toggle" onclick="TOGGLE_PWD('l-pass',this)" title="Show / hide password">◉</span>
           </div>
         </div>
-        <div class="otp-step ls2" id="l-otp-step">
+        <div class="otp-step ls2" id="l-otp-step" style="display:none" hidden>
           <div class="otp-step-title">Two-Step Verification</div>
           <p class="otp-step-info" id="l-otp-info" role="status" aria-live="polite"></p>
           <div class="fg">
@@ -2377,7 +2377,14 @@ function postJson(path,body){
   return AnmolPortal.fetchRetry(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},{tries:1,timeout:30000})
     .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
 }
-function setStep(n){var b=$('l-box');if(b)b.setAttribute('data-step',String(n));}
+function setStep(n){
+  var b=$('l-box');if(b)b.setAttribute('data-step',String(n));
+  var otp=$('l-otp-step');
+  if(otp){otp.hidden=(n!==2);otp.style.setProperty('display',n===2?'block':'none','important');}
+  Array.prototype.forEach.call(document.querySelectorAll('#l-box .ls1'),function(el){
+    if(n===2)el.style.setProperty('display','none','important');else el.style.removeProperty('display');
+  });
+}
 function startOtpTimer(sec){
   var rb=$('l-otp-resend'),tm=$('l-otp-timer');clearInterval(_otpTimer);
   function tick(){
@@ -2494,6 +2501,8 @@ function resume(){
   }).catch(function(){});
 }
 GEN_CAPTCHA();
+setStep(1);   /* initial state: OTP section hidden */
+window.LOGIN_FLOW_VERSION='multistep-v3';
 try{AnmolPortal.warmUp();}catch(e){}
 resume();
 })();
