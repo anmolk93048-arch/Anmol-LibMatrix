@@ -4578,56 +4578,98 @@ async function sendFast2SmsOtp(mobile, otp) {
     throw err;
 }
 // ──────────────────────────────────────────────────────────────────
-// 💬 FAST2SMS WHATSAPP OTP  (GET https://www.fast2sms.com/dev/whatsapp, header "authorization: <API key>")
-//   Uses the SAME Fast2SMS API key as the SMS gateway. Render → Environment:
-//     FAST2SMS_WA_MESSAGE_ID       – Message ID of your approved WhatsApp OTP template (Fast2SMS panel → WhatsApp Manager).
-//                                    The template must have ONE variable ({{1}}) — it receives the 8-digit OTP.
-//     FAST2SMS_WA_PHONE_NUMBER_ID  – your WABA Phone Number ID (Fast2SMS panel → WhatsApp Manager)
-//     FAST2SMS_WA_ENABLED          – set "false" to skip WhatsApp and send SMS only
-//   If WhatsApp is not configured or the send fails, sendOtpMessage() falls back to the Fast2SMS SMS route automatically.
+// 💬 FAST2SMS WHATSAPP OTP — goes straight to WhatsApp (a different Fast2SMS product from the SMS routes, so the SMS
+//    "website verification pending" error 996 / DLT rules never apply). Same API key, sent in the "Authorization" header.
+//   Two request formats (Fast2SMS → WhatsApp API docs); FAST2SMS_WA_MODE picks one, default = "meta" when a template NAME is
+//   set, otherwise "simple":
+//     meta   POST https://www.fast2sms.com/dev/whatsapp/{version}/{phone_number_id}/messages   (Meta JSON payload)
+//            → use for AUTHENTICATION templates (OTP in the message body AND the Copy-code / One-tap button).
+//     simple GET  https://www.fast2sms.com/dev/whatsapp?message_id=&phone_number_id=&numbers=&variables_values=
+//            → use for text templates with one {{1}} variable that receives the OTP.
+//   Render → Environment:
+//     FAST2SMS_WA_PHONE_NUMBER_ID   – WABA Phone Number ID (Fast2SMS panel → WhatsApp Manager, or "Get Phone Numbers" API)   [both modes]
+//     FAST2SMS_WA_TEMPLATE_NAME     – approved template name                                                                [meta]
+//     FAST2SMS_WA_LANG              – template language code (default en)                                                  [meta]
+//     FAST2SMS_WA_VERSION           – API version in the URL (default v26.0)                                               [meta]
+//     FAST2SMS_WA_CC                – country code for 10-digit numbers (default 91)                                       [meta]
+//     FAST2SMS_WA_OTP_BUTTON        – "false" if the template has NO Copy-code / One-tap button (default true)             [meta]
+//     FAST2SMS_WA_MESSAGE_ID        – Fast2SMS Message ID of the template (WhatsApp Manager)                               [simple]
+//     FAST2SMS_WA_ENABLED           – "false" turns the Fast2SMS WhatsApp channel off
+//     OTP_CHANNEL                   – "whatsapp" (DEFAULT: WhatsApp only, the SMS route is never called), "auto" (WhatsApp, then SMS
+//                                     if WhatsApp fails) or "sms" (SMS only)
 //   The OTP itself is never logged.
 // ──────────────────────────────────────────────────────────────────
+function otpChannelMode() { const m = lc(process.env.OTP_CHANNEL); return m === 'auto' || m === 'sms' ? m : 'whatsapp'; }
 function fast2smsWaConfig() {
+    const template = String(process.env.FAST2SMS_WA_TEMPLATE_NAME || '').trim();
+    let mode = lc(process.env.FAST2SMS_WA_MODE);
+    if (mode !== 'meta' && mode !== 'simple') mode = template ? 'meta' : 'simple';
     return {
+        mode: mode,
+        template: template,
         messageId: String(process.env.FAST2SMS_WA_MESSAGE_ID || '').trim(),
         phoneId: String(process.env.FAST2SMS_WA_PHONE_NUMBER_ID || '').trim(),
+        lang: String(process.env.FAST2SMS_WA_LANG || 'en').trim(),
+        version: String(process.env.FAST2SMS_WA_VERSION || 'v26.0').trim(),
+        cc: String(process.env.FAST2SMS_WA_CC || process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91',
+        otpButton: String(process.env.FAST2SMS_WA_OTP_BUTTON || 'true').toLowerCase() !== 'false',
         enabled: String(process.env.FAST2SMS_WA_ENABLED || 'true').toLowerCase() !== 'false'
     };
 }
-function fast2smsWaConfigured() { const c = fast2smsWaConfig(); return c.enabled && !!(c.messageId && c.phoneId); }
-function fast2smsWaRequest(query, key, timeoutMs) {
+function fast2smsWaConfigured() {
+    const c = fast2smsWaConfig();
+    return c.enabled && !!c.phoneId && (c.mode === 'meta' ? !!c.template : !!c.messageId);
+}
+function fast2smsWaHttp(method, urlObj, key, timeoutMs, bodyObj) {
     return new Promise((resolve, reject) => {
-        let u;
-        try { u = new URL(process.env.FAST2SMS_WA_URL || 'https://www.fast2sms.com/dev/whatsapp'); } catch (e) { return reject(new Error('FAST2SMS_WA_URL is invalid.')); }
-        Object.keys(query).forEach(k => u.searchParams.set(k, String(query[k])));
-        const lib = require(u.protocol === 'http:' ? 'http' : 'https');
-        const rq = lib.request(u, { method: 'GET', timeout: timeoutMs, headers: { authorization: key, 'Cache-Control': 'no-cache' } }, (resp) => {
+        const lib = require(urlObj.protocol === 'http:' ? 'http' : 'https');
+        const payload = bodyObj ? JSON.stringify(bodyObj) : null;
+        const headers = { Authorization: key, 'Cache-Control': 'no-cache' };
+        if (payload) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(payload); }
+        const rq = lib.request(urlObj, { method: method, timeout: timeoutMs, headers: headers }, (resp) => {
             let data = '';
             resp.on('data', (c) => { data += c; });
             resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
         });
-        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS WhatsApp request timed out after ' + timeoutMs + ' ms.')));
+        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS WhatsApp request timed out after ' + timeoutMs + ' ms (the server cannot reach www.fast2sms.com).')));
         rq.on('error', (e) => reject(new Error('Fast2SMS WhatsApp network error: ' + (e.code ? e.code + ' – ' : '') + e.message)));
+        if (payload) rq.write(payload);
         rq.end();
     });
 }
+function waError(msg, extra) { const e = new Error(msg); e.channel = 'whatsapp'; if (extra) Object.assign(e, extra); return e; }
 async function sendFast2SmsWhatsAppOtp(mobile, otp) {
     const key = await fast2smsKey();
-    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
-    if (!fast2smsWaConfigured()) throw new Error('Fast2SMS WhatsApp is not configured (FAST2SMS_WA_MESSAGE_ID / FAST2SMS_WA_PHONE_NUMBER_ID).');
+    if (!key) throw waError('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
+    if (!fast2smsWaConfigured()) throw waError('Fast2SMS WhatsApp is not configured: set FAST2SMS_WA_PHONE_NUMBER_ID plus FAST2SMS_WA_TEMPLATE_NAME (meta mode) or FAST2SMS_WA_MESSAGE_ID (simple mode).');
     const num = last10(mobile);
-    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
+    if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
     const c = fast2smsWaConfig();
-    console.log('[fast2sms-wa] → mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
+    const base = process.env.FAST2SMS_WA_URL || 'https://www.fast2sms.com/dev/whatsapp';
+    let u, body = null, method = 'GET';
+    try {
+        if (c.mode === 'meta') {
+            method = 'POST';
+            u = new URL(base.replace(/\/$/, '') + '/' + encodeURIComponent(c.version) + '/' + encodeURIComponent(c.phoneId) + '/messages');
+            const components = [{ type: 'body', parameters: [{ type: 'text', text: String(otp) }] }];
+            if (c.otpButton) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] });   // Copy-code / One-tap button
+            body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.cc + num, type: 'template', template: { name: c.template, language: { code: c.lang }, components: components } };
+        } else {
+            u = new URL(base);
+            u.searchParams.set('message_id', c.messageId); u.searchParams.set('phone_number_id', c.phoneId);
+            u.searchParams.set('numbers', num); u.searchParams.set('variables_values', String(otp));
+        }
+    } catch (e) { throw waError('FAST2SMS_WA_URL is invalid.'); }
+    console.log('[fast2sms-wa] → mode=' + c.mode + ' ' + method + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
     let r;
-    try { r = await fast2smsWaRequest({ message_id: c.messageId, phone_number_id: c.phoneId, numbers: num, variables_values: String(otp) }, key, 12000); }
-    catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); throw e; }
+    try { r = await fast2smsWaHttp(method, u, key, 12000, body); }
+    catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); e.channel = 'whatsapp'; throw e; }
     const j = r.json || {};
     console.log('[fast2sms-wa] ← HTTP ' + r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 300));   // response never contains the OTP
-    if (r.status >= 200 && r.status < 300 && (j.status === true || j.status === 'true' || j.return === true || j.return === 'true')) return true;
-    const m = Array.isArray(j.message) ? j.message.join(' ') : (j.message || r.text || ('HTTP ' + r.status));
-    const err = new Error('Fast2SMS WhatsApp rejected the request (status ' + (j.status_code || r.status) + '): ' + String(m).slice(0, 200));
-    err.fast2smsCode = Number(j.status_code || r.status) || 0;
+    const sent = r.status >= 200 && r.status < 300 && (j.status === true || j.status === 'true' || j.return === true || j.return === 'true' || (Array.isArray(j.messages) && j.messages.length > 0));
+    if (sent) return true;
+    const m = (j.error && j.error.message) || (Array.isArray(j.message) ? j.message.join(' ') : j.message) || r.text || ('HTTP ' + r.status);
+    const err = waError('Fast2SMS WhatsApp rejected the request (status ' + (j.status_code || (j.error && j.error.code) || r.status) + '): ' + String(m).slice(0, 200), { fast2smsCode: Number(j.status_code || (j.error && j.error.code) || r.status) || 0 });
     console.error('[fast2sms-wa] FAILED:', err.message);
     throw err;
 }
@@ -4636,30 +4678,43 @@ async function sendFast2SmsWhatsAppOtp(mobile, otp) {
 function otpSendFailed(res, e, where) {
     console.error('[' + (where || 'otp') + '] OTP could not be sent:', e && e.message);
     if (res.headersSent) return;
-    const message = 'SMS Gateway verification pending or failed. Please check Fast2SMS account.';
-    const out = { success: false, message: message, error: message, code: 'SMS_GATEWAY_FAILED' };
+    const wa = !!(e && e.channel === 'whatsapp');
+    const message = wa ? 'The WhatsApp OTP could not be sent. Please check the Fast2SMS WhatsApp setup (template, phone number ID, wallet balance).' : 'SMS Gateway verification pending or failed. Please check Fast2SMS account.';
+    const out = { success: false, message: message, error: message, code: wa ? 'WHATSAPP_GATEWAY_FAILED' : 'SMS_GATEWAY_FAILED' };
     if (e && e.fast2smsCode) out.gatewayCode = e.fast2smsCode;   // e.g. 996
     if (String(process.env.OTP_DEBUG || '').toLowerCase() === 'true') out.detail = String(e && e.message || e).slice(0, 300);
     res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
-async function otpServiceConfigured() { return !!(await fast2smsKey()) || waConfigured() || (await smsConfigured()); }
-// Fast2SMS WhatsApp → Fast2SMS SMS → Meta WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
-async function sendOtpMessage(mobile, otp) {
-    if ((await fast2smsKey()) && fast2smsWaConfigured()) {
-        try { await sendFast2SmsWhatsAppOtp(mobile, otp); return 'whatsapp'; }
-        catch (e) { console.warn('Fast2SMS WhatsApp OTP failed, falling back to SMS:', e.message); }
-    }
-    if (await fast2smsKey()) {
-        try { await sendFast2SmsOtp(mobile, otp); return 'sms'; }
-        catch (e) { console.warn('Fast2SMS OTP failed:', e.message); if (!waConfigured()) throw e; }
-    }
-    if (waConfigured()) {
-        try { await sendWhatsAppOtp(mobile, otp); return 'whatsapp'; }
-        catch (e) { console.warn('WhatsApp OTP failed, falling back to SMS:', e.message); }
-    }
-    if (!(await smsConfigured())) throw new Error('Neither Fast2SMS, WhatsApp nor the SMS gateway could be used.');
+// Is at least one channel usable under the current OTP_CHANNEL mode?
+async function otpServiceConfigured() {
+    const mode = otpChannelMode();
+    const waOk = ((await fast2smsKey()) && fast2smsWaConfigured()) || waConfigured();
+    if (mode === 'whatsapp') return !!waOk;
+    const smsOk = !!(await fast2smsKey()) || (await smsConfigured());
+    return mode === 'sms' ? smsOk : (!!waOk || smsOk);
+}
+async function sendOtpViaSms(mobile, otp) {
+    if (await fast2smsKey()) { await sendFast2SmsOtp(mobile, otp); return 'sms'; }
+    if (!(await smsConfigured())) throw new Error('No SMS gateway is configured.');
     await sendSms(mobile, 'Your Anmol LibMatrix OTP is ' + otp + '. It is valid for 10 minutes. Do not share it with anyone.');
     return 'sms';
+}
+async function sendOtpViaWhatsApp(mobile, otp) {
+    if ((await fast2smsKey()) && fast2smsWaConfigured()) { await sendFast2SmsWhatsAppOtp(mobile, otp); return 'whatsapp'; }   // Fast2SMS WhatsApp API
+    if (waConfigured()) { try { await sendWhatsAppOtp(mobile, otp); return 'whatsapp'; } catch (e) { e.channel = 'whatsapp'; throw e; } }   // direct Meta Cloud API (WA_ACCESS_TOKEN)
+    throw waError('WhatsApp is not configured: set FAST2SMS_WA_PHONE_NUMBER_ID + FAST2SMS_WA_TEMPLATE_NAME (or FAST2SMS_WA_MESSAGE_ID).');
+}
+// OTP_CHANNEL=whatsapp (default) → WhatsApp ONLY: the SMS route is never called, so SMS errors (996 website verification / DLT) cannot occur.
+// OTP_CHANNEL=auto → WhatsApp first, SMS only if WhatsApp fails.   OTP_CHANNEL=sms → SMS only.   Returns the channel that delivered the OTP.
+async function sendOtpMessage(mobile, otp) {
+    const mode = otpChannelMode();
+    if (mode === 'sms') return sendOtpViaSms(mobile, otp);
+    try { return await sendOtpViaWhatsApp(mobile, otp); }
+    catch (e) {
+        if (mode !== 'auto') throw e;
+        console.warn('WhatsApp OTP failed, falling back to SMS (OTP_CHANNEL=auto):', e.message);
+        return sendOtpViaSms(mobile, otp);
+    }
 }
 
 // 🆕 Recovery modal sends State + Mobile + Email together. When the stored record HAS an e-mail / state, they must match too
@@ -4682,7 +4737,7 @@ async function forgotPasswordCore(req, res) {
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The OTP service (Fast2SMS / SMS) is not configured. Please contact the administrator.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const prev = await _otpStore.get(key);
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -4834,7 +4889,7 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     if (await isTrustedDevice(a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The OTP service (Fast2SMS / SMS) is not configured. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
     const key = 'lotp|' + lc(a.id);
     const prev = await _otpStore.get(key);
     if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -4891,7 +4946,8 @@ app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
     if (!process.env.OTP_DIAG_SECRET || !security.safeEqual(String(req.headers['x-diag-secret'] || ''), process.env.OTP_DIAG_SECRET)) return res.status(404).json({ error: 'Not found' });
     const out = { fast2smsKeyPresent: !!(await fast2smsKey()), route: String(process.env.FAST2SMS_ROUTE || 'otp'), fast2smsWhatsAppConfigured: fast2smsWaConfigured(), whatsappConfigured: waConfigured(), origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
     try { await ensureOtpTable(); out.otpTable = 'ok'; } catch (e) { out.otpTable = 'ERROR: ' + e.message; }
-    if (req.query.send) { try { await sendFast2SmsOtp(String(req.query.send), String(crypto.randomInt(1000, 10000))); out.testSend = 'ok'; } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
+    out.otpChannel = otpChannelMode(); out.fast2smsWaMode = fast2smsWaConfig().mode;
+    if (req.query.send) { try { out.testSend = 'ok via ' + await sendOtpMessage(String(req.query.send), String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN))); } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
     res.json(out);
 }));
 ['/api/auth', '/api/agent', '/api/material'].forEach(base => {

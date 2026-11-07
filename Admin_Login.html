@@ -2373,7 +2373,18 @@ html,body,#admin-app{width:100%;min-width:0;}
 'use strict';
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-var API=String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
+/* ── API base URL ──
+   1) window.SHDL_API_BASE (set by gov-shell.js / your hosting) always wins.
+   2) Opened through the backend itself (Render /app/<token> link, or localhost:PORT) → same-origin '/api'.
+   3) Opened from a separate static host (Netlify) → the Render backend below. CHANGE ALM_BACKEND_ORIGIN if your backend URL differs.
+   NOTE: a page opened as file:// has origin "null" and is always blocked by the server's CORS rules — open it through the site instead. */
+var ALM_BACKEND_ORIGIN='https://anmol-libmatrix.onrender.com';
+window.ALM_RESOLVE_API=function(){
+  if(window.SHDL_API_BASE)return String(window.SHDL_API_BASE).replace(/\/$/,'');
+  if(/\.netlify\.app$/i.test(location.hostname))return ALM_BACKEND_ORIGIN+'/api';
+  return '/api';
+};
+var API=window.ALM_RESOLVE_API();
 var TOKEN=null, GATE=null;
 var _cap='';
 window.GEN_CAPTCHA=function(){
@@ -2420,7 +2431,8 @@ function tdSet(u,t){try{var m=tdAll();m[String(u||'').trim().toLowerCase()]=t;lo
 function tdClear(u){try{var m=tdAll();delete m[String(u||'').trim().toLowerCase()];localStorage.setItem(TD_KEY,JSON.stringify(m));}catch(e){}}
 function postJson(path,body){
   return AnmolPortal.fetchRetry(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},{tries:1,timeout:30000})
-    .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+    .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});})
+    .catch(function(err){console.error('[Admin login] request to '+API+path+' failed (network / CORS / wrong API base):',err);throw err;});
 }
 function setStep(n){
   var b=$('l-box');if(b)b.setAttribute('data-step',String(n));
@@ -2708,7 +2720,7 @@ resume();
   });
   /* ── Super Admin password reset: 1 Account Details → 2 OTP Verification → 3 Set New Password ── */
   window.ALM_RESET_FLOW=(function(){
-    var API=String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
+    var API=window.ALM_RESOLVE_API?window.ALM_RESOLVE_API():String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
     var FORMS={1:'alm-password-form',2:'alm-otp-form',3:'alm-newpass-form'};
     var ctx=null,otpCode='',timer=null;
     function post(path,body){
@@ -2745,7 +2757,7 @@ resume();
         showStep(2);
         say('alm-otp-alert',waiting?'An OTP was sent a moment ago. Enter it below, or wait to resend.':(x.d.message||'OTP sent to your registered mobile number.'),'ok');
         cooldown(x.d.resendInSec||60);
-      }).catch(function(err){lock(btn,false);say(box,'Unable to reach the server ('+((err&&err.message)||'network error')+'). Please try again.','err');});
+      }).catch(function(err){lock(btn,false);say(box,'Unable to reach the server ('+((err&&err.message)||'network error')+') at '+API+'/send-otp . Check that the backend is running with the latest server.js and that this page is opened from an allowed site.','err');});
     }
     byId('alm-password-form').addEventListener('submit',function(e){
       e.preventDefault();if(!this.reportValidity())return;
