@@ -102,7 +102,7 @@ const CORS_OPTIONS = {
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);               // same-origin / server-to-server (webhooks, health checks): CORS does not apply
         if (isOriginAllowed(origin)) return callback(null, true);
-        console.warn('CORS blocked origin:', origin);
+        console.warn('CORS blocked origin:', origin, '→ add it to Render env EXTRA_CORS_ORIGINS (comma separated). The browser reports this as "Unable to reach the server".');
         const corsErr = new Error('CORS: access from this domain is not allowed.');
         corsErr.status = 403;
         return callback(corsErr);
@@ -4537,20 +4537,44 @@ async function fast2smsKey() {
     if (c.endpoint && !/fast2sms/i.test(c.endpoint)) return '';   // a different gateway is configured → use the generic sender
     return c.key || '';
 }
+// One raw request to Fast2SMS. FAST2SMS_URL is only for tests (default = the real gateway). Nothing secret is ever logged.
+function fast2smsRequest(body, key, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        let u;
+        try { u = new URL(process.env.FAST2SMS_URL || 'https://www.fast2sms.com/dev/bulkV2'); } catch (e) { return reject(new Error('FAST2SMS_URL is invalid.')); }
+        const payload = JSON.stringify(body);
+        const lib = require(u.protocol === 'http:' ? 'http' : 'https');
+        const rq = lib.request(u, { method: 'POST', timeout: timeoutMs, headers: { authorization: key, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Content-Length': Buffer.byteLength(payload) } }, (resp) => {
+            let data = '';
+            resp.on('data', (c) => { data += c; });
+            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
+        });
+        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS request timed out after ' + timeoutMs + ' ms (the server cannot reach www.fast2sms.com).')));
+        rq.on('error', (e) => reject(new Error('Fast2SMS network error: ' + (e.code ? e.code + ' – ' : '') + e.message)));
+        rq.write(payload); rq.end();
+    });
+}
 async function sendFast2SmsOtp(mobile, otp) {
     const key = await fast2smsKey();
-    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY).');
+    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
     const num = last10(mobile);
     if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
     const route = String(process.env.FAST2SMS_ROUTE || 'otp').toLowerCase();
     const body = route === 'dlt'
         ? { route: 'dlt', sender_id: process.env.FAST2SMS_SENDER_ID || '', message: process.env.FAST2SMS_TEMPLATE_ID || '', variables_values: String(otp), numbers: num, flash: 0 }
         : { route: 'otp', variables_values: String(otp), numbers: num, flash: 0 };
-    const r = await httpsPostJson('https://www.fast2sms.com/dev/bulkV2', { authorization: key }, body, 12000);
+    if (route === 'dlt' && (!body.sender_id || !body.message)) throw new Error('FAST2SMS_ROUTE=dlt needs FAST2SMS_SENDER_ID and FAST2SMS_TEMPLATE_ID.');
+    console.log('[fast2sms] → route=' + route + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
+    let r;
+    try { r = await fast2smsRequest(body, key, 12000); }
+    catch (e) { console.error('[fast2sms] FAILED (no response):', e.message); throw e; }
     const j = r.json || {};
+    console.log('[fast2sms] ← HTTP ' + r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 300));   // response never contains the OTP
     if (r.status >= 200 && r.status < 300 && (j.return === true || j.return === 'true')) return true;
     const m = Array.isArray(j.message) ? j.message.join(' ') : (j.message || r.text || ('HTTP ' + r.status));
-    throw new Error('Fast2SMS ' + (j.status_code || r.status) + ': ' + String(m).slice(0, 160));
+    const err = new Error('Fast2SMS rejected the request (status_code ' + (j.status_code || r.status) + '): ' + String(m).slice(0, 200));
+    console.error('[fast2sms] FAILED:', err.message);
+    throw err;
 }
 async function otpServiceConfigured() { return !!(await fast2smsKey()) || waConfigured() || (await smsConfigured()); }
 // Fast2SMS first → WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
@@ -4577,7 +4601,7 @@ function recoveryExtraOk(acc, b) {
     if (st && r.state && lc(r.state) !== st) return false;
     return true;
 }
-async function forgotPasswordHandler(req, res) {
+async function forgotPasswordCore(req, res) {
     try {
         if (hitRateLimit('otp:' + (req.ip || ''), 15, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
         const b = req.body || {};
@@ -4600,9 +4624,16 @@ async function forgotPasswordHandler(req, res) {
         const m = acc.mobile;
         res.json({ success: true, channel: channel, message: 'A 4-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
     } catch (e) {
-        console.error('forgot-password error:', e.message);
-        res.status(502).json({ error: 'Unable to send the OTP right now. Please try again.' });
+        console.error('[forgot-password] FAILED:', e && (e.stack || e.message));
+        if (res.headersSent) return;
+        res.status(502).json(Object.assign({ error: 'Unable to send the OTP right now. Please try again.' }, String(process.env.OTP_DEBUG || '').toLowerCase() === 'true' ? { detail: String(e && e.message || e).slice(0, 300) } : {}));   // OTP_DEBUG=true shows the exact reason in the browser (turn off afterwards)
     }
+}
+// Never leave the browser hanging: whatever happens, answer within 25 s (the page waits 30 s before "Unable to reach the server").
+function forgotPasswordHandler(req, res) {
+    console.log('[forgot-password] ' + req.method + ' ' + req.originalUrl + ' origin=' + (req.headers.origin || '-') + ' ip=' + (req.ip || '-'));
+    const t = setTimeout(() => { if (!res.headersSent) { console.error('[forgot-password] TIMEOUT after 25 s (database or SMS gateway not answering)'); res.status(504).json({ error: 'The server took too long to respond. Please try again.' }); } }, 25000);
+    return forgotPasswordCore(req, res).catch(e => { console.error('[forgot-password] unexpected:', e && e.stack); if (!res.headersSent) res.status(500).json({ error: 'Unable to send the OTP right now. Please try again.' }); }).then(() => clearTimeout(t));
 }
 async function resetPasswordHandler(req, res) {
     try {
@@ -4764,6 +4795,15 @@ async function adminSecondFactor(req, userId) {
     await _otpStore.delete(key);   // one-time use
     return { ok: true, deviceToken: b.trustDevice ? await issueTrustedDevice(userId, req) : undefined };
 }
+// 🩺 OTP health check — GET /api/auth/otp-diagnostics with header  x-diag-secret: <OTP_DIAG_SECRET>  (route is disabled unless that env var is set).
+//    Shows whether the Fast2SMS key / database are reachable; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
+app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
+    if (!process.env.OTP_DIAG_SECRET || !security.safeEqual(String(req.headers['x-diag-secret'] || ''), process.env.OTP_DIAG_SECRET)) return res.status(404).json({ error: 'Not found' });
+    const out = { fast2smsKeyPresent: !!(await fast2smsKey()), route: String(process.env.FAST2SMS_ROUTE || 'otp'), whatsappConfigured: waConfigured(), origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
+    try { await ensureOtpTable(); out.otpTable = 'ok'; } catch (e) { out.otpTable = 'ERROR: ' + e.message; }
+    if (req.query.send) { try { await sendFast2SmsOtp(String(req.query.send), String(crypto.randomInt(1000, 10000))); out.testSend = 'ok'; } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
+    res.json(out);
+}));
 ['/api/auth', '/api/agent', '/api/material'].forEach(base => {
     app.post(base + '/verify-reset-otp', verifyResetOtpHandler);
     app.post(base + '/forgot-password', forgotPasswordHandler);

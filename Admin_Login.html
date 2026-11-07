@@ -2373,7 +2373,7 @@ html,body,#admin-app{width:100%;min-width:0;}
 'use strict';
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-var API=window.SHDL_API_BASE||'';
+var API=String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
 var TOKEN=null, GATE=null;
 var _cap='';
 window.GEN_CAPTCHA=function(){
@@ -2708,13 +2708,13 @@ resume();
   });
   /* ── Super Admin password reset: 1 Account Details → 2 OTP Verification → 3 Set New Password ── */
   window.ALM_RESET_FLOW=(function(){
-    var API=window.SHDL_API_BASE||'';
+    var API=String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
     var FORMS={1:'alm-password-form',2:'alm-otp-form',3:'alm-newpass-form'};
     var ctx=null,otpCode='',timer=null;
     function post(path,body){
       var init={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
       var req=(window.AnmolPortal&&window.AnmolPortal.fetchRetry)?window.AnmolPortal.fetchRetry(API+path,init,{tries:1,timeout:30000}):fetch(API+path,init);
-      return req.then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+      return req.then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)console.warn('[Admin reset] '+path+' → HTTP '+r.status,d);return {ok:r.ok,d:d};});}).catch(function(err){console.error('[Admin reset] request to '+API+path+' failed (network / CORS / timeout):',err);throw err;});
     }
     function say(id,msg,kind){var el=byId(id);if(!el)return;el.textContent=msg||'';el.className=msg?'alm-recovery-alert show '+(kind||'info'):'alm-recovery-alert';}
     function lock(btn,on){if(btn)btn.disabled=!!on;}
@@ -2745,7 +2745,7 @@ resume();
         showStep(2);
         say('alm-otp-alert',waiting?'An OTP was sent a moment ago. Enter it below, or wait to resend.':(x.d.message||'OTP sent to your registered mobile number.'),'ok');
         cooldown(x.d.resendInSec||60);
-      }).catch(function(){lock(btn,false);say(box,'Unable to reach the server. Please try again.','err');});
+      }).catch(function(err){lock(btn,false);say(box,'Unable to reach the server ('+((err&&err.message)||'network error')+'). Please try again.','err');});
     }
     byId('alm-password-form').addEventListener('submit',function(e){
       e.preventDefault();if(!this.reportValidity())return;
