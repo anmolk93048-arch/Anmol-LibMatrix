@@ -4577,6 +4577,60 @@ async function sendFast2SmsOtp(mobile, otp) {
     console.error('[fast2sms] FAILED:', err.message);
     throw err;
 }
+// ──────────────────────────────────────────────────────────────────
+// 💬 FAST2SMS WHATSAPP OTP  (GET https://www.fast2sms.com/dev/whatsapp, header "authorization: <API key>")
+//   Uses the SAME Fast2SMS API key as the SMS gateway. Render → Environment:
+//     FAST2SMS_WA_MESSAGE_ID       – Message ID of your approved WhatsApp OTP template (Fast2SMS panel → WhatsApp Manager).
+//                                    The template must have ONE variable ({{1}}) — it receives the 8-digit OTP.
+//     FAST2SMS_WA_PHONE_NUMBER_ID  – your WABA Phone Number ID (Fast2SMS panel → WhatsApp Manager)
+//     FAST2SMS_WA_ENABLED          – set "false" to skip WhatsApp and send SMS only
+//   If WhatsApp is not configured or the send fails, sendOtpMessage() falls back to the Fast2SMS SMS route automatically.
+//   The OTP itself is never logged.
+// ──────────────────────────────────────────────────────────────────
+function fast2smsWaConfig() {
+    return {
+        messageId: String(process.env.FAST2SMS_WA_MESSAGE_ID || '').trim(),
+        phoneId: String(process.env.FAST2SMS_WA_PHONE_NUMBER_ID || '').trim(),
+        enabled: String(process.env.FAST2SMS_WA_ENABLED || 'true').toLowerCase() !== 'false'
+    };
+}
+function fast2smsWaConfigured() { const c = fast2smsWaConfig(); return c.enabled && !!(c.messageId && c.phoneId); }
+function fast2smsWaRequest(query, key, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        let u;
+        try { u = new URL(process.env.FAST2SMS_WA_URL || 'https://www.fast2sms.com/dev/whatsapp'); } catch (e) { return reject(new Error('FAST2SMS_WA_URL is invalid.')); }
+        Object.keys(query).forEach(k => u.searchParams.set(k, String(query[k])));
+        const lib = require(u.protocol === 'http:' ? 'http' : 'https');
+        const rq = lib.request(u, { method: 'GET', timeout: timeoutMs, headers: { authorization: key, 'Cache-Control': 'no-cache' } }, (resp) => {
+            let data = '';
+            resp.on('data', (c) => { data += c; });
+            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
+        });
+        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS WhatsApp request timed out after ' + timeoutMs + ' ms.')));
+        rq.on('error', (e) => reject(new Error('Fast2SMS WhatsApp network error: ' + (e.code ? e.code + ' – ' : '') + e.message)));
+        rq.end();
+    });
+}
+async function sendFast2SmsWhatsAppOtp(mobile, otp) {
+    const key = await fast2smsKey();
+    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
+    if (!fast2smsWaConfigured()) throw new Error('Fast2SMS WhatsApp is not configured (FAST2SMS_WA_MESSAGE_ID / FAST2SMS_WA_PHONE_NUMBER_ID).');
+    const num = last10(mobile);
+    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
+    const c = fast2smsWaConfig();
+    console.log('[fast2sms-wa] → mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
+    let r;
+    try { r = await fast2smsWaRequest({ message_id: c.messageId, phone_number_id: c.phoneId, numbers: num, variables_values: String(otp) }, key, 12000); }
+    catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); throw e; }
+    const j = r.json || {};
+    console.log('[fast2sms-wa] ← HTTP ' + r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 300));   // response never contains the OTP
+    if (r.status >= 200 && r.status < 300 && (j.status === true || j.status === 'true' || j.return === true || j.return === 'true')) return true;
+    const m = Array.isArray(j.message) ? j.message.join(' ') : (j.message || r.text || ('HTTP ' + r.status));
+    const err = new Error('Fast2SMS WhatsApp rejected the request (status ' + (j.status_code || r.status) + '): ' + String(m).slice(0, 200));
+    err.fast2smsCode = Number(j.status_code || r.status) || 0;
+    console.error('[fast2sms-wa] FAILED:', err.message);
+    throw err;
+}
 // Any OTP-sending failure (Fast2SMS 996 "website verification pending", 412 bad key, low balance, timeout, network) becomes a
 // friendly JSON answer — never a crash and never a bare 502. The real reason goes to the server log only (OTP_DEBUG=true adds it to the reply).
 function otpSendFailed(res, e, where) {
@@ -4589,8 +4643,12 @@ function otpSendFailed(res, e, where) {
     res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
 async function otpServiceConfigured() { return !!(await fast2smsKey()) || waConfigured() || (await smsConfigured()); }
-// Fast2SMS first → WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
+// Fast2SMS WhatsApp → Fast2SMS SMS → Meta WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
 async function sendOtpMessage(mobile, otp) {
+    if ((await fast2smsKey()) && fast2smsWaConfigured()) {
+        try { await sendFast2SmsWhatsAppOtp(mobile, otp); return 'whatsapp'; }
+        catch (e) { console.warn('Fast2SMS WhatsApp OTP failed, falling back to SMS:', e.message); }
+    }
     if (await fast2smsKey()) {
         try { await sendFast2SmsOtp(mobile, otp); return 'sms'; }
         catch (e) { console.warn('Fast2SMS OTP failed:', e.message); if (!waConfigured()) throw e; }
@@ -4630,13 +4688,14 @@ async function forgotPasswordCore(req, res) {
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
             return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
         }
-        const otp = String(crypto.randomInt(1000, 10000));
+        const otpLen = req.otpLen === 8 ? 8 : 4;   // /api/send-otp → 8 digits; legacy /forgot-password routes (Agent / Material portals) keep 4
+        const otp = String(crypto.randomInt(10 ** (otpLen - 1), 10 ** otpLen));
         let channel;
         try { channel = await sendOtpMessage(acc.mobile, otp); }
         catch (e) { return otpSendFailed(res, e, 'forgot-password'); }
         await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         const m = acc.mobile;
-        res.json({ success: true, channel: channel, message: 'A 4-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+        res.json({ success: true, channel: channel, message: (otpLen === 8 ? 'An 8-digit' : 'A 4-digit') + ' OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
     } catch (e) {
         console.error('[forgot-password] FAILED:', e && (e.stack || e.message));
         if (res.headersSent) return;
@@ -4657,7 +4716,7 @@ async function resetPasswordHandler(req, res) {
         const contact = String(b.contact || '').trim();
         const code = String(b.code || b.otp || '').trim();
         const newPassword = String(b.newPassword || '');
-        if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
+        if (!/^(\d{4}|\d{8})$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         if (newPassword.length < 6) return res.status(400).json({ error: 'Passwords do not match or fields are empty.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
@@ -4705,7 +4764,7 @@ async function verifyResetOtpHandler(req, res) {
         const userId = String(b.user || b.userId || b.username || '').trim();
         const contact = String(b.contact || '').trim();
         const code = String(b.code || b.otp || '').trim();
-        if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
+        if (!/^(\d{4}|\d{8})$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         const key = lc(acc.userId) + '|' + acc.kind;
@@ -4764,7 +4823,7 @@ async function findAdminByCredentials(username, password) {
     if (['blocked', 'inactive', 'suspended', 'disabled'].includes(lc(user.status || 'active'))) return { status: 403, error: 'This account has been deactivated by the administrator.' };
     return { user: user, id: String(user.username || username) };
 }
-app.post('/api/auth/admin-login-otp', noStore, asyncRoute(async (req, res) => {
+const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     const b = req.body || {};
     const username = String(b.username || '').trim(), password = String(b.password || '');
     if (!username || !password) return res.status(400).json({ error: 'User ID and password are required.' });
@@ -4787,7 +4846,24 @@ app.post('/api/auth/admin-login-otp', noStore, asyncRoute(async (req, res) => {
     catch (e) { return otpSendFailed(res, e, 'admin-login-otp'); }
     await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
     res.json({ success: true, channel: channel, message: 'An 8-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
-}));
+});
+app.post('/api/auth/admin-login-otp', noStore, adminLoginOtpHandler);   // kept for backward compatibility
+
+// ══════════════════════════════════════════════════════════════════
+// 📲 POST /api/send-otp — single entry point for the Super Admin 8-digit OTP (WhatsApp via Fast2SMS, SMS fallback)
+//   {purpose:'login',    username, password, deviceToken?}   → verifies the credentials FIRST; a wrong password never triggers an OTP
+//   {purpose:'recovery', user, mobile|contact, email?}       → account must match the stored record (User ID + registered mobile)
+//   The OTP is ALWAYS sent to the mobile number stored on the account — never to a number supplied by the browser — and only a
+//   SHA-256 hash is stored (10-minute expiry, 60 s resend gap, 5 tries). Verification stays in /api/auth/login (login) and
+//   /api/auth/verify-reset-otp + /api/auth/reset-password (recovery).
+// ══════════════════════════════════════════════════════════════════
+app.post('/api/send-otp', noStore, (req, res, next) => {
+    if (hitRateLimit('sotp:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const purpose = lc((req.body || {}).purpose);
+    if (purpose === 'login') return adminLoginOtpHandler(req, res, next);
+    if (purpose === 'recovery' || purpose === 'forgot-password') { req.otpLen = ADMIN_OTP_LEN; return forgotPasswordHandler(req, res); }
+    return res.status(400).json({ error: 'Invalid request. purpose must be "login" or "recovery".' });
+});
 // Called by /api/auth/login (admin role): returns null when the login may continue, otherwise {status, body}.
 async function adminSecondFactor(req, userId) {
     if (!adminOtpEnabled()) return { ok: true };
@@ -4813,7 +4889,7 @@ async function adminSecondFactor(req, userId) {
 //    Shows whether the Fast2SMS key / database are reachable; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
 app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
     if (!process.env.OTP_DIAG_SECRET || !security.safeEqual(String(req.headers['x-diag-secret'] || ''), process.env.OTP_DIAG_SECRET)) return res.status(404).json({ error: 'Not found' });
-    const out = { fast2smsKeyPresent: !!(await fast2smsKey()), route: String(process.env.FAST2SMS_ROUTE || 'otp'), whatsappConfigured: waConfigured(), origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
+    const out = { fast2smsKeyPresent: !!(await fast2smsKey()), route: String(process.env.FAST2SMS_ROUTE || 'otp'), fast2smsWhatsAppConfigured: fast2smsWaConfigured(), whatsappConfigured: waConfigured(), origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
     try { await ensureOtpTable(); out.otpTable = 'ok'; } catch (e) { out.otpTable = 'ERROR: ' + e.message; }
     if (req.query.send) { try { await sendFast2SmsOtp(String(req.query.send), String(crypto.randomInt(1000, 10000))); out.testSend = 'ok'; } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
     res.json(out);

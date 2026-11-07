@@ -2456,7 +2456,7 @@ window.DO_LOGIN=function(){
   if(!p.trim()){showErr('Password cannot be blank.');$('l-pass').focus();return;}
   if(!cap||cap!==_cap){showErr('Invalid Captcha code. Please re-enter the characters shown.');GEN_CAPTCHA();$('l-captcha').focus();return;}
   showErr(''); AnmolAuthUI.busy(btn,true,'Authenticating...');
-  postJson('/auth/admin-login-otp',{username:u,password:p,deviceToken:tdGet(u)}).then(function(x){
+  postJson('/send-otp',{purpose:'login',username:u,password:p,deviceToken:tdGet(u)}).then(function(x){
     AnmolAuthUI.busy(btn,false);
     if(x.ok&&x.d.skipped){_cred={u:u,p:p};finishLogin('');return;}   /* trusted device (or OTP disabled) → no OTP prompt */                 /* OTP disabled on the server (emergency switch) */
     if(x.ok){_cred={u:u,p:p};GEN_CAPTCHA();showOtpStep(x.d.message,x.d.resendInSec);return;}
@@ -2468,7 +2468,7 @@ window.DO_LOGIN=function(){
 window.RESEND_LOGIN_OTP=function(){
   if(!_cred)return resetToStep1();
   var rb=$('l-otp-resend');rb.disabled=true;showErr('');
-  postJson('/auth/admin-login-otp',{username:_cred.u,password:_cred.p,deviceToken:''}).then(function(x){
+  postJson('/send-otp',{purpose:'login',username:_cred.u,password:_cred.p,deviceToken:''}).then(function(x){
     if(x.ok){$('l-otp').value='';$('l-otp-info').textContent=x.d.message||'A new code has been sent.';startOtpTimer(x.d.resendInSec||60);return;}
     showErr(x.d.error||'Unable to resend the code. Please try again.');
     if(x.d&&x.d.resendInSec)startOtpTimer(x.d.resendInSec);else rb.disabled=false;
@@ -2622,10 +2622,10 @@ resume();
           <button class="alm-recovery-primary" type="submit">Verify All 3 Details &amp; Continue&nbsp; →</button>
         </form>
         <form id="alm-otp-form" autocomplete="off" hidden>
-          <p class="alm-recovery-intro">आपके registered Mobile Number <strong id="alm-otp-mobile"></strong> पर <strong>4-digit OTP</strong> भेजा गया है। OTP verify होने के बाद ही नया password सेट कर पाएँगे।</p>
+          <p class="alm-recovery-intro">आपके registered Mobile Number <strong id="alm-otp-mobile"></strong> पर <strong>8-digit OTP</strong> भेजा गया है। OTP verify होने के बाद ही नया password सेट कर पाएँगे।</p>
           <div class="alm-recovery-field">
-            <label class="alm-recovery-label" for="alm-otp-code">Enter 4-Digit OTP</label>
-            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">🔑</span><input class="alm-recovery-input" id="alm-otp-code" name="otp" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="Enter the 4-digit OTP" autocomplete="one-time-code" required></div>
+            <label class="alm-recovery-label" for="alm-otp-code">Enter 8-Digit OTP</label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">🔑</span><input class="alm-recovery-input" id="alm-otp-code" name="otp" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="Enter the 8-digit OTP" autocomplete="one-time-code" required></div>
           </div>
           <div class="alm-recovery-alert" id="alm-otp-alert" role="status" aria-live="polite"></div>
           <button class="alm-recovery-primary" type="submit">Verify OTP &amp; Continue&nbsp; →</button>
@@ -2736,7 +2736,7 @@ resume();
     function requestOtp(fromResend){
       var btn=fromResend?byId('alm-otp-resend'):submitBtn(byId('alm-password-form')),box=fromResend?'alm-otp-alert':'alm-password-alert';
       lock(btn,true);say(box,'Sending OTP…','info');
-      return post('/auth/forgot-password',{user:ctx.userId,contact:ctx.mobile,email:ctx.email}).then(function(x){
+      return post('/send-otp',{purpose:'recovery',user:ctx.userId,contact:ctx.mobile,email:ctx.email}).then(function(x){
         var waiting=!x.ok&&x.d&&x.d.resendInSec;
         if(!x.ok&&!waiting){lock(btn,false);say(box,x.d.error||'Unable to send the OTP right now. Please try again.','err');return;}
         lock(btn,false);say('alm-password-alert','');
@@ -2759,7 +2759,7 @@ resume();
     byId('alm-otp-form').addEventListener('submit',function(e){
       e.preventDefault();if(!ctx)return;
       var code=byId('alm-otp-code').value.replace(/\D/g,''),btn=submitBtn(this);
-      if(code.length!==4){say('alm-otp-alert','Please enter the 4-digit OTP.','err');return;}
+      if(code.length!==8){say('alm-otp-alert','Please enter the 8-digit OTP.','err');return;}
       lock(btn,true);
       post('/auth/verify-reset-otp',{user:ctx.userId,contact:ctx.mobile,email:ctx.email,code:code}).then(function(x){
         lock(btn,false);
