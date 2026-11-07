@@ -1,0 +1,33 @@
+/* Compact recovery card (Reset Super Admin Password / Recover Username) — max 450px */
+#alm-recovery-modal{padding:16px 14px;}
+#alm-recovery-modal .alm-recovery-card{width:100%;max-width:450px;max-height:calc(100dvh - 32px);border-radius:16px;box-shadow:0 18px 50px rgba(20,55,91,.14),0 3px 10px rgba(20,55,91,.05);}
+#alm-recovery-modal .alm-recovery-head{padding:16px 22px 12px;}
+#alm-recovery-modal .alm-recovery-brand{min-height:0;margin-bottom:8px;}
+#alm-recovery-modal .alm-recovery-brand-fallback{font-size:16px;}
+#alm-recovery-modal .alm-recovery-close{width:30px;height:30px;flex-basis:30px;border-radius:8px;}
+#alm-recovery-modal .alm-recovery-access{min-height:28px;margin-bottom:10px;padding:0 12px;font-size:10px;}
+#alm-recovery-modal .alm-recovery-title{font-size:19px;line-height:1.25;}
+#alm-recovery-modal .alm-recovery-subtitle{margin-top:4px;font-size:10.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-body{padding:16px 22px 18px;}
+#alm-recovery-modal .alm-recovery-intro{margin:0 0 12px;font-size:11px;line-height:1.6;}
+#alm-recovery-modal .alm-recovery-steps{gap:6px;margin:0 0 14px;}
+#alm-recovery-modal .alm-recovery-step{padding:7px 6px;gap:5px;font-size:8.5px;border-radius:8px;}
+#alm-recovery-modal .alm-step-no{width:18px;height:18px;flex-basis:18px;font-size:9px;}
+#alm-recovery-modal .alm-recovery-field{margin:0 0 11px;}
+#alm-recovery-modal .alm-recovery-label{margin-bottom:5px;font-size:10.5px;}
+#alm-recovery-modal .alm-required-note{margin:-3px 0 10px;font-size:9.5px;}
+#alm-recovery-modal .alm-recovery-input-wrap{min-height:44px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-input-icon{width:42px;flex-basis:42px;}
+#alm-recovery-modal .alm-recovery-input{height:42px;padding:0 12px;font-size:13px;}
+#alm-recovery-modal .alm-recovery-hint{margin-top:5px;font-size:9.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-alert{margin-bottom:10px;padding:9px 11px;font-size:10.5px;}
+#alm-recovery-modal .alm-recovery-primary{min-height:44px;margin-top:2px;border-radius:10px;font-size:13px;}
+#alm-recovery-modal .alm-recovery-method{min-height:42px;font-size:11.5px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-security-note{margin-top:12px;padding:9px 10px;font-size:9.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-foot{margin-top:12px;padding-top:10px;}
+#alm-recovery-modal .alm-recovery-back{margin-top:8px;}
+@media(max-width:560px){#alm-recovery-modal{padding:8px}#alm-recovery-modal .alm-recovery-card{max-height:98dvh}#alm-recovery-modal .alm-recovery-head{padding:14px 16px 10px}#alm-recovery-modal .alm-recovery-body{padding:14px 16px 16px}#alm-recovery-modal .alm-recovery-title{font-size:18px}}
+/* "Remember this device" row on the 8-digit OTP step */
+#l-box .otp-trust{display:flex;align-items:flex-start;gap:8px;margin:10px 0 2px;font-size:12px;line-height:1.45;color:var(--login-muted,#557493);cursor:pointer}
+#l-box .otp-trust input{margin-top:2px;flex:0 0 auto;width:15px;height:15px;accent-color:#0d63c8}
+#l-box .otp-trust small{display:block;font-size:10.5px;opacity:.85}

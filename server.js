@@ -2226,96 +2226,6 @@ function parseEntityList(raw) {
 const _lcT = (x) => String(x == null ? '' : x).trim().toLowerCase();
 
 
-// ══════════════════════════════════════════════════════════════════
-// 🔐 SUPER ADMIN LOGIN OTP (8-digit, Fast2SMS / WhatsApp) + 🖥️ TRUSTED DEVICE
-//   • /api/auth/admin-login-otp : password check → 8-digit OTP to the admin's registered mobile.
-//   • /api/auth/login (admin)   : OTP is enforced here (gate below), not just in the UI.
-//   • Trusted device: after one successful OTP login the browser gets a random device token (saved in localStorage).
-//     Only its SHA-256 hash is stored server-side, bound to that admin. Same browser → OTP skipped (password + captcha only);
-//     new laptop / other browser / new phone → no token → OTP asked. Env: ADMIN_LOGIN_OTP=off (emergency switch),
-//     TRUSTED_DEVICE_DAYS (default 180).
-// ══════════════════════════════════════════════════════════════════
-const LOGIN_OTP_LEN = 8;
-const TRUSTED_DEVICE_MS = (Number(process.env.TRUSTED_DEVICE_DAYS) || 180) * 24 * 3600 * 1000;
-async function verifyAdminCreds(username, password) {
-    if (!username || !password) return null;
-    const list = await readEntity('admins');
-    const want = lc(username);
-    const idx = list.findIndex(u => u && [u.username, u.email, u.id].some(f => f && lc(f) === want));
-    const user = idx >= 0 ? list[idx] : null;
-    if (!user || !user.password) return null;
-    const ok = looksHashed(user.password) ? bcrypt.compareSync(String(password), user.password) : security.safeEqual(user.password, String(password));
-    if (!ok) return null;
-    if (['blocked', 'inactive', 'suspended', 'disabled'].includes(lc(user.status))) return null;
-    return user;
-}
-const adminOtpOff = () => lc(process.env.ADMIN_LOGIN_OTP) === 'off';
-const tdKey = (tok) => 'td|' + sha(tok);
-async function isTrustedDevice(tok, user) {
-    if (!tok || typeof tok !== 'string' || tok.length < 32 || tok.length > 128) return false;
-    const rec = await _otpStore.get(tdKey(tok));
-    return !!(rec && Date.now() < rec.exp && rec.u === lc(user.username || user.id));
-}
-async function issueTrustedDevice(user, req) {
-    const tok = crypto.randomBytes(32).toString('hex');
-    await _otpStore.set(tdKey(tok), { u: lc(user.username || user.id), exp: Date.now() + TRUSTED_DEVICE_MS, at: Date.now(), ua: String(req.headers['user-agent'] || '').slice(0, 120) });
-    return tok;
-}
-app.post('/api/auth/admin-login-otp', async (req, res) => {
-    try {
-        const b = req.body || {};
-        if (hitRateLimit('alotp:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-        const user = await verifyAdminCreds(String(b.username || '').trim(), b.password);
-        if (!user) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
-        if (adminOtpOff()) return res.json({ skipped: true });
-        if (await isTrustedDevice(b.deviceToken, user)) return res.json({ skipped: true, trusted: true });   // ✅ known browser → no OTP
-        const mobile = last10(user.mobile || user.phone);
-        if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!(await smsConfigured()) && !waConfigured()) return res.status(501).json({ error: 'The OTP service is not configured. Set FAST2SMS_API_KEY on the server.' });
-        const key = 'alogin|' + lc(user.username || user.id);
-        const prev = await _otpStore.get(key);
-        if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
-            return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
-        }
-        const otp = String(crypto.randomInt(10 ** (LOGIN_OTP_LEN - 1), 10 ** LOGIN_OTP_LEN));
-        const channel = await sendOtpMessage(mobile, otp);
-        await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
-        res.json({ success: true, channel, message: 'An 8-digit code has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile ending ' + mobile.slice(-4) + '.', resendInSec: Math.round(OTP_RESEND_MS / 1000) });
-    } catch (e) {
-        console.error('admin-login-otp error:', e.message);
-        res.status(502).json({ error: 'Unable to send the OTP right now. Please try again.' });
-    }
-});
-// Gate in front of the admin branch of /api/auth/login — falls through (next) for every other role / bad password.
-app.post('/api/auth/login', async (req, res, next) => {
-    try {
-        const b = req.body || {};
-        if (lc(b.role) !== 'admin' || adminOtpOff()) return next();
-        const user = await verifyAdminCreds(String(b.username || '').trim(), b.password);
-        if (!user) return next();                       // main handler returns the proper credential error
-        const trusted = await isTrustedDevice(b.deviceToken, user);
-        let issued = null;
-        if (!trusted) {
-            const code = String(b.otp || '').replace(/\D/g, '');
-            const bad = (msg) => res.status(401).json({ error: msg || 'Invalid verification code. Please try again.', code: 'INVALID_OTP' });
-            if (code.length !== LOGIN_OTP_LEN) return bad('Please enter the 8-digit OTP / Secondary Verification Code.');
-            const key = 'alogin|' + lc(user.username || user.id);
-            const o = await _otpStore.get(key);
-            if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return bad('OTP has expired. Please request a new OTP.'); }
-            o.tries++; await _otpStore.set(key, o);
-            if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return bad('Too many wrong attempts. Please request a new OTP.'); }
-            if (o.hash !== sha(code)) return bad();
-            await _otpStore.delete(key);
-            if (b.rememberDevice !== false) issued = await issueTrustedDevice(user, req);   // 🖥️ remember this browser
-        }
-        if (issued || trusted) {
-            const _json = res.json.bind(res);
-            res.json = (payload) => { if (payload && payload.token) { payload = Object.assign({}, payload); if (issued) payload.deviceToken = issued; payload.trusted = !!trusted; } return _json(payload); };
-        }
-        next();
-    } catch (e) { console.error('admin login gate error:', e.message); res.status(500).json({ error: 'Unable to sign in right now. Please try again.' }); }
-});
-
 app.post('/api/auth/login', (req, res) => {
     const { role, username, password, mobile } = req.body || {};
     const roleKey = String(role || '').toLowerCase();
@@ -2428,11 +2338,19 @@ app.post('/api/auth/login', (req, res) => {
         if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
         const _isAdminLogin = roleKey === 'admin';
-        const token = _isAdminLogin
-            ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
-            : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
-        logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
-        res.json({ token });
+        const _issue = (extra) => {
+            const token = _isAdminLogin
+                ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
+                : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
+            res.json(Object.assign({ token }, extra || {}));
+        };
+        if (!_isAdminLogin) return _issue();
+        // 🔐 Super Admin: 8-digit OTP, skipped only for a trusted device (see "SUPER ADMIN LOGIN" block)
+        adminSecondFactor(req, String(user.username || username)).then(r => {
+            if (!r.ok) return res.status(r.status).json(r.body);
+            _issue(r.deviceToken ? { deviceToken: r.deviceToken } : null);
+        }).catch(e => { console.error('admin second factor error:', e.message); res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' }); });
     });
 });
 
@@ -4604,22 +4522,49 @@ async function autoNotifyEntityCredentials(key, incoming, existing, link) {
     }
     await Promise.all(jobs);
 }
-// WhatsApp first, SMS fallback. Returns the channel that actually delivered the OTP.
+// ══════════════════════════════════════════════════════════════════
+// 📲 FAST2SMS OTP GATEWAY  (POST https://www.fast2sms.com/dev/bulkV2, header "authorization: <API key>")
+//   Render → Environment:
+//     FAST2SMS_API_KEY      – Fast2SMS → Dev API → API key (SMS_API_KEY / Super Admin "SMS API" key is accepted too)
+//     FAST2SMS_ROUTE        – "otp" (default: Fast2SMS' built-in "Your OTP is XXXX" message, no DLT needed)
+//                             or "dlt" (your own DLT-approved template)
+//     FAST2SMS_SENDER_ID    – only for route "dlt": the 6-character DLT sender id
+//     FAST2SMS_TEMPLATE_ID  – only for route "dlt": the DLT message/template id (its variable {#var#} receives the OTP)
+//   The OTP itself is never logged.
+// ══════════════════════════════════════════════════════════════════
+async function fast2smsKey() {
+    const c = await loadSmsConfig();
+    if (c.endpoint && !/fast2sms/i.test(c.endpoint)) return '';   // a different gateway is configured → use the generic sender
+    return c.key || '';
+}
+async function sendFast2SmsOtp(mobile, otp) {
+    const key = await fast2smsKey();
+    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY).');
+    const num = last10(mobile);
+    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
+    const route = String(process.env.FAST2SMS_ROUTE || 'otp').toLowerCase();
+    const body = route === 'dlt'
+        ? { route: 'dlt', sender_id: process.env.FAST2SMS_SENDER_ID || '', message: process.env.FAST2SMS_TEMPLATE_ID || '', variables_values: String(otp), numbers: num, flash: 0 }
+        : { route: 'otp', variables_values: String(otp), numbers: num, flash: 0 };
+    const r = await httpsPostJson('https://www.fast2sms.com/dev/bulkV2', { authorization: key }, body, 12000);
+    const j = r.json || {};
+    if (r.status >= 200 && r.status < 300 && (j.return === true || j.return === 'true')) return true;
+    const m = Array.isArray(j.message) ? j.message.join(' ') : (j.message || r.text || ('HTTP ' + r.status));
+    throw new Error('Fast2SMS ' + (j.status_code || r.status) + ': ' + String(m).slice(0, 160));
+}
+async function otpServiceConfigured() { return !!(await fast2smsKey()) || waConfigured() || (await smsConfigured()); }
+// Fast2SMS first → WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
 async function sendOtpMessage(mobile, otp) {
-    const smsFirst = fast2smsKey() && String(process.env.OTP_CHANNEL || '').toLowerCase() !== 'whatsapp';
-    if (!smsFirst && waConfigured()) {
+    if (await fast2smsKey()) {
+        try { await sendFast2SmsOtp(mobile, otp); return 'sms'; }
+        catch (e) { console.warn('Fast2SMS OTP failed:', e.message); if (!waConfigured()) throw e; }
+    }
+    if (waConfigured()) {
         try { await sendWhatsAppOtp(mobile, otp); return 'whatsapp'; }
         catch (e) { console.warn('WhatsApp OTP failed, falling back to SMS:', e.message); }
     }
-    if (fast2smsKey()) {
-        try { await fast2smsSend(mobile, otp); return 'sms'; }
-        catch (e) { console.warn('Fast2SMS OTP failed:', e.message); if (!(smsFirst && waConfigured())) throw e; }
-    }
-    if (smsFirst && waConfigured()) { await sendWhatsAppOtp(mobile, otp); return 'whatsapp'; }
-    if (!fast2smsKey()) {
-        if (!(await smsConfigured())) throw new Error('Neither WhatsApp nor the SMS gateway could be used.');
-        await sendSms(mobile, 'Your Anmol LibMatrix OTP is ' + otp + '. It is valid for 10 minutes. Do not share it with anyone.');
-    }
+    if (!(await smsConfigured())) throw new Error('Neither Fast2SMS, WhatsApp nor the SMS gateway could be used.');
+    await sendSms(mobile, 'Your Anmol LibMatrix OTP is ' + otp + '. It is valid for 10 minutes. Do not share it with anyone.');
     return 'sms';
 }
 
@@ -4643,7 +4588,7 @@ async function forgotPasswordHandler(req, res) {
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'The OTP service (WhatsApp / SMS) is not configured. Please contact the administrator.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The OTP service (Fast2SMS / SMS) is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const prev = await _otpStore.get(key);
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -4679,6 +4624,7 @@ async function resetPasswordHandler(req, res) {
         if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
         if (o.hash !== sha(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         await _otpStore.delete(key);
+        await revokeTrustedDevices(acc.userId);   // 🔒 password changed → every remembered device must pass OTP again
         const hash = bcrypt.hashSync(newPassword, 10);
         if (acc.kind === 'entity') {
             acc.list[acc.idx] = Object.assign({}, acc.rec, { password: hash });
@@ -4705,28 +4651,124 @@ async function forgotUsernameHandler(req, res) {
         res.json({ success: true, message: 'If the details match a registered account, the User ID has been sent to the registered mobile number.' });
     } catch (e) { res.status(502).json({ error: 'Unable to process the request right now. Please try again.' }); }
 }
-['/api/auth', '/api/agent', '/api/material'].forEach(base => {
-    app.post(base + '/forgot-password', forgotPasswordHandler);
-    app.post(base + '/reset-password', resetPasswordHandler);
-});
+// Step 2 of the Super Admin "Reset Password" modal: checks the 4-digit OTP WITHOUT consuming it
+// (reset-password re-checks and consumes it when the new password is saved).
 async function verifyResetOtpHandler(req, res) {
     try {
-        if (hitRateLimit('otpc:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+        if (hitRateLimit('otpv:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
         const b = req.body || {};
+        const userId = String(b.user || b.userId || b.username || '').trim();
+        const contact = String(b.contact || '').trim();
         const code = String(b.code || b.otp || '').trim();
         if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
-        const acc = await findRecoveryAccount(String(b.user || b.userId || b.username || '').trim(), String(b.contact || '').trim(), recoveryScope(req));
+        const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const o = await _otpStore.get(key);
         if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
-        o.tries++; await _otpStore.set(key, o);
+        o.tries++;
+        await _otpStore.set(key, o);
         if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
         if (o.hash !== sha(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
-        res.json({ success: true });      // OTP is kept — /reset-password consumes it
-    } catch (e) { res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' }); }
+        o.tries = 0; await _otpStore.set(key, o);   // a correct OTP does not use up an attempt (the final reset call checks it again)
+        res.json({ success: true, message: 'OTP verified.' });
+    } catch (e) {
+        console.error('verify-reset-otp error:', e.message);
+        res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' });
+    }
 }
-['/api/auth', '/api/agent', '/api/material'].forEach(base => app.post(base + '/verify-reset-otp', verifyResetOtpHandler));
+
+// ══════════════════════════════════════════════════════════════════
+// 🔐 SUPER ADMIN LOGIN — 8-digit OTP (Fast2SMS) + "Remember this device"
+//   Step 1  POST /api/auth/admin-login-otp  {username, password, deviceToken?}
+//             · wrong credentials → 401 (no OTP is sent)
+//             · valid trusted-device token for this user → {skipped:true, trusted:true}  (no OTP)
+//             · otherwise an 8-digit OTP is sent to the admin's registered mobile
+//   Step 2  POST /api/auth/login  {role:'admin', username, password, otp, trustDevice}
+//             · correct OTP → JWT (+ a random deviceToken when trustDevice is true; the browser keeps it)
+//             · no OTP → accepted only with a valid deviceToken, else 401 OTP_REQUIRED
+//   Trusted devices are stored hashed (sha256) in the otp_codes table, expire after TRUSTED_DEVICE_DAYS (default 90) and are
+//   all revoked when the password is reset. ADMIN_LOGIN_OTP=off turns the OTP requirement off (emergency switch).
+// ══════════════════════════════════════════════════════════════════
+const ADMIN_OTP_LEN = 8;
+const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS || '90', 10) || 90) * 24 * 60 * 60 * 1000;
+function adminOtpEnabled() { return String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() !== 'off'; }
+const _tdKey = (user, token) => 'td|' + lc(user) + '|' + sha(String(token));
+async function isTrustedDevice(user, token) {
+    token = String(token || '');
+    if (!/^[0-9a-f]{64}$/.test(token)) return false;
+    const r = await _otpStore.get(_tdKey(user, token));
+    return !!(r && r.exp > Date.now());
+}
+async function issueTrustedDevice(user, req) {
+    const token = crypto.randomBytes(32).toString('hex');
+    await _otpStore.set(_tdKey(user, token), { createdAt: Date.now(), exp: Date.now() + TRUSTED_DEVICE_MS, ua: String((req.headers && req.headers['user-agent']) || '').slice(0, 160) });
+    return token;
+}
+async function revokeTrustedDevices(user) {
+    try { await ensureOtpTable(); await dbq('DELETE FROM otp_codes WHERE "key" LIKE ?', ['td|' + lc(user).replace(/[%_\\]/g, '') + '|%']); } catch (e) { console.warn('revokeTrustedDevices:', e.message); }
+}
+async function findAdminByCredentials(username, password) {
+    const list = parseEntityList(await readKv('kv_admin_entities', 'admins'));
+    const want = lc(username);
+    const user = list.find(u => u && [u.username, u.email, u.id].some(f => f && lc(f) === want));
+    if (!user) return { status: 401, error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
+    if (!user.password) return { status: 401, error: AUTH_MSG.NO_PASS, code: 'NO_PASSWORD' };
+    const ok = looksHashed(user.password) ? bcrypt.compareSync(password, user.password) : security.safeEqual(user.password, password);
+    if (!ok) return { status: 401, error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' };
+    if (['blocked', 'inactive', 'suspended', 'disabled'].includes(lc(user.status || 'active'))) return { status: 403, error: 'This account has been deactivated by the administrator.' };
+    return { user: user, id: String(user.username || username) };
+}
+app.post('/api/auth/admin-login-otp', noStore, asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const username = String(b.username || '').trim(), password = String(b.password || '');
+    if (!username || !password) return res.status(400).json({ error: 'User ID and password are required.' });
+    if (hitRateLimit('aotp:' + (req.ip || ''), 20, 10 * 60 * 1000) || hitRateLimit('aotpu:' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const a = await findAdminByCredentials(username, password);
+    if (a.error) return res.status(a.status).json({ error: a.error, code: a.code });
+    if (!adminOtpEnabled()) return res.json({ success: true, skipped: true });
+    if (await isTrustedDevice(a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    const mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
+    if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The OTP service (Fast2SMS / SMS) is not configured. Please contact the administrator.' });
+    const key = 'lotp|' + lc(a.id);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
+        return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    }
+    const otp = String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN));
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { console.error('admin-login-otp send failed:', e.message); return res.status(502).json({ error: 'Unable to send the OTP right now. Please try again.' }); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'An 8-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+}));
+// Called by /api/auth/login (admin role): returns null when the login may continue, otherwise {status, body}.
+async function adminSecondFactor(req, userId) {
+    if (!adminOtpEnabled()) return { ok: true };
+    const b = req.body || {};
+    const otp = String(b.otp || '').replace(/\D/g, '');
+    if (!otp) {
+        if (await isTrustedDevice(userId, b.deviceToken)) return { ok: true };
+        return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
+    }
+    if (hitRateLimit('aotpv:' + lc(userId), 15, 10 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Please try again later.' } };
+    const key = 'lotp|' + lc(userId);
+    const o = await _otpStore.get(key);
+    const bad = { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
+    if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return bad; }
+    o.tries++;
+    await _otpStore.set(key, o);
+    if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return bad; }
+    if (otp.length !== ADMIN_OTP_LEN || !security.safeEqual(o.hash, sha(otp))) return bad;
+    await _otpStore.delete(key);   // one-time use
+    return { ok: true, deviceToken: b.trustDevice ? await issueTrustedDevice(userId, req) : undefined };
+}
+['/api/auth', '/api/agent', '/api/material'].forEach(base => {
+    app.post(base + '/verify-reset-otp', verifyResetOtpHandler);
+    app.post(base + '/forgot-password', forgotPasswordHandler);
+    app.post(base + '/reset-password', resetPasswordHandler);
+});
 ['/api/auth/forgot-username', '/api/material/forgot-user-id', '/api/material/forgot-username', '/api/agent/forgot-username'].forEach(p => app.post(p, forgotUsernameHandler));
 
 // Official SMS with User ID, Password and Portal link (used when an agent is created or approved)
@@ -4739,7 +4781,7 @@ app.post('/api/admin/send-agent-credentials', requireRole('admin'), async (req, 
     try {
         const b = req.body || {};
         if (!b.userId || !b.password || last10(b.mobile).length !== 10) return res.status(400).json({ error: 'User ID, password and a valid 10-digit mobile number are required.' });
-        if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'Neither WhatsApp nor the SMS gateway is configured. Please complete the setup first.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'Neither Fast2SMS, WhatsApp nor the SMS gateway is configured. Please complete the setup first.' });
         const channel = await notifyAccount({ kind: 'credentials', mobile: b.mobile, name: b.name, userId: b.userId, password: b.password, link: portalLink(req) });
         if (!channel) return res.status(502).json({ error: 'Unable to deliver the credentials on WhatsApp or SMS.' });
         res.json({ success: true, channel: channel });
@@ -5888,33 +5930,11 @@ async function loadSmsConfig() {
     } catch (e) { cfg = {}; }
     return {
         endpoint: cfg.endpoint || process.env.SMS_API_URL || '',
-        key: cfg.key || process.env.SMS_API_KEY || process.env.APP2SMS_API_KEY || '',
+        key: cfg.key || process.env.FAST2SMS_API_KEY || process.env.SMS_API_KEY || process.env.APP2SMS_API_KEY || '',
         template: cfg.template || ''
     };
 }
-// 📲 Fast2SMS (https://www.fast2sms.com/dev/bulkV2) — set FAST2SMS_API_KEY on Render.
-//   FAST2SMS_ROUTE        otp (default, OTP route – only the code is sent) | q (quick) | dlt (needs the 2 vars below)
-//   FAST2SMS_SENDER_ID    approved DLT sender id        (dlt route)
-//   FAST2SMS_DLT_TEMPLATE_ID  approved DLT message id    (dlt route; template must contain {#var#} for the OTP)
-const fast2smsKey = () => String(process.env.FAST2SMS_API_KEY || '').trim();
-async function fast2smsSend(mobile, otp, message) {
-    const key = fast2smsKey();
-    if (!key) throw new Error('Fast2SMS is not configured (FAST2SMS_API_KEY).');
-    const num = String(mobile || '').replace(/\D/g, '').slice(-10);
-    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
-    const route = String(process.env.FAST2SMS_ROUTE || 'otp').toLowerCase();
-    let body;
-    if (otp != null && route === 'otp') body = { route: 'otp', variables_values: String(otp), numbers: num, flash: 0 };
-    else if (otp != null && route === 'dlt') body = { route: 'dlt', sender_id: process.env.FAST2SMS_SENDER_ID, message: process.env.FAST2SMS_DLT_TEMPLATE_ID, variables_values: String(otp), numbers: num, flash: 0 };
-    else body = { route: 'q', message: String(message || ('Your OTP is ' + otp)), numbers: num, flash: 0 };
-    const r = await httpsPostJson('https://www.fast2sms.com/dev/bulkV2', { authorization: key }, body, 15000);
-    if (!(r.json && r.json.return === true)) {
-        console.warn('Fast2SMS failed:', r.status, r.json && r.json.message);   // OTP is never logged
-        throw new Error('Fast2SMS: ' + ((r.json && r.json.message && [].concat(r.json.message).join(' ')) || ('HTTP ' + r.status)));
-    }
-    return r.json.request_id || true;
-}
-async function smsConfigured() { const c = await loadSmsConfig(); return !!(fast2smsKey() || c.key || c.endpoint); }
+async function smsConfigured() { const c = await loadSmsConfig(); return !!(c.key || c.endpoint); }
 function httpGetText(urlStr) {
     return new Promise((resolve, reject) => {
         let u;
@@ -5931,7 +5951,6 @@ function httpGetText(urlStr) {
 }
 async function sendSms(mobile, message) {
     const cfg = await loadSmsConfig();
-    if (fast2smsKey() && !cfg.endpoint && !cfg.key) return fast2smsSend(mobile, null, message);
     if (!cfg.key && !cfg.endpoint) throw new Error('The SMS gateway is not configured (SMS_API_URL / SMS_API_KEY).');
     const num = String(mobile || '').replace(/\D/g, '').slice(-10);
     if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');

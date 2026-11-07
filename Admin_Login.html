@@ -2166,40 +2166,45 @@ html,body,#admin-app{width:100%;min-width:0;}
 </style>
 
 
+<style id="alm-recovery-compact">
+/* Compact recovery card (Reset Super Admin Password / Recover Username) — max 450px */
+#alm-recovery-modal{padding:16px 14px;}
+#alm-recovery-modal .alm-recovery-card{width:100%;max-width:450px;max-height:calc(100dvh - 32px);border-radius:16px;box-shadow:0 18px 50px rgba(20,55,91,.14),0 3px 10px rgba(20,55,91,.05);}
+#alm-recovery-modal .alm-recovery-head{padding:16px 22px 12px;}
+#alm-recovery-modal .alm-recovery-brand{min-height:0;margin-bottom:8px;}
+#alm-recovery-modal .alm-recovery-brand-fallback{font-size:16px;}
+#alm-recovery-modal .alm-recovery-close{width:30px;height:30px;flex-basis:30px;border-radius:8px;}
+#alm-recovery-modal .alm-recovery-access{min-height:28px;margin-bottom:10px;padding:0 12px;font-size:10px;}
+#alm-recovery-modal .alm-recovery-title{font-size:19px;line-height:1.25;}
+#alm-recovery-modal .alm-recovery-subtitle{margin-top:4px;font-size:10.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-body{padding:16px 22px 18px;}
+#alm-recovery-modal .alm-recovery-intro{margin:0 0 12px;font-size:11px;line-height:1.6;}
+#alm-recovery-modal .alm-recovery-steps{gap:6px;margin:0 0 14px;}
+#alm-recovery-modal .alm-recovery-step{padding:7px 6px;gap:5px;font-size:8.5px;border-radius:8px;}
+#alm-recovery-modal .alm-step-no{width:18px;height:18px;flex-basis:18px;font-size:9px;}
+#alm-recovery-modal .alm-recovery-field{margin:0 0 11px;}
+#alm-recovery-modal .alm-recovery-label{margin-bottom:5px;font-size:10.5px;}
+#alm-recovery-modal .alm-required-note{margin:-3px 0 10px;font-size:9.5px;}
+#alm-recovery-modal .alm-recovery-input-wrap{min-height:44px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-input-icon{width:42px;flex-basis:42px;}
+#alm-recovery-modal .alm-recovery-input{height:42px;padding:0 12px;font-size:13px;}
+#alm-recovery-modal .alm-recovery-hint{margin-top:5px;font-size:9.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-alert{margin-bottom:10px;padding:9px 11px;font-size:10.5px;}
+#alm-recovery-modal .alm-recovery-primary{min-height:44px;margin-top:2px;border-radius:10px;font-size:13px;}
+#alm-recovery-modal .alm-recovery-method{min-height:42px;font-size:11.5px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-security-note{margin-top:12px;padding:9px 10px;font-size:9.5px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-foot{margin-top:12px;padding-top:10px;}
+#alm-recovery-modal .alm-recovery-back{margin-top:8px;}
+@media(max-width:560px){#alm-recovery-modal{padding:8px}#alm-recovery-modal .alm-recovery-card{max-height:98dvh}#alm-recovery-modal .alm-recovery-head{padding:14px 16px 10px}#alm-recovery-modal .alm-recovery-body{padding:14px 16px 16px}#alm-recovery-modal .alm-recovery-title{font-size:18px}}
+/* "Remember this device" row on the 8-digit OTP step */
+#l-box .otp-trust{display:flex;align-items:flex-start;gap:8px;margin:10px 0 2px;font-size:12px;line-height:1.45;color:var(--login-muted,#557493);cursor:pointer}
+#l-box .otp-trust input{margin-top:2px;flex:0 0 auto;width:15px;height:15px;accent-color:#0d63c8}
+#l-box .otp-trust small{display:block;font-size:10.5px;opacity:.85}
+</style>
+
 <style id="remove-login-brand-logos">
 /* Hide brand images on login, role-selection and recovery screens only. */
 #login-logo-display, #login-logo-img, .role-location-brand > img, #alm-recovery-logo { display:none !important; }
-</style>
-<style id="alm-recovery-compact-overrides">
-/* ✅ Compact recovery cards (Reset Password / Recover Username): max 460px, tighter spacing, never wider than the screen */
-#alm-recovery-modal{padding:16px 12px;}
-#alm-recovery-modal .alm-recovery-card{width:100%;max-width:460px;max-height:calc(100dvh - 32px);border-radius:16px;margin:auto;}
-#alm-recovery-modal .alm-recovery-head{padding:14px 20px 12px;}
-#alm-recovery-modal .alm-recovery-brand{min-height:40px;margin-bottom:8px;}
-#alm-recovery-modal .alm-recovery-logo{width:140px;height:44px;}
-#alm-recovery-modal .alm-recovery-close{width:30px;height:30px;flex-basis:30px;font-size:20px;}
-#alm-recovery-modal .alm-recovery-access{min-height:28px;margin-bottom:8px;padding:5px 12px;font-size:10px;}
-#alm-recovery-modal .alm-recovery-title{font-size:19px;}
-#alm-recovery-modal .alm-recovery-subtitle{margin-top:4px;line-height:1.5;}
-#alm-recovery-modal .alm-recovery-body{padding:16px 20px 18px;}
-#alm-recovery-modal .alm-recovery-intro{margin-bottom:12px;line-height:1.55;}
-#alm-recovery-modal .alm-recovery-steps{gap:6px;margin-bottom:14px;}
-#alm-recovery-modal .alm-recovery-step{padding:7px 6px;gap:5px;}
-#alm-recovery-modal .alm-step-no{width:18px;height:18px;flex-basis:18px;font-size:9px;}
-#alm-recovery-modal .alm-recovery-field{margin-bottom:11px;}
-#alm-recovery-modal .alm-recovery-label{margin-bottom:5px;}
-#alm-recovery-modal .alm-recovery-input-wrap{min-height:44px;border-radius:10px;}
-#alm-recovery-modal .alm-recovery-input-icon{width:42px;flex-basis:42px;font-size:15px;}
-#alm-recovery-modal .alm-recovery-input{height:42px;padding:0 12px;}
-#alm-recovery-modal .alm-recovery-primary{min-height:44px;border-radius:10px;}
-#alm-recovery-modal .alm-recovery-method{min-height:42px;}
-#alm-recovery-modal .alm-recovery-security-note{margin-top:12px;padding:9px 10px;}
-#alm-recovery-modal .alm-recovery-foot{margin-top:12px;padding-top:10px;}
-#alm-recovery-modal .alm-recovery-card,#alm-recovery-modal .alm-recovery-card *{max-width:100%;}
-#alm-recovery-modal .alm-recovery-input-wrap,#alm-recovery-modal .alm-recovery-primary{max-width:none;}
-@media(max-width:560px){#alm-recovery-modal{padding:8px;}#alm-recovery-modal .alm-recovery-head{padding:12px 14px 10px;}#alm-recovery-modal .alm-recovery-body{padding:14px 14px 16px;}#alm-recovery-modal .alm-recovery-title{font-size:17px;}#alm-recovery-modal .alm-recovery-logo{width:120px;height:38px;}}
-.sa-recovery-card{max-width:460px;}
-.role-location-card{max-width:480px;}
 </style>
 </head>
 <body>
@@ -2277,6 +2282,7 @@ html,body,#admin-app{width:100%;min-width:0;}
               </div>
             </div>
           </div>
+          <label class="otp-trust" for="l-trust-device"><input type="checkbox" id="l-trust-device" checked><span>Remember this device<small>Is browser par agli baar OTP nahi maanga jayega. Public / shared computer par untick karein.</small></span></label>
           <button class="btn-login otp-verify-btn" id="l-otp-verify" type="button" onclick="VERIFY_LOGIN_OTP()">Verify &amp; Login <span>→</span></button>
           <div class="otp-actions">
             <span class="otp-resend-wrap"><button type="button" class="otp-link" id="l-otp-resend" onclick="RESEND_LOGIN_OTP()" disabled>Resend OTP</button><span class="otp-timer" id="l-otp-timer" aria-live="off"></span></span>
@@ -2404,6 +2410,14 @@ function busy(on,txt){var b=document.querySelector('.btn-login');if(!b)return;if
    Step 1: User ID + password + captcha → server verifies them and sends an 8-digit OTP to the registered mobile.
    Step 2: OTP box + Resend (60 s timer) → server verifies the OTP → role/location popup (dashboard route) opens. */
 var _cred=null,_otpTimer=null;
+/* ── Trusted device (OTP skip) ──
+   After one successful 8-digit OTP login the server returns a random device token. It is kept in this browser's
+   localStorage (per username) and sent with the next login; the server skips the OTP only if the token is valid for that user. */
+var TD_KEY='shdl_trusted_devices_v1';
+function tdAll(){try{return JSON.parse(localStorage.getItem(TD_KEY)||'{}')||{};}catch(e){return {};}}
+function tdGet(u){return tdAll()[String(u||'').trim().toLowerCase()]||'';}
+function tdSet(u,t){try{var m=tdAll();m[String(u||'').trim().toLowerCase()]=t;localStorage.setItem(TD_KEY,JSON.stringify(m));}catch(e){}}
+function tdClear(u){try{var m=tdAll();delete m[String(u||'').trim().toLowerCase()];localStorage.setItem(TD_KEY,JSON.stringify(m));}catch(e){}}
 function postJson(path,body){
   return AnmolPortal.fetchRetry(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},{tries:1,timeout:30000})
     .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
@@ -2424,10 +2438,6 @@ function startOtpTimer(sec){
   }
   tick();_otpTimer=setInterval(tick,1000);
 }
-/* 🖥️ Trusted device: token issued by the server after one successful OTP login; kept only in this browser */
-var TD_KEY='anmol_trusted_device';
-function getTD(){try{return localStorage.getItem(TD_KEY)||'';}catch(e){return '';}}
-function setTD(t){try{if(t)localStorage.setItem(TD_KEY,t);else localStorage.removeItem(TD_KEY);}catch(e){}}
 function showOtpStep(msg,sec){
   showErr('');$('l-otp').value='';$('l-otp-info').textContent=msg||'An 8-digit code has been sent to your registered mobile number.';
   setStep(2);startOtpTimer(sec||60);setTimeout(function(){$('l-otp').focus();},40);
@@ -2446,9 +2456,9 @@ window.DO_LOGIN=function(){
   if(!p.trim()){showErr('Password cannot be blank.');$('l-pass').focus();return;}
   if(!cap||cap!==_cap){showErr('Invalid Captcha code. Please re-enter the characters shown.');GEN_CAPTCHA();$('l-captcha').focus();return;}
   showErr(''); AnmolAuthUI.busy(btn,true,'Authenticating...');
-  postJson('/auth/admin-login-otp',{username:u,password:p,deviceToken:getTD()}).then(function(x){
+  postJson('/auth/admin-login-otp',{username:u,password:p,deviceToken:tdGet(u)}).then(function(x){
     AnmolAuthUI.busy(btn,false);
-    if(x.ok&&x.d.skipped){_cred={u:u,p:p};finishLogin('');return;}                 /* OTP disabled on the server (emergency switch) */
+    if(x.ok&&x.d.skipped){_cred={u:u,p:p};finishLogin('');return;}   /* trusted device (or OTP disabled) → no OTP prompt */                 /* OTP disabled on the server (emergency switch) */
     if(x.ok){_cred={u:u,p:p};GEN_CAPTCHA();showOtpStep(x.d.message,x.d.resendInSec);return;}
     if(x.d&&x.d.resendInSec){_cred={u:u,p:p};GEN_CAPTCHA();showOtpStep('A code was sent a moment ago. Enter it below, or wait to resend.',x.d.resendInSec);return;}
     showErr(x.d.error||'Invalid User ID or password. Please try again.');GEN_CAPTCHA();
@@ -2458,7 +2468,7 @@ window.DO_LOGIN=function(){
 window.RESEND_LOGIN_OTP=function(){
   if(!_cred)return resetToStep1();
   var rb=$('l-otp-resend');rb.disabled=true;showErr('');
-  postJson('/auth/admin-login-otp',{username:_cred.u,password:_cred.p,deviceToken:getTD()}).then(function(x){
+  postJson('/auth/admin-login-otp',{username:_cred.u,password:_cred.p,deviceToken:''}).then(function(x){
     if(x.ok){$('l-otp').value='';$('l-otp-info').textContent=x.d.message||'A new code has been sent.';startOtpTimer(x.d.resendInSec||60);return;}
     showErr(x.d.error||'Unable to resend the code. Please try again.');
     if(x.d&&x.d.resendInSec)startOtpTimer(x.d.resendInSec);else rb.disabled=false;
@@ -2474,16 +2484,17 @@ window.VERIFY_LOGIN_OTP=function(){
 };
 function finishLogin(otp){
   var btn=$('l-otp-verify');showErr('');AnmolAuthUI.busy(btn,true,'Verifying...');
-  var body={role:'admin',username:_cred.u,password:_cred.p,deviceToken:getTD(),rememberDevice:true};if(otp)body.otp=otp;
+  var body={role:'admin',username:_cred.u,password:_cred.p};
+  if(otp){body.otp=otp;var tc=$('l-trust-device');body.trustDevice=!tc||tc.checked;}else{body.deviceToken=tdGet(_cred.u);}
   postJson('/auth/login',body).then(function(x){
     if(!x.ok||!x.d.token){
       AnmolAuthUI.busy(btn,false);
-      if(x.d.code==='INVALID_OTP'&&!otp){setTD('');showErr('This device is no longer trusted. Please sign in again to receive a new OTP.');resetToStep1(false);return;}
+      if(x.d.code==='OTP_REQUIRED'){tdClear(_cred.u);showErr('This device is no longer trusted. Please sign in again to receive a new OTP.');resetToStep1(false);return;}
       if(x.d.code==='INVALID_OTP'){$('l-otp').value='';showErr(x.d.error||'Invalid verification code. Please try again.');$('l-otp').focus();return;}
       showErr(x.d.error||'Invalid User ID or password. Please try again.');resetToStep1(false);return;   /* credentials rejected → back to step 1 */
     }
     TOKEN=x.d.token; try{localStorage.setItem('shdl_auth_token',TOKEN);}catch(e){}
-    if(x.d.deviceToken)setTD(x.d.deviceToken);   /* remember this browser → next login skips the OTP */
+    if(x.d.deviceToken)tdSet(_cred.u,x.d.deviceToken);   /* remember this browser */
     _cred=null;clearInterval(_otpTimer);showErr(''); AnmolAuthUI.success(btn); loadGate();
   }).catch(function(){AnmolAuthUI.busy(btn,false);showErr('Unable to sign in at the moment. Please try again shortly.');});
 }
