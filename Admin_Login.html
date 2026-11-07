@@ -2137,11 +2137,19 @@ html,body,#admin-app{width:100%;min-width:0;}
 @media(max-width:560px){#alm-recovery-modal{padding:10px;align-items:center}#alm-recovery-modal .alm-recovery-card{max-height:96dvh;border-radius:16px}#alm-recovery-modal .alm-recovery-head{padding:17px 16px 15px}#alm-recovery-modal .alm-recovery-body{padding:18px 16px 20px}#alm-recovery-modal .alm-recovery-logo{width:165px;height:55px}#alm-recovery-modal .alm-recovery-title{font-size:21px}#alm-recovery-modal .alm-recovery-step{font-size:8px;padding:8px 5px;gap:5px}#alm-recovery-modal .alm-step-no{width:19px;height:19px;flex-basis:19px}}
 @media(max-width:360px){#alm-recovery-modal .alm-recovery-steps{gap:5px}#alm-recovery-modal .alm-recovery-step{font-size:7px;letter-spacing:-.02em}}
 /* ── Secondary 8-digit OTP (login) + recovery stepper states ── */
-#admin-login .reference-login-right .otp-send{border:0;background:transparent;font:800 11px 'Nunito','Hind',sans-serif;cursor:pointer;padding:0 12px;white-space:nowrap;color:var(--login-accent,#1267c8);flex:none}
-#admin-login .reference-login-right .otp-send:disabled{opacity:.55;cursor:default}
-#admin-login .reference-login-right .otp-note{margin:6px 2px 0;font-size:11px;line-height:1.4;color:#557493}
-#admin-login .reference-login-right .otp-note.err{color:#c0392b}
-#admin-login .reference-login-right .otp-note.ok{color:#1a7f4b}
+/* ── Multi-step login: step 1 = credentials, step 2 = 8-digit OTP ── */
+#l-box[data-step="2"] .ls1{display:none!important}
+#l-box:not([data-step="2"]) .ls2{display:none!important}
+#l-box .otp-step{display:block;width:100%;min-width:0;box-sizing:border-box}
+#l-box .otp-step-title{margin:2px 0 4px;font:900 14px/1.3 'Nunito','Hind',sans-serif;color:var(--login-text,#0a3d79)}
+#l-box .otp-step-info{margin:0 0 12px;font-size:12px;line-height:1.5;color:var(--login-muted,#557493);overflow-wrap:anywhere}
+#l-box .otp-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin-top:12px}
+#l-box .otp-resend-wrap{display:flex;align-items:center;gap:8px;min-width:0}
+#l-box .otp-link{border:0;background:transparent;padding:4px 0;cursor:pointer;font:800 12px/1.35 'Nunito','Hind',sans-serif;color:var(--login-accent,#0d63c8)}
+#l-box .otp-link:hover:not(:disabled){text-decoration:underline}
+#l-box .otp-link:disabled{opacity:.55;cursor:default}
+#l-box .otp-timer{font:800 12px 'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;color:var(--login-muted,#557493)}
+#l-box .otp-verify-btn{width:100%;margin-top:4px}
 #l-otp:not(:placeholder-shown){letter-spacing:.18em;font-variant-numeric:tabular-nums}
 #alm-recovery-modal .alm-recovery-step.done{border-color:#b6e2c6;background:#effaf3;color:#1a7f4b}
 #alm-recovery-modal .alm-recovery-step.done .alm-step-no{background:#cdeedb;color:#1a7f4b}
@@ -2199,14 +2207,14 @@ html,body,#admin-app{width:100%;min-width:0;}
         <h1>Anmol <span>Lib</span>Matrix</h1>
         <div class="login-tagline">— अनमोल + लाइब्रेरी मैट्रिक्स —</div>
       </div>
-      <div class="login-box">
+      <div class="login-box" id="l-box" data-step="1">
         <div class="sa-security-access-badge" id="super-admin-security-badge" aria-label="Super Administrator Access">
           <span class="sa-security-access-icon" aria-hidden="true">🔒</span>
           <span>Super Administrator Access</span>
         </div>
         <div class="login-subtitle">Sign in securely to access your administration panel</div>
         <div id="l-err" class="l-err"></div>
-        <div class="fg">
+        <div class="fg ls1">
           <label class="fl">Username / Email</label>
           <div class="iw reference-input">
             <span class="input-icon">👤</span>
@@ -2216,7 +2224,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             <span class="input-end">♙</span>
           </div>
         </div>
-        <div class="fg">
+        <div class="fg ls1">
           <label class="fl">Password</label>
           <div class="iw reference-input">
             <span class="input-icon">🔒</span>
@@ -2226,32 +2234,39 @@ html,body,#admin-app{width:100%;min-width:0;}
             <span class="input-end eye-toggle" onclick="TOGGLE_PWD('l-pass',this)" title="Show / hide password">◉</span>
           </div>
         </div>
-        <div class="fg" id="l-otp-group">
-          <label class="fl" for="l-otp">Enter 8-Digit OTP / Secondary Verification Code</label>
-          <div class="iw reference-input">
-            <span class="input-icon">🔑</span>
-            <div class="input-stack">
-              <input type="text" id="l-otp" placeholder="Enter 8-digit OTP / Secondary Verification Code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" oninput="this.value=this.value.replace(/\D/g,'')" onkeydown="if(event.key==='Enter')DO_LOGIN()">
+        <div class="otp-step ls2" id="l-otp-step">
+          <div class="otp-step-title">Two-Step Verification</div>
+          <p class="otp-step-info" id="l-otp-info" role="status" aria-live="polite"></p>
+          <div class="fg">
+            <label class="fl" for="l-otp">Enter 8-Digit OTP / Secondary Verification Code</label>
+            <div class="iw reference-input">
+              <span class="input-icon">🔑</span>
+              <div class="input-stack">
+                <input type="text" id="l-otp" placeholder="Enter 8-digit OTP" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" oninput="this.value=this.value.replace(/\D/g,'')" onkeydown="if(event.key==='Enter')VERIFY_LOGIN_OTP()">
+              </div>
             </div>
-            <button type="button" class="input-end otp-send" id="l-otp-send" onclick="SEND_LOGIN_OTP()">Send Code</button>
           </div>
-          <p class="otp-note" id="l-otp-msg" role="status" aria-live="polite"></p>
+          <button class="btn-login otp-verify-btn" id="l-otp-verify" type="button" onclick="VERIFY_LOGIN_OTP()">Verify &amp; Login <span>→</span></button>
+          <div class="otp-actions">
+            <span class="otp-resend-wrap"><button type="button" class="otp-link" id="l-otp-resend" onclick="RESEND_LOGIN_OTP()" disabled>Resend OTP</button><span class="otp-timer" id="l-otp-timer" aria-live="off"></span></span>
+            <button type="button" class="otp-link" onclick="OTP_BACK()">← Back to login</button>
+          </div>
         </div>
-        <div class="recovery-links-row" role="group" aria-label="Account recovery options">
+        <div class="recovery-links-row ls1" role="group" aria-label="Account recovery options">
           <button type="button" class="recovery-link" onclick="OPEN_SUPER_RECOVERY('username')">Forgot Username?</button>
           <button type="button" class="recovery-link" onclick="OPEN_SUPER_RECOVERY('password')">Forgot Password?</button>
         </div>
-        <div class="security-row remember-row">
+        <div class="security-row remember-row ls1">
           <label class="remember"><input type="checkbox" id="remember-admin"> <span>Remember Me</span></label>
         </div>
-        <div class="captcha-security">
+        <div class="captcha-security ls1">
           <div class="captcha-heading"><span>Security Verification</span><button type="button" onclick="GEN_CAPTCHA();document.getElementById('l-err').style.display='none'">↻ Refresh</button></div>
           <div class="captcha-line">
             <div id="captcha-canvas" class="captcha-reference-code"></div>
             <input type="text" id="l-captcha" placeholder="Enter security code" autocomplete="off" maxlength="6" onkeydown="if(event.key==='Enter')DO_LOGIN()">
           </div>
         </div>
-        <button class="btn-login" onclick="DO_LOGIN()">Login <span>→</span></button>
+        <button class="btn-login ls1" id="l-login-btn" onclick="DO_LOGIN()">Login <span>→</span></button>
       </div>
       <div class="login-foot">© 2026 Anmol LibMatrix. All rights reserved.<br><span>Smart Library &nbsp;|&nbsp; Secure Access &nbsp;|&nbsp; Better Future</span></div>
     </div>
@@ -2354,45 +2369,80 @@ window.OPEN_SUPER_RECOVERY=function(mode){
 function showErr(t){var e=$('l-err');e.textContent=t;e.style.display=t?'block':'none';}
 function busy(on,txt){var b=document.querySelector('.btn-login');if(!b)return;if(on){b.disabled=true;}else{AnmolAuthUI.busy(b,false);b.disabled=false;}}
 
+/* ── Multi-step login ──
+   Step 1: User ID + password + captcha → server verifies them and sends an 8-digit OTP to the registered mobile.
+   Step 2: OTP box + Resend (60 s timer) → server verifies the OTP → role/location popup (dashboard route) opens. */
+var _cred=null,_otpTimer=null;
+function postJson(path,body){
+  return AnmolPortal.fetchRetry(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},{tries:1,timeout:30000})
+    .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});});
+}
+function setStep(n){var b=$('l-box');if(b)b.setAttribute('data-step',String(n));}
+function startOtpTimer(sec){
+  var rb=$('l-otp-resend'),tm=$('l-otp-timer');clearInterval(_otpTimer);
+  function tick(){
+    if(sec<=0){clearInterval(_otpTimer);rb.disabled=false;tm.textContent='';return;}
+    rb.disabled=true;tm.textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');sec--;
+  }
+  tick();_otpTimer=setInterval(tick,1000);
+}
+function showOtpStep(msg,sec){
+  showErr('');$('l-otp').value='';$('l-otp-info').textContent=msg||'An 8-digit code has been sent to your registered mobile number.';
+  setStep(2);startOtpTimer(sec||60);setTimeout(function(){$('l-otp').focus();},40);
+}
+function resetToStep1(clearUser){
+  clearInterval(_otpTimer);_cred=null;setStep(1);
+  $('l-pass').value='';$('l-otp').value='';$('l-otp-info').textContent='';
+  if(clearUser)$('l-user').value='';
+  showErr('');GEN_CAPTCHA();
+}
+/* Step 1 → "Login" button */
 window.DO_LOGIN=function(){
   var u=$('l-user').value.trim(), p=$('l-pass').value, cap=($('l-captcha').value||'').trim().toUpperCase();
-  var btn=document.querySelector('.btn-login');
+  var btn=$('l-login-btn');
   if(!u){showErr('Please enter your valid User ID.');$('l-user').focus();return;}
   if(!p.trim()){showErr('Password cannot be blank.');$('l-pass').focus();return;}
   if(!cap||cap!==_cap){showErr('Invalid Captcha code. Please re-enter the characters shown.');GEN_CAPTCHA();$('l-captcha').focus();return;}
-  var otp=($('l-otp').value||'').replace(/\D/g,'');
-  if(otp.length!==8){showErr('Please enter the 8-digit OTP / Secondary Verification Code.');$('l-otp').focus();return;}
   showErr(''); AnmolAuthUI.busy(btn,true,'Authenticating...');
-  AnmolPortal.fetchRetry(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'admin',username:u,password:p,otp:otp})},
-    {tries:5,timeout:30000})
-  .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});})
-  .then(function(x){
-    if(!x.ok||!x.d.token){AnmolAuthUI.busy(btn,false);if(x.d.code==='INVALID_OTP')$('l-otp').value='';showErr(x.d.error||'Invalid User ID or password. Please try again.');GEN_CAPTCHA();return;}
-    TOKEN=x.d.token; try{localStorage.setItem('shdl_auth_token',TOKEN);}catch(e){}
-    showErr(''); AnmolAuthUI.success(btn); loadGate();
+  postJson('/auth/admin-login-otp',{username:u,password:p}).then(function(x){
+    AnmolAuthUI.busy(btn,false);
+    if(x.ok&&x.d.skipped){_cred={u:u,p:p};finishLogin('');return;}                 /* OTP disabled on the server (emergency switch) */
+    if(x.ok){_cred={u:u,p:p};GEN_CAPTCHA();showOtpStep(x.d.message,x.d.resendInSec);return;}
+    if(x.d&&x.d.resendInSec){_cred={u:u,p:p};GEN_CAPTCHA();showOtpStep('A code was sent a moment ago. Enter it below, or wait to resend.',x.d.resendInSec);return;}
+    showErr(x.d.error||'Invalid User ID or password. Please try again.');GEN_CAPTCHA();
   }).catch(function(){AnmolAuthUI.busy(btn,false);showErr('Unable to sign in at the moment. Please try again shortly.');GEN_CAPTCHA();});
 };
-
-/* ── Secondary verification: 8-digit OTP sent to the registered mobile ── */
-var _otpTimer=null;
-function otpNote(t,kind){var n=$('l-otp-msg');if(!n)return;n.textContent=t||'';n.className='otp-note'+(kind?' '+kind:'');}
-function otpCooldown(sec){
-  var b=$('l-otp-send');if(!b)return;clearInterval(_otpTimer);
-  function tick(){if(sec<=0){clearInterval(_otpTimer);b.disabled=false;b.textContent='Resend Code';return;}b.disabled=true;b.textContent='Resend in '+sec+'s';sec--;}
-  tick();_otpTimer=setInterval(tick,1000);
-}
-window.SEND_LOGIN_OTP=function(){
-  var u=$('l-user').value.trim(), p=$('l-pass').value, b=$('l-otp-send');
-  if(!u){showErr('Please enter your valid User ID.');$('l-user').focus();return;}
-  if(!p.trim()){showErr('Password cannot be blank.');$('l-pass').focus();return;}
-  showErr('');otpNote('Sending code...');b.disabled=true;
-  AnmolPortal.fetchRetry(API+'/auth/admin-login-otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})},{tries:1,timeout:30000})
-  .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});})
-  .then(function(x){
-    if(!x.ok){otpNote('');showErr(x.d.error||'Unable to send the code. Please try again.');if(x.d.resendInSec)otpCooldown(x.d.resendInSec);else b.disabled=false;return;}
-    otpNote(x.d.message||'Code sent.','ok');otpCooldown(x.d.resendInSec||60);$('l-otp').focus();
-  }).catch(function(){otpNote('');b.disabled=false;showErr('Unable to send the code at the moment. Please try again shortly.');});
+/* Step 2 → "Resend OTP" */
+window.RESEND_LOGIN_OTP=function(){
+  if(!_cred)return resetToStep1();
+  var rb=$('l-otp-resend');rb.disabled=true;showErr('');
+  postJson('/auth/admin-login-otp',{username:_cred.u,password:_cred.p}).then(function(x){
+    if(x.ok){$('l-otp').value='';$('l-otp-info').textContent=x.d.message||'A new code has been sent.';startOtpTimer(x.d.resendInSec||60);return;}
+    showErr(x.d.error||'Unable to resend the code. Please try again.');
+    if(x.d&&x.d.resendInSec)startOtpTimer(x.d.resendInSec);else rb.disabled=false;
+  }).catch(function(){rb.disabled=false;showErr('Unable to resend the code at the moment. Please try again.');});
 };
+window.OTP_BACK=function(){resetToStep1(false);$('l-user').focus();};
+/* Step 2 → "Verify & Login" */
+window.VERIFY_LOGIN_OTP=function(){
+  if(!_cred)return resetToStep1();
+  var otp=($('l-otp').value||'').replace(/\D/g,'');
+  if(otp.length!==8){showErr('Please enter the 8-digit OTP / Secondary Verification Code.');$('l-otp').focus();return;}
+  finishLogin(otp);
+};
+function finishLogin(otp){
+  var btn=$('l-otp-verify');showErr('');AnmolAuthUI.busy(btn,true,'Verifying...');
+  var body={role:'admin',username:_cred.u,password:_cred.p};if(otp)body.otp=otp;
+  postJson('/auth/login',body).then(function(x){
+    if(!x.ok||!x.d.token){
+      AnmolAuthUI.busy(btn,false);
+      if(x.d.code==='INVALID_OTP'){$('l-otp').value='';showErr(x.d.error||'Invalid verification code. Please try again.');$('l-otp').focus();return;}
+      showErr(x.d.error||'Invalid User ID or password. Please try again.');resetToStep1(false);return;   /* credentials rejected → back to step 1 */
+    }
+    TOKEN=x.d.token; try{localStorage.setItem('shdl_auth_token',TOKEN);}catch(e){}
+    _cred=null;clearInterval(_otpTimer);showErr(''); AnmolAuthUI.success(btn); loadGate();
+  }).catch(function(){AnmolAuthUI.busy(btn,false);showErr('Unable to sign in at the moment. Please try again shortly.');});
+}
 
 function loadGate(){
   
@@ -2420,7 +2470,7 @@ window.BACK_TO_ADMIN_LOGIN=function(){
   try{AnmolPortal.notifyLogout();AnmolPortal.clearSession();}catch(e){}
   TOKEN=null; GATE=null;
   var m=$('role-location-modal'); m.classList.remove('open'); m.setAttribute('aria-hidden','true');
-  $('admin-login').style.display='flex'; $('l-pass').value=''; $('l-otp').value=''; otpNote(''); showErr(''); GEN_CAPTCHA();
+  $('admin-login').style.display='flex'; resetToStep1(false);
 };
 window.SUBMIT_ROLE_LOCATION=function(){
   var role=$('role-location-role').value, loc=$('role-location-location').value, er=$('role-location-error');
