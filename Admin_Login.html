@@ -7,8 +7,6 @@
 <link rel="stylesheet" href="portal-shell.css">
 <link rel="stylesheet" href="gov-shell.css">
 <script src="config.js"></script>
-<link rel="stylesheet" href="theme.css">
-<script src="theme.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 
@@ -2084,6 +2082,73 @@ html,body,#admin-app{width:100%;min-width:0;}
     .sa-recovery-title{font-size:16px;}
   }
 </style>
+
+<style id="alm-recovery-preview-styles">
+/* Full-screen recovery view — intentionally matches the Super Admin login palette. */
+#alm-recovery-modal{position:fixed;inset:0;z-index:50000;display:none;align-items:center;justify-content:center;overflow-y:auto;overscroll-behavior:contain;padding:30px 18px;background:#f2f5f9;font-family:'Nunito','Hind',Arial,sans-serif;color:#173653;}
+#alm-recovery-modal.open{display:flex!important;}
+#alm-recovery-modal[aria-hidden="true"]{display:none!important;}
+#alm-recovery-modal *{box-sizing:border-box;}
+#alm-recovery-modal .alm-recovery-card{width:min(100%,540px);max-height:calc(100dvh - 40px);overflow:auto;background:#fff;border:1px solid #dce6f1;border-radius:22px;box-shadow:0 24px 70px rgba(20,55,91,.15),0 4px 12px rgba(20,55,91,.05);animation:almRecoveryIn .25s cubic-bezier(.2,.8,.2,1);}
+@keyframes almRecoveryIn{from{opacity:0;transform:translateY(12px) scale(.99)}to{opacity:1;transform:none}}
+#alm-recovery-modal .alm-recovery-head{padding:22px 28px 18px;background:#fff;border-bottom:1px solid #edf2f7;}
+#alm-recovery-modal .alm-recovery-brand{display:flex;align-items:center;justify-content:center;gap:12px;min-height:60px;margin-bottom:16px;}
+#alm-recovery-modal .alm-recovery-logo{width:190px;height:62px;object-fit:contain;display:block;}
+#alm-recovery-modal .alm-recovery-brand-fallback{display:none;color:#123d70;font-weight:900;font-size:18px;letter-spacing:.01em;}
+#alm-recovery-modal .alm-recovery-close{margin-left:auto;width:34px;height:34px;flex:0 0 34px;border:1px solid #dce6f1;border-radius:10px;background:#f7faff;color:#476582;font-size:22px;line-height:1;cursor:pointer;}
+#alm-recovery-modal .alm-recovery-close:hover{background:#eaf3fc;border-color:#b9d3ed;color:#125eae;}
+#alm-recovery-modal .alm-recovery-access{display:flex;align-items:center;justify-content:center;gap:8px;width:max-content;max-width:100%;min-height:33px;margin:0 auto 12px;padding:7px 14px;border:1px solid #bfdbfe;border-radius:999px;background:linear-gradient(180deg,#eff6ff,#e8f2ff);color:#174a87;font-size:11px;font-weight:900;letter-spacing:.01em;}
+#alm-recovery-modal .alm-recovery-access-icon{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:#dbeafe;font-size:11px;}
+#alm-recovery-modal .alm-recovery-title{margin:0;color:#0b3d78;text-align:center;font-size:24px;line-height:1.22;font-weight:900;}
+#alm-recovery-modal .alm-recovery-subtitle{margin:6px 0 0;color:#6a84a2;text-align:center;font-size:11px;line-height:1.6;font-weight:600;}
+#alm-recovery-modal .alm-recovery-body{padding:22px 28px 25px;}
+#alm-recovery-modal .alm-recovery-intro{margin:0 0 17px;color:#526e8a;font-size:12px;line-height:1.7;text-align:center;}
+#alm-recovery-modal .alm-recovery-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 20px;}
+#alm-recovery-modal .alm-recovery-step{display:flex;align-items:center;gap:7px;min-width:0;padding:9px 8px;border:1px solid #e0eaf5;border-radius:9px;background:#f8fbff;color:#8a9db2;font-size:9px;font-weight:800;line-height:1.25;}
+#alm-recovery-modal .alm-recovery-step.active{border-color:#b9d7f7;background:#edf6ff;color:#135da8;}
+#alm-recovery-modal .alm-step-no{display:grid;place-items:center;width:21px;height:21px;flex:0 0 21px;border-radius:50%;background:#e8eef5;color:#637b94;font-size:10px;}
+#alm-recovery-modal .alm-recovery-step.active .alm-step-no{background:#d6eaff;color:#075db5;}
+#alm-recovery-modal .alm-recovery-field{margin:0 0 15px;}
+#alm-recovery-modal .alm-recovery-label{display:block;margin:0 0 7px;color:#21466e;font-size:11px;font-weight:900;}
+#alm-recovery-modal .alm-optional-tag{color:#8092a6;font-size:10px;font-weight:700;margin-left:4px;}
+/* Required-field marker: a red star on every mandatory recovery field. */
+#alm-recovery-modal .alm-recovery-label[for]::after,
+#alm-recovery-modal .alm-recovery-label.required-label::after{content:" *";color:#dc3545;font-weight:900;font-size:14px;vertical-align:-1px;}
+/* Email is optional only in Password Recovery; all other required fields keep the red star. */
+#alm-recovery-modal .alm-recovery-label[for="alm-password-email"]::after{content:none!important;}
+#alm-recovery-modal .alm-required-note{display:flex;align-items:center;gap:6px;margin:-5px 0 13px;color:#71859b;font-size:10px;line-height:1.45;}
+#alm-recovery-modal .alm-required-note .alm-required-star{color:#dc3545;font-size:15px;font-weight:900;line-height:1;}
+#alm-recovery-modal .alm-recovery-input-wrap{display:flex;align-items:center;min-height:54px;border:1.5px solid #cbdced;border-radius:11px;background:#f8fbff;overflow:hidden;transition:border-color .18s,box-shadow .18s,background .18s;}
+#alm-recovery-modal .alm-recovery-input-wrap:focus-within{border-color:#2376cf;box-shadow:0 0 0 3px rgba(35,118,207,.1);background:#fff;}
+#alm-recovery-modal .alm-recovery-input-icon{width:52px;align-self:stretch;display:grid;place-items:center;flex:0 0 52px;background:#edf6ff;border-right:1px solid #dce9f7;color:#176cc0;font-size:17px;}
+#alm-recovery-modal .alm-recovery-input{width:100%;min-width:0;height:52px;padding:0 14px;border:0!important;outline:0!important;background:transparent!important;color:#173653!important;font:700 13px 'Nunito','Hind',Arial,sans-serif!important;box-shadow:none!important;}
+#alm-recovery-modal .alm-recovery-input::placeholder{color:#91a3b7;font-weight:500;}
+#alm-recovery-modal .alm-recovery-hint{margin:6px 0 0;color:#7b8fa5;font-size:10px;line-height:1.55;}
+#alm-recovery-modal .alm-recovery-alert{display:none;margin:0 0 14px;padding:11px 13px;border-radius:9px;font-size:11px;line-height:1.55;}
+#alm-recovery-modal .alm-recovery-alert.show{display:block;}
+#alm-recovery-modal .alm-recovery-alert.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e4f86;}
+#alm-recovery-modal .alm-recovery-primary{width:100%;min-height:52px;margin-top:4px;border:0;border-radius:11px;background:linear-gradient(100deg,#167fea,#0759c8);color:#fff;font:900 13px 'Nunito','Hind',Arial,sans-serif;letter-spacing:.01em;cursor:pointer;box-shadow:0 8px 20px rgba(9,102,213,.2);transition:filter .15s,transform .15s;}
+#alm-recovery-modal .alm-recovery-primary:hover{filter:brightness(.96);}
+#alm-recovery-modal .alm-recovery-primary:active{transform:scale(.99);}
+#alm-recovery-modal .alm-recovery-security-note{display:flex;align-items:flex-start;gap:9px;margin:17px 0 0;padding:11px 12px;border:1px solid #e1ebf5;border-radius:10px;background:#f8fbfe;color:#657f99;font-size:10px;line-height:1.55;}
+#alm-recovery-modal .alm-recovery-security-note strong{display:block;margin-bottom:2px;color:#315776;font-size:10px;}
+#alm-recovery-modal .alm-recovery-foot{margin:17px 0 0;padding-top:13px;border-top:1px solid #e8eef5;text-align:center;color:#8798aa;font-size:9px;line-height:1.7;}
+#alm-recovery-modal .alm-recovery-back{display:block;margin:10px auto 0;border:0;background:transparent;color:#1769bd;font:800 11px 'Nunito','Hind',sans-serif;cursor:pointer;padding:7px 10px;}
+@media(max-width:560px){#alm-recovery-modal{padding:10px;align-items:center}#alm-recovery-modal .alm-recovery-card{max-height:96dvh;border-radius:16px}#alm-recovery-modal .alm-recovery-head{padding:17px 16px 15px}#alm-recovery-modal .alm-recovery-body{padding:18px 16px 20px}#alm-recovery-modal .alm-recovery-logo{width:165px;height:55px}#alm-recovery-modal .alm-recovery-title{font-size:21px}#alm-recovery-modal .alm-recovery-step{font-size:8px;padding:8px 5px;gap:5px}#alm-recovery-modal .alm-step-no{width:19px;height:19px;flex-basis:19px}}
+@media(max-width:360px){#alm-recovery-modal .alm-recovery-steps{gap:5px}#alm-recovery-modal .alm-recovery-step{font-size:7px;letter-spacing:-.02em}}
+#alm-recovery-modal .alm-recovery-method-switch{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:2px;}
+#alm-recovery-modal .alm-recovery-method{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:9px 10px;border:1.5px solid #d5e2ef;border-radius:10px;background:#f8fbff;color:#486582;font:800 11px 'Nunito','Hind',Arial,sans-serif;cursor:pointer;transition:border-color .16s,background .16s,box-shadow .16s;}
+#alm-recovery-modal .alm-recovery-method span{font-size:16px;color:#176cc0;}
+#alm-recovery-modal .alm-recovery-method.active,#alm-recovery-modal .alm-recovery-method[aria-pressed="true"]{border-color:#2376cf;background:#edf6ff;color:#0759ae;box-shadow:0 0 0 2px rgba(35,118,207,.08);}
+#alm-recovery-modal .alm-recovery-method:focus-visible{outline:3px solid rgba(35,118,207,.2);outline-offset:2px;}
+@media(max-width:420px){#alm-recovery-modal .alm-recovery-method-switch{grid-template-columns:1fr;}#alm-recovery-modal .alm-recovery-method{justify-content:flex-start;padding-left:14px;}}
+</style>
+
+
+<style id="remove-login-brand-logos">
+/* Hide brand images on login, role-selection and recovery screens only. */
+#login-logo-display, #login-logo-img, .role-location-brand > img, #alm-recovery-logo { display:none !important; }
+</style>
 </head>
 <body>
 <div id="admin-login">
@@ -2122,9 +2187,9 @@ html,body,#admin-app{width:100%;min-width:0;}
         <div class="login-tagline">— अनमोल + लाइब्रेरी मैट्रिक्स —</div>
       </div>
       <div class="login-box">
-        <div class="sa-security-access-badge" id="super-admin-security-badge" aria-label="Admin Login">
+        <div class="sa-security-access-badge" id="super-admin-security-badge" aria-label="Super Administrator Access">
           <span class="sa-security-access-icon" aria-hidden="true">🔒</span>
-          <span>Admin Login</span>
+          <span>Super Administrator Access</span>
         </div>
         <div class="login-subtitle">Sign in securely to access your administration panel</div>
         <div id="l-err" class="l-err"></div>
@@ -2207,7 +2272,6 @@ html,body,#admin-app{width:100%;min-width:0;}
     var picker=document.getElementById('login-theme-custom'),dark=document.getElementById('login-theme-dark');
     var old=readConfig(),color=(picker&&validColor(picker.value))?picker.value:old.color;
     var mode=dark?(dark.checked?'dark':'light'):old.mode;
-    if(window.AnmolTheme){ if(dark&&document.activeElement===dark&&(dark.checked?'dark':'light')!==AnmolTheme.state().mode){AnmolTheme.setMode(dark.checked?'dark':'light');} mode=AnmolTheme.state().mode; }
     root.style.setProperty('--login-accent',color);
     root.style.setProperty('--login-accent-hover',shade(color,-25));
     root.style.setProperty('--login-soft',color+'18');
@@ -2246,8 +2310,22 @@ window.GEN_CAPTCHA=function(){
   var inp=$('l-captcha'); if(inp) inp.value='';
 };
 window.TOGGLE_PWD=function(id,icon){var i=$(id);if(!i)return;var show=i.type==='password';i.type=show?'text':'password';if(icon)icon.textContent=show?'◎':'◉';};
-window.OPEN_SUPER_RECOVERY=function(){
-  AnmolRecovery.open({scope:'auth',mode:'password',userId:($('l-user')||{}).value||''});
+window.OPEN_SUPER_RECOVERY=function(mode){
+  // Keep Username and Password recovery flows separate.
+  // The recovery module uses this mode to render the matching verification form.
+  var recoveryMode = mode === 'username' ? 'username' : 'password';
+  var enteredAdminId = (($('l-user') || {}).value || '').trim();
+
+  if (!window.AnmolRecovery || typeof window.AnmolRecovery.open !== 'function') {
+    showErr('The account recovery service is unavailable. Please refresh the page and try again.');
+    return;
+  }
+
+  window.AnmolRecovery.open({
+    scope: 'auth',
+    mode: recoveryMode,
+    userId: enteredAdminId
+  });
 };
 function showErr(t){var e=$('l-err');e.textContent=t;e.style.display=t?'block':'none';}
 function busy(on,txt){var b=document.querySelector('.btn-login');if(!b)return;if(on){b.disabled=true;}else{AnmolAuthUI.busy(b,false);b.disabled=false;}}
@@ -2264,7 +2342,7 @@ window.DO_LOGIN=function(){
   .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d};});})
   .then(function(x){
     if(!x.ok||!x.d.token){AnmolAuthUI.busy(btn,false);showErr(x.d.error||'Invalid User ID or password. Please try again.');GEN_CAPTCHA();return;}
-    TOKEN=x.d.token;   // pre-gate token: kept in memory only — nothing is stored until a role AND location are chosen
+    TOKEN=x.d.token; try{localStorage.setItem('shdl_auth_token',TOKEN);}catch(e){}
     showErr(''); AnmolAuthUI.success(btn); loadGate();
   }).catch(function(){AnmolAuthUI.busy(btn,false);showErr('Unable to sign in at the moment. Please try again shortly.');GEN_CAPTCHA();});
 };
@@ -2324,5 +2402,140 @@ resume();
 })();
 
 </script>
+
+<!-- Full-screen Super Admin recovery pages. The original login remains unchanged underneath. -->
+<div id="alm-recovery-modal" aria-hidden="true" onclick="if(event.target===this)CLOSE_SUPER_RECOVERY()">
+  <section class="alm-recovery-card" role="dialog" aria-modal="true" aria-labelledby="alm-recovery-title">
+    <header class="alm-recovery-head">
+      <div class="alm-recovery-brand">
+        <img class="alm-recovery-logo" id="alm-recovery-logo" alt="Anmol LibMatrix Logo">
+        <span class="alm-recovery-brand-fallback" id="alm-recovery-brand-fallback">Anmol LibMatrix</span>
+        <button type="button" class="alm-recovery-close" onclick="CLOSE_SUPER_RECOVERY()" aria-label="Close recovery">×</button>
+      </div>
+      <div class="alm-recovery-access"><span class="alm-recovery-access-icon" aria-hidden="true">🔒</span><span>Super Administrator Secure Access</span></div>
+      <h2 class="alm-recovery-title" id="alm-recovery-title">Recover Username</h2>
+      <p class="alm-recovery-subtitle" id="alm-recovery-subtitle">Verify your registered account details to continue securely.</p>
+    </header>
+    <div class="alm-recovery-body">
+      <div id="alm-username-panel">
+        <p class="alm-recovery-intro">अपना registered Email ID <strong>या</strong> Mobile Number चुनें। दोनों में से किसी एक के माध्यम से account identity verify करके Username retrieval आगे बढ़ेगा।</p>
+        <div class="alm-recovery-steps" aria-label="Username recovery steps">
+          <div class="alm-recovery-step active"><span class="alm-step-no">1</span><span>Choose Method</span></div>
+          <div class="alm-recovery-step"><span class="alm-step-no">2</span><span>Verify Identity</span></div>
+          <div class="alm-recovery-step"><span class="alm-step-no">3</span><span>Get Username</span></div>
+        </div>
+        <p class="alm-required-note"><span class="alm-required-star" aria-hidden="true">*</span> स्टार (*) वाले फ़ील्ड भरना अनिवार्य है।</p>
+        <form id="alm-username-form" autocomplete="on">
+          <div class="alm-recovery-field">
+            <span class="alm-recovery-label required-label">Select Verification Method</span>
+            <div class="alm-recovery-method-switch" role="group" aria-label="Choose email or mobile verification">
+              <button class="alm-recovery-method active" id="alm-username-email-method" type="button" aria-pressed="true" onclick="SET_USERNAME_RECOVERY_METHOD('email')"><span aria-hidden="true">✉</span> Registered Email ID</button>
+              <button class="alm-recovery-method" id="alm-username-mobile-method" type="button" aria-pressed="false" onclick="SET_USERNAME_RECOVERY_METHOD('mobile')"><span aria-hidden="true">☎</span> Mobile Number</button>
+            </div>
+          </div>
+          <div class="alm-recovery-field">
+            <label class="alm-recovery-label" id="alm-username-contact-label" for="alm-username-contact">Registered Email ID</label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" id="alm-username-contact-icon" aria-hidden="true">✉</span><input class="alm-recovery-input" id="alm-username-contact" name="contact" type="email" placeholder="Enter your registered email address" autocomplete="email" required></div>
+            <p class="alm-recovery-hint" id="alm-username-contact-hint">अपने Super Admin Account से जुड़ा हुआ registered Email ID दर्ज करें।</p>
+          </div>
+          <div class="alm-recovery-alert" id="alm-username-alert" role="status" aria-live="polite"></div>
+          <button class="alm-recovery-primary" type="submit">Verify &amp; Retrieve Username&nbsp; →</button>
+        </form>
+      </div>
+      <div id="alm-password-panel" hidden>
+        <p class="alm-recovery-intro">Password reset से पहले आपके Super Admin Account की ownership verify की जाएगी। <strong>User ID और Registered Mobile Number अनिवार्य हैं</strong>; Email ID देना वैकल्पिक है।</p>
+        <div class="alm-recovery-steps" aria-label="Password reset steps">
+          <div class="alm-recovery-step active"><span class="alm-step-no">1</span><span>Account Details</span></div>
+          <div class="alm-recovery-step"><span class="alm-step-no">2</span><span>OTP Verification</span></div>
+          <div class="alm-recovery-step"><span class="alm-step-no">3</span><span>Set New Password</span></div>
+        </div>
+        <p class="alm-required-note"><span class="alm-required-star" aria-hidden="true">*</span> User ID और Mobile Number अनिवार्य हैं। Email ID वैकल्पिक है।</p>
+        <form id="alm-password-form" autocomplete="on">
+          <div class="alm-recovery-field">
+            <label class="alm-recovery-label" for="alm-password-user-id">User ID</label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">▣</span><input class="alm-recovery-input" id="alm-password-user-id" name="userId" type="text" placeholder="Enter your Super Admin User ID" autocomplete="username" required></div>
+          </div>
+          <div class="alm-recovery-field">
+            <label class="alm-recovery-label" for="alm-password-mobile">Registered Mobile Number</label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">☎</span><input class="alm-recovery-input" id="alm-password-mobile" name="mobile" type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" placeholder="Enter 10-digit registered mobile number" autocomplete="tel" required></div>
+          </div>
+          <div class="alm-recovery-field">
+            <label class="alm-recovery-label" for="alm-password-email">Registered Email ID <span class="alm-optional-tag">(Optional)</span></label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">✉</span><input class="alm-recovery-input" id="alm-password-email" name="email" type="email" placeholder="Enter your registered email address (optional)" autocomplete="email"></div>
+            <p class="alm-recovery-hint">User ID और Mobile Number आपके उसी Super Admin Account में registered और आपस में matched होने चाहिए। Email ID देने पर उसका भी मिलान किया जाएगा।</p>
+          </div>
+          <div class="alm-recovery-alert" id="alm-password-alert" role="status" aria-live="polite"></div>
+          <button class="alm-recovery-primary" type="submit">Verify All 3 Details &amp; Continue&nbsp; →</button>
+        </form>
+      </div>
+      <div class="alm-recovery-security-note"><span aria-hidden="true">🛡️</span><div><strong>Security Notice</strong>कृपया अपने account में registered User ID और Mobile Number दर्ज करें। Email ID वैकल्पिक है। OTP या password किसी के साथ साझा न करें।</div></div>
+      <div class="alm-recovery-foot">© 2026 Anmol LibMatrix · Secure Super Admin Account Services</div>
+      <button type="button" class="alm-recovery-back" onclick="CLOSE_SUPER_RECOVERY()">← Back to Super Admin Login</button>
+    </div>
+  </section>
+</div>
+<script id="alm-recovery-preview-js">
+(function(){
+  'use strict';
+  function byId(id){return document.getElementById(id);}
+  var modal=byId('alm-recovery-modal');
+  function alertBox(id,message){var el=byId(id);if(!el)return;el.textContent=message;el.className='alm-recovery-alert show info';}
+  function setLogo(){
+    var source=byId('login-logo-img'),target=byId('alm-recovery-logo'),fallback=byId('alm-recovery-brand-fallback');
+    if(source&&target){var src=source.getAttribute('src')||source.src;if(src){target.src=src;target.style.display='block';if(fallback)fallback.style.display='none';return;}}
+    if(target)target.style.display='none';if(fallback)fallback.style.display='inline';
+  }
+  window.SET_USERNAME_RECOVERY_METHOD=function(method){
+    var input=byId('alm-username-contact'),label=byId('alm-username-contact-label'),hint=byId('alm-username-contact-hint'),icon=byId('alm-username-contact-icon');
+    var email=method!=='mobile';
+    byId('alm-username-email-method').classList.toggle('active',email);
+    byId('alm-username-email-method').setAttribute('aria-pressed',String(email));
+    byId('alm-username-mobile-method').classList.toggle('active',!email);
+    byId('alm-username-mobile-method').setAttribute('aria-pressed',String(!email));
+    input.value='';input.type=email?'email':'tel';input.inputMode=email?'email':'numeric';
+    input.maxLength=email?254:10;input.pattern=email?'':'[0-9]{10}';input.autocomplete=email?'email':'tel';
+    input.placeholder=email?'Enter your registered email address':'Enter 10-digit registered mobile number';
+    label.textContent=email?'Registered Email ID':'Registered Mobile Number';
+    hint.textContent=email?'अपने Super Admin Account से जुड़ा हुआ registered Email ID दर्ज करें।':'अपने Super Admin Account में registered 10-digit mobile number दर्ज करें।';
+    icon.textContent=email?'✉':'☎';
+  };
+  window.OPEN_SUPER_RECOVERY=function(mode){
+    if(!modal)return;
+    var isUsername=mode==='username';
+    byId('alm-username-panel').hidden=!isUsername;
+    byId('alm-password-panel').hidden=isUsername;
+    byId('alm-recovery-title').textContent=isUsername?'Recover Username':'Reset Super Admin Password';
+    byId('alm-recovery-subtitle').textContent=isUsername?'Verify with your registered Email ID or Mobile Number.':'Verify your User ID and Mobile Number. Email ID is optional.';
+    byId('alm-username-alert').className='alm-recovery-alert';
+    byId('alm-password-alert').className='alm-recovery-alert';
+    if(isUsername){
+      window.SET_USERNAME_RECOVERY_METHOD('email');
+      byId('alm-username-form').reset();
+    }else{
+      byId('alm-password-form').reset();
+      /* Ask for User ID explicitly; the login field can contain either username or email. */
+    }
+    setLogo();
+    modal.classList.add('open');modal.setAttribute('aria-hidden','false');
+    document.body.style.overflow='hidden';
+    setTimeout(function(){var focus=byId(isUsername?'alm-username-contact':'alm-password-user-id');if(focus)focus.focus();},60);
+  };
+  window.CLOSE_SUPER_RECOVERY=function(){
+    if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.style.overflow='';
+  };
+  byId('alm-username-form').addEventListener('submit',function(e){
+    e.preventDefault();if(!this.reportValidity())return;
+    var method=byId('alm-username-contact').type==='email'?'registered Email ID':'registered Mobile Number';
+    alertBox('alm-username-alert','Details का format सही है। अब '+method+' को account record से match करके OTP/verification भेजने के लिए backend recovery API आवश्यक है। अभी कोई verification या username retrieval नहीं किया गया है।');
+  });
+  byId('alm-password-form').addEventListener('submit',function(e){
+    e.preventDefault();if(!this.reportValidity())return;
+    alertBox('alm-password-alert','अनिवार्य User ID और Mobile Number का format सही है। दिए गए Email ID (यदि भरा है) का भी मिलान किया जाएगा। वास्तविक verification और OTP भेजने के लिए backend recovery API आवश्यक है। अभी कोई OTP नहीं भेजा गया और password नहीं बदला गया है।');
+  });
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&modal&&modal.classList.contains('open'))window.CLOSE_SUPER_RECOVERY();});
+  window.SET_USERNAME_RECOVERY_METHOD('email');
+})();
+</script>
+
 </body>
 </html>
