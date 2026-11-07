@@ -1,0 +1,29 @@
+/* ✅ Compact recovery cards (Reset Password / Recover Username): max 460px, tighter spacing, never wider than the screen */
+#alm-recovery-modal{padding:16px 12px;}
+#alm-recovery-modal .alm-recovery-card{width:100%;max-width:460px;max-height:calc(100dvh - 32px);border-radius:16px;margin:auto;}
+#alm-recovery-modal .alm-recovery-head{padding:14px 20px 12px;}
+#alm-recovery-modal .alm-recovery-brand{min-height:40px;margin-bottom:8px;}
+#alm-recovery-modal .alm-recovery-logo{width:140px;height:44px;}
+#alm-recovery-modal .alm-recovery-close{width:30px;height:30px;flex-basis:30px;font-size:20px;}
+#alm-recovery-modal .alm-recovery-access{min-height:28px;margin-bottom:8px;padding:5px 12px;font-size:10px;}
+#alm-recovery-modal .alm-recovery-title{font-size:19px;}
+#alm-recovery-modal .alm-recovery-subtitle{margin-top:4px;line-height:1.5;}
+#alm-recovery-modal .alm-recovery-body{padding:16px 20px 18px;}
+#alm-recovery-modal .alm-recovery-intro{margin-bottom:12px;line-height:1.55;}
+#alm-recovery-modal .alm-recovery-steps{gap:6px;margin-bottom:14px;}
+#alm-recovery-modal .alm-recovery-step{padding:7px 6px;gap:5px;}
+#alm-recovery-modal .alm-step-no{width:18px;height:18px;flex-basis:18px;font-size:9px;}
+#alm-recovery-modal .alm-recovery-field{margin-bottom:11px;}
+#alm-recovery-modal .alm-recovery-label{margin-bottom:5px;}
+#alm-recovery-modal .alm-recovery-input-wrap{min-height:44px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-input-icon{width:42px;flex-basis:42px;font-size:15px;}
+#alm-recovery-modal .alm-recovery-input{height:42px;padding:0 12px;}
+#alm-recovery-modal .alm-recovery-primary{min-height:44px;border-radius:10px;}
+#alm-recovery-modal .alm-recovery-method{min-height:42px;}
+#alm-recovery-modal .alm-recovery-security-note{margin-top:12px;padding:9px 10px;}
+#alm-recovery-modal .alm-recovery-foot{margin-top:12px;padding-top:10px;}
+#alm-recovery-modal .alm-recovery-card,#alm-recovery-modal .alm-recovery-card *{max-width:100%;}
+#alm-recovery-modal .alm-recovery-input-wrap,#alm-recovery-modal .alm-recovery-primary{max-width:none;}
+@media(max-width:560px){#alm-recovery-modal{padding:8px;}#alm-recovery-modal .alm-recovery-head{padding:12px 14px 10px;}#alm-recovery-modal .alm-recovery-body{padding:14px 14px 16px;}#alm-recovery-modal .alm-recovery-title{font-size:17px;}#alm-recovery-modal .alm-recovery-logo{width:120px;height:38px;}}
+.sa-recovery-card{max-width:460px;}
+.role-location-card{max-width:480px;}
