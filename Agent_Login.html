@@ -700,19 +700,6 @@ function SHDL_OFFLINE_READ_ALIAS(path) {
   if (path === '/admin-entities/agent_logins' && typeof USERS !== 'undefined' && Array.isArray(USERS)) return USERS.slice();
   return null;
 }
-/* ♻️ VACANT-ID RECYCLING / SEQUENTIAL GAP-FILLING (same rule as server.js allocateVacantId):
-   next ID = LOWEST positive number not in use (1,2,4 -> 3 ; 2,3 -> 1 ; 1,2,3 -> 4). */
-function LIB_ID_SET(prefix, ids){
-  var set = {}, re = new RegExp('^' + String(prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)$', 'i');
-  (ids || []).forEach(function(v){ var m = re.exec(String(v == null ? '' : v).trim()); if (m) set[parseInt(m[1], 10)] = 1; });
-  return set;
-}
-function LIB_PICK_VACANT(prefix, set, pad){
-  var n = 1; while (set[n]) n++;
-  set[n] = 1;                                   /* mark used so several IDs handed out in one pass never repeat */
-  return prefix + String(n).padStart(pad || 3, '0');
-}
-function LIB_NEXT_VACANT(prefix, ids, pad){ return LIB_PICK_VACANT(prefix, LIB_ID_SET(prefix, ids), pad); }
 function SHDL_OFFLINE_DEFAULT(path) {
   if (/^\/(admin-entities\/(agents|staff|students|agent_logins)|hr\/registrations|hr\/employees|hr\/salary-slips|hrms-salary\/claims|agent\/payout-requests|wallet\/(my-direct-payments|my-salary-payments|withdrawals\/mine|salary-claims)|notifications|blob\/(members|agent_plans|mem_plans|agent_payments|pending_staff|selfies|attendance_locations|student_photos|hrms_attendance|hrms_leaves|hrms_salary_claims|hrms_salary_slips|hrms_employees|salary_claims|att_records|fee_records))$/.test(path)) return [];
   if (path === '/wallet/me') return { approved_balance: 0, pending_balance: 0, total_earned: 0 };
@@ -720,12 +707,12 @@ function SHDL_OFFLINE_DEFAULT(path) {
   if (path === '/blob/razorpay_config') return {};
   if (path === '/blob/agent_plans' || path === '/blob/mem_plans') return [];
   if (path === '/students/next-id') {
-    var _ids = [];
+    var max = 0;
     try {
       var st = SHDL_OFFLINE_PARSE(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students'), []) || [];
-      st.forEach(function(x){ _ids.push((x && (x.id || x.studentId)) || ''); });
+      st.forEach(function(x){ var m = String((x && (x.id || x.studentId)) || '').match(/SHL-(\d+)/i); if (m) max = Math.max(max, Number(m[1]) || 0); });
     } catch (e) {}
-    return { nextId: LIB_NEXT_VACANT('SHL-', _ids) };
+    return { nextId: 'SHL-' + String(max + 1).padStart(3, '0') };
   }
   return null;
 }
@@ -1519,8 +1506,8 @@ body.dark #pg-dash .two .card .fbr{color:#a6b6ca}body.dark #pg-dash .two .card .
         </div>
       </div>
       <div class="agent-forgot-link-row" aria-label="Account recovery options">
-        <button type="button" class="agent-forgot-link" onclick="return window.AnmolRecovery?AnmolRecovery.open({scope:'entity',mode:'userid'}):OPEN_FORGOT_USERNAME()">Forgot Username?</button>
-        <button type="button" class="agent-forgot-link" onclick="return window.AnmolRecovery?AnmolRecovery.open({scope:'entity',mode:'password',userId:(document.getElementById('login-user')||{}).value||''}):OPEN_FORGOT_PASSWORD()">Forgot Password?</button>
+        <button type="button" class="agent-forgot-link" onclick="OPEN_FORGOT_USERNAME()">Forgot Username?</button>
+        <button type="button" class="agent-forgot-link" onclick="OPEN_FORGOT_PASSWORD()">Forgot Password?</button>
       </div>
 
       <!-- CAPTCHA -->
@@ -1566,7 +1553,6 @@ body.dark #pg-dash .two .card .fbr{color:#a6b6ca}body.dark #pg-dash .two .card .
         📋 Customer Registration
       </button>
       <div style="text-align:center;margin-top:7px;font-size:10px;color:rgba(255,255,255,.3)">Submit your registration for a new membership</div>
-      <button type="button" onclick="OPEN_AGENT_REG()" id="agent-reg-btn" style="width:100%;margin-top:10px;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid rgba(154,107,0,.55);background:rgba(201,162,39,.14);color:#7a5600">🏢 Register as New Agent / Library</button>
 
     </div>
 
@@ -3869,7 +3855,6 @@ function DO_LOGIN() {
   var rolesToTry = found ? [found.role === 'Staff' ? 'staff' : 'agent'] : ['agent', 'staff'];
   var usernameToSend = found && found.user ? found.user : u;
   var lastError = null;
-  var bestError = null;   // prefer a password error (account exists) over a not-registered error from the other role
 
   function restoreButton() {
     if (loginBtn) {
@@ -3954,7 +3939,7 @@ function DO_LOGIN() {
     if (index >= rolesToTry.length) {
       stopWakeupWatch();
       restoreButton();
-      var fin = bestError || lastError; uiErr(fin && fin.message ? fin.message : 'User ID is not registered in the system.');
+      uiErr(lastError && lastError.message ? lastError.message : 'Invalid username or password.');
       return;
     }
 
@@ -4003,17 +3988,16 @@ function DO_LOGIN() {
         // Offline demo fallback is available only for the exact legacy demo
         // credentials and only if this is a local file or the backend is unreachable.
         lastError = e || new Error('Login request failed.');
-        if (/invalid password/i.test(String(lastError.message || ''))) bestError = lastError;   // the ID exists → stop here, do not try the other role
         if (tryOfflineDemoLogin(lastError)) return;
         // Don't retry another role for a known account; for an unknown account
         // the first request may simply have used the other valid role.
-        if (!found && !bestError && index + 1 < rolesToTry.length) {
+        if (!found && index + 1 < rolesToTry.length) {
           loginAttempt(index + 1);
           return;
         }
         stopWakeupWatch();
         restoreButton();
-        var message = (bestError || lastError) && (bestError || lastError).message ? (bestError || lastError).message : 'Login request failed.';
+        var message = lastError && lastError.message ? lastError.message : 'Login request failed.';
         if (/failed to fetch|networkerror|load failed|fetch failed/i.test(message)) {
           message = 'Unable to sign in at the moment. Please try again shortly.';
         }
@@ -4440,7 +4424,7 @@ function LOAD_ADMIN_STUDENTS() {
 function AUTO_SAVE_STUDENTS() {
   var rows = document.querySelectorAll('#stb tr[data-b]');
   var students = [];
-  var _usedShl = LIB_ID_SET('SHL-', Array.prototype.map.call(rows, function(x){ return x.getAttribute('data-stu-id'); }));
+  var counter = 1;
   rows.forEach(function(r) {
     if(r.id === 'stb-e' || r.id === 'stb-empty') return;
     var nameEl = r.querySelector('strong');
@@ -4467,9 +4451,10 @@ function AUTO_SAVE_STUDENTS() {
     // Get or assign SHL ID
     var id = r.getAttribute('data-stu-id');
     if(!id || id.trim() === '') {
-      id = LIB_PICK_VACANT('SHL-', _usedShl);   /* ♻️ lowest vacant SHL number */
+      id = 'SHL-' + String(counter).padStart(3, '0');
       r.setAttribute('data-stu-id', id);
     }
+    counter++;
     var _rec = {
       id: id, name: name, cls: cls, batch: String(batch),
       mobile: mobile, seat: seat, status: 'active',
@@ -4522,13 +4507,20 @@ function GEN_SHL_ID(cb) {
 // na ho, bas is rare case mein duplicate-ID ka thoda risk rehta hai.
 function GEN_SHL_ID_LOCAL_FALLBACK() {
   var rows = document.querySelectorAll('#stb tr[data-stu-id]');
-  var ids = [];
-  rows.forEach(function(r) { ids.push(r.getAttribute('data-stu-id') || ''); });
+  var maxNum = 0;
+  rows.forEach(function(r) {
+    var sid = r.getAttribute('data-stu-id') || '';
+    var match = sid.match(/SHL-(\d+)/i);
+    if(match) { var n = parseInt(match[1]); if(n > maxNum) maxNum = n; }
+  });
   try {
     var saved = JSON.parse(localStorage.getItem('shdl_students') || localStorage.getItem('shri_hari_students') || '[]');
-    saved.forEach(function(s) { if(s && s.id) ids.push(s.id); });
+    saved.forEach(function(s) {
+      if(s.id) { var m = s.id.match(/SHL-(\d+)/i); if(m) { var n=parseInt(m[1]); if(n>maxNum) maxNum=n; } }
+    });
   } catch(e){}
-  return LIB_NEXT_VACANT('SHL-', ids);   /* ♻️ lowest vacant SHL number */
+  maxNum++;
+  return 'SHL-' + String(maxNum).padStart(3, '0');
 }
 
 // 🪪 Global Identity Number check (blocks the same Aadhaar/ID being registered under two agents/libraries)
@@ -5254,10 +5246,18 @@ function RESTORE_PENDING_STAFF_ROWS(){
   }, 12000);
 })();
 function GEN_NEXT_EMP_ID(){
-  var ids=[];
-  document.querySelectorAll("#stftb tr[data-empid]").forEach(function(row){ ids.push(row.getAttribute("data-empid")||""); });
-  (window.PENDING_STAFF||[]).forEach(function(p){ ids.push((p&&p.empid)||""); });
-  return LIB_NEXT_VACANT("EMP", ids);   /* ♻️ lowest vacant EMP number */
+  var max=0;
+  document.querySelectorAll("#stftb tr[data-empid]").forEach(function(row){
+    var v=row.getAttribute("data-empid")||"";
+    var m=v.match(/(\d+)$/);
+    if(m){ var num=parseInt(m[1],10); if(num>max) max=num; }
+  });
+  (window.PENDING_STAFF||[]).forEach(function(p){
+    var m=(p.empid||"").match(/(\d+)$/);
+    if(m){ var num=parseInt(m[1],10); if(num>max) max=num; }
+  });
+  var next=max+1;
+  return "EMP"+String(next).padStart(3,"0");
 }
 function ADD_STF_CORE(){
   var n=document.getElementById("sfn").value.trim();
@@ -7879,7 +7879,7 @@ function SYNC_STU_TO_MOBILE() {
   var rows = document.querySelectorAll('#stb tr[data-b]');
   if(rows.length === 0) { alert('No students found.'); return; }
   var students = [];
-  var _usedShl = LIB_ID_SET('SHL-', Array.prototype.map.call(rows, function(x){ return x.getAttribute('data-stu-id'); }));
+  var counter = 1;
   rows.forEach(function(r) {
     var nameEl = r.querySelector('strong');
     var tds = r.querySelectorAll('td');
@@ -7894,9 +7894,10 @@ function SYNC_STU_TO_MOBILE() {
     // Use existing SHL ID if present, else assign new one
     var id = r.getAttribute('data-stu-id');
     if(!id || id.trim() === '') {
-      id = LIB_PICK_VACANT('SHL-', _usedShl);   /* ♻️ lowest vacant SHL number */
+      id = 'SHL-' + String(counter).padStart(3, '0');
       r.setAttribute('data-stu-id', id);
     }
+    counter++;
     // Get expiry date from data-exp attribute
     var expiry = r.getAttribute('data-exp') || '';
     // Determine status from expiry
@@ -8628,11 +8629,11 @@ var AUTO_LOGOUT_AGENT = (function(){
         <button type="button" id="cr-mode-track" onclick="CR_SET_MODE('track')" style="flex:1;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;background:transparent;color:#0d1e3d">Track Application Status</button>
       </div>
       <div id="cr-track" style="display:none">
-        <div class="cr-field"><label for="cr-track-id">Application ID / Tracking ID *</label><input type="text" id="cr-track-id" autocomplete="off" placeholder="Application ID or Tracking ID (TRK-…)"></div>
+        <div class="cr-field"><label for="cr-track-id">Application ID / Tracking ID *</label><input type="text" id="cr-track-id" autocomplete="off" placeholder="Tracking ID (e.g. AGT001)" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="cr-field"><label for="cr-track-mobile">Registered Mobile Number *</label><input type="tel" id="cr-track-mobile" inputmode="numeric" maxlength="10" autocomplete="tel" placeholder="10-digit mobile number"></div>
-        <div id="cr-track-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:700;margin:8px 0"></div>
+        <div id="cr-track-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:700"></div>
         <button type="button" id="cr-track-btn" onclick="TRACK_APPLICATION()" style="width:100%;padding:11px;border:none;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;background:#0d1e3d;color:#c9a227">Check Status</button>
-        <div id="cr-track-result" style="display:none;margin-top:14px;border-radius:12px;padding:14px;font-size:13px;line-height:1.5"></div>
+        <div id="cr-track-result" style="display:none;border-radius:12px;padding:14px;font-size:13px;line-height:1.5"></div>
       </div>
       <div id="cust-reg-main">
       <div id="cust-reg-success" style="display:none;background:#E1F5EE;border:2px solid #0F6E56;border-radius:12px;padding:18px;text-align:center;margin-bottom:14px">
@@ -8675,7 +8676,7 @@ var AUTO_LOGOUT_AGENT = (function(){
         <div class="cr-field">
           <label for="cr-aadhaar">Aadhaar Number *</label>
           <input type="text" id="cr-aadhaar" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="Enter 12-digit Aadhaar number" aria-label="12 digit Aadhaar Number" required>
-          <small>For privacy, only the last 4 digits are sent to the server when the form is submitted.</small>
+          <small>Your Aadhaar is encrypted on our server and is never stored in plain text. One Aadhaar can be registered only once.</small>
         </div>
         <!-- PAN -->
         <div class="cr-field">
@@ -8703,6 +8704,28 @@ var AUTO_LOGOUT_AGENT = (function(){
   </div>
 </div>
 
+<style id="cr-track-spacing-fix">
+#cr-track{padding:2px 0 4px}
+#cr-track .cr-field{margin:0 0 16px!important;min-width:0}
+#cr-track .cr-field label{display:block;font-size:10px;font-weight:800;color:#50677c;margin:0 0 7px;text-transform:uppercase;letter-spacing:.055em;line-height:1.3}
+#cr-track .cr-field input{display:block;width:100%;box-sizing:border-box;min-width:0;padding:11px 12px;border:1px solid #d7e2ec;border-radius:10px;background:#fbfdff;color:#102a43;font-size:13px;outline:none;transition:border-color .18s,box-shadow .18s}
+#cr-track .cr-field input:focus{border-color:#2c78b9;box-shadow:0 0 0 3px rgba(44,120,185,.10)}
+#cr-track #cr-track-err{margin:0 0 14px!important;padding:9px 12px;background:#FCEBEB;border:1px solid #fecaca;border-radius:8px;line-height:1.4}
+#cr-track #cr-track-btn{display:block;width:100%;box-sizing:border-box;margin:0;padding:12px;line-height:1.2}
+#cr-track #cr-track-btn:disabled{opacity:.65;cursor:wait}
+#cr-track #cr-track-result{margin:16px 0 0!important;box-sizing:border-box;word-break:break-word}
+#cr-track #cr-track-result .tr-row{margin-top:10px;font-size:12px;color:#4a5568;line-height:1.5}
+#cr-track #cr-track-result .tr-cred{margin-top:14px;background:#fff;border-radius:10px;padding:12px;line-height:1.7}
+.cr-receipt{background:#fff;border:1.5px dashed #0F6E56;border-radius:12px;padding:14px;margin:14px 0 4px;text-align:left;font-size:12px;color:#1a202c}
+.cr-receipt h4{margin:0 0 10px;font-size:13px;color:#0d1e3d;text-align:center;letter-spacing:.04em;text-transform:uppercase}
+.cr-receipt .rc-tok{text-align:center;font-size:20px;font-weight:900;letter-spacing:1px;color:#0F6E56;background:#E1F5EE;border-radius:8px;padding:8px;margin-bottom:10px;user-select:all}
+.cr-receipt .rc-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #eef1f6}
+.cr-receipt .rc-row:last-child{border-bottom:0}
+.cr-receipt .rc-row span{color:#4a5568}.cr-receipt .rc-row b{text-align:right;word-break:break-all}
+.cr-receipt-actions{display:flex;gap:10px;margin-top:12px}
+.cr-receipt-actions button{flex:1;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none}
+@media print{body.cr-printing *{visibility:hidden}body.cr-printing #cr-receipt-print,body.cr-printing #cr-receipt-print *{visibility:visible}body.cr-printing #cr-receipt-print{position:absolute;left:0;top:0;width:100%;border:1px solid #000}}
+</style>
 <script>
 // ═══ CUSTOMER REGISTRATION FUNCTIONS ═══
 // ══ MEMBERSHIP PLANS: live se Admin Panel ke mem_plans ke saath sync ══
@@ -8711,17 +8734,19 @@ function RENDER_PLAN_PREF_OPTIONS() {
   var sel = document.getElementById('cr-plan-pref');
   if (!sel) return;
   var current = sel.value;
-  var plans = window.MEM_PLANS || [];
+  var plans = (window.MEM_PLANS || []).filter(function(p){ return p && p.id && p.name && p.active !== false && Number(p.price) >= 0; });
+  var escH = function(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
   var opts = '<option value="">-- Select Plan --</option>';
   if (plans.length) {
     opts += plans.map(function(p){
-      return '<option value="' + p.id + '">' + p.name + ' — ' + p.days + ' days (\u20b9' + p.price + ')</option>';
+      return '<option value="' + escH(p.id) + '">' + escH(p.name) + ' — \u20b9' + escH(p.price) + ' / ' + escH(p.days) + ' days</option>';
     }).join('');
   } else {
     opts += '<option value="" disabled>⚠️ No plans are available. Please contact the Admin</option>';
   }
   sel.innerHTML = opts;
   sel.value = current || '';
+  try { UPDATE_CR_PLAN_PRICE(); } catch (e) {}
 }
 // 🔒 FIX: pehle yeh Firebase (shdl/mem_plans) se load hota tha — jo Admin
 // Panel ke asli plans se disconnected tha (Admin Panel plans backend mein
@@ -8898,6 +8923,7 @@ function OPEN_CUST_REG() {
   document.getElementById('cr-email').value = '';
   document.getElementById('cr-address').value = '';
   document.getElementById('cr-district').value = '';
+  document.getElementById('cr-aadhaar').value = ''; document.getElementById('cr-pan').value = '';
   RENDER_PLAN_PREF_OPTIONS();
   document.getElementById('cr-plan-pref').value = '';
   document.getElementById('cr-plan-price').style.display = 'none';
@@ -8955,15 +8981,20 @@ function TRACK_APPLICATION() {
     btn.disabled = false; btn.textContent = 'Check Status';
     var colors = { approved: ['#E1F5EE', '#0F6E56'], rejected: ['#FCEBEB', '#A32D2D'], pending: ['#FFF8E1', '#9a6b00'] };
     var c = colors[r.status] || colors.pending;
-    var html = '<div style="font-weight:900;color:' + c[1] + ';margin-bottom:6px">Status: ' + esc(String(r.status).toUpperCase()) + '</div>' +
-      '<div style="color:#1a202c">' + esc(r.message || '') + '</div>' +
-      '<div style="margin-top:8px;font-size:12px;color:#4a5568">Applicant: ' + esc(r.name) + (r.type ? ' &middot; ' + esc(r.type) : '') + (r.planName ? ' &middot; Plan: ' + esc(r.planName) : '') + '</div>';
+    var html = '<div style="font-weight:900;color:' + c[1] + ';font-size:14px">Status: ' + esc(String(r.status).toUpperCase()) + '</div>' +
+      '<div style="margin-top:6px;color:#1a202c">' + esc(r.message || '') + '</div>' +
+      '<div class="tr-row">' +
+        (r.trackingId ? 'Tracking ID: <b>' + esc(r.trackingId) + '</b><br>' : '') +
+        'Applicant: <b>' + esc(r.name) + '</b>' + (r.type ? ' &middot; ' + esc(r.type) : '') +
+        (r.planName ? '<br>Plan: ' + esc(r.planName) : '') +
+        (r.amount != null && r.paymentRef ? '<br>Paid: &#8377;' + esc(r.amount) + ' &middot; Ref: ' + esc(r.paymentRef) : '') +
+      '</div>';
     if (r.credentials) {
-      html += '<div style="margin-top:12px;background:#fff;border:1px dashed ' + c[1] + ';border-radius:10px;padding:10px">' +
-        '<div style="font-size:11px;color:#4a5568;font-weight:700">YOUR LOGIN CREDENTIALS</div>' +
-        '<div style="margin-top:4px">User ID: <strong>' + esc(r.credentials.userId) + '</strong></div>' +
-        (r.credentials.password ? '<div>Password: <strong>' + esc(r.credentials.password) + '</strong></div>' : '<div style="font-size:12px;color:#4a5568">Password: the one you set at registration (use “Forgot password” if needed).</div>') +
-        '<div style="margin-top:6px;font-size:11px;color:#A32D2D">Please save these details now and change your password after your first login.</div></div>';
+      html += '<div class="tr-cred" style="border:1px dashed ' + c[1] + '">' +
+        '<div style="font-size:11px;color:#4a5568;font-weight:800;letter-spacing:.04em">YOUR LOGIN CREDENTIALS</div>' +
+        '<div style="margin-top:6px">User ID: <strong style="user-select:all">' + esc(r.credentials.userId) + '</strong></div>' +
+        (r.credentials.password ? '<div>Password: <strong style="user-select:all">' + esc(r.credentials.password) + '</strong></div>' : '<div style="font-size:12px;color:#4a5568">Password: the one you set at registration (use “Forgot password” if needed).</div>') +
+        '<div style="margin-top:8px;font-size:11px;color:#A32D2D">Please save these details now and change your password after your first login.</div></div>';
     }
     box.style.background = c[0]; box.style.border = '1.5px solid ' + c[1];
     box.innerHTML = html; box.style.display = 'block';
@@ -8993,7 +9024,6 @@ function SUBMIT_CUST_REG() {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return; }
   if (!aadhaar || !/^\d{12}$/.test(aadhaar)) { errEl.textContent = '⚠️ Please enter a valid 12-digit Aadhaar number.'; errEl.style.display = 'block'; return; }
   if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) { errEl.textContent = '⚠️ Please enter a valid PAN format, for example ABCDE1234F.'; errEl.style.display = 'block'; return; }
-  if (!agentId) { errEl.textContent = '⚠️ Please open this form using your library’s personalized registration link.'; errEl.style.display = 'block'; return; }
   if (!planId) { errEl.textContent = '⚠️ Please select a Membership Plan.'; errEl.style.display = 'block'; return; }
 
   var submitBtn = document.querySelector('#cust-reg-form button[type="submit"]');
@@ -9008,7 +9038,7 @@ function SUBMIT_CUST_REG() {
   // queue (customer_pending_registrations) mein daalta hai.
   API.post('/customer-registrations/order', {
     name: name, firstName: firstName, lastName: lastName, mobile: mobile, email: email, address: address, district: district, state: state,
-    aadhaarRedacted: aadhaar.slice(-4), pan: pan, agentId: agentId, planId: planId
+    aadhaar: aadhaar, pan: pan, agentId: agentId, planId: planId
   }).then(function(order){
     if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit Registration & Continue to Payment'; }
     if (!order || !order.orderId || (!order.free && !order.key)) {
@@ -9041,13 +9071,7 @@ function SUBMIT_CUST_REG() {
           razorpay_payment_id: response.razorpay_payment_id,
           razorpay_signature: response.razorpay_signature
         }).then(function(vr){
-          var _appId = (vr && vr.id) || '';
-          document.getElementById('cust-reg-success').innerHTML =
-            '<div style="font-size:36px;margin-bottom:8px">✅</div>' +
-            '<div style="font-size:15px;font-weight:900;color:#0d1e3d;margin-bottom:4px">' + (order.free ? 'Registration Submitted (no fee).' : 'Payment Successful. Registration Submitted.') + '</div>' +
-            '<div style="font-size:12px;color:#4a5568">Your application will be reviewed shortly. Use the Application ID below with your mobile number under "Track Application Status".</div>' +
-            (_appId ? '<div style="margin-top:10px;font-size:14px;font-weight:900;letter-spacing:.5px;background:#fff;border:1px dashed #0F6E56;border-radius:8px;padding:8px;user-select:all">' + _appId + '</div>' : '') +
-            '<button onclick="CLOSE_CUST_REG()" style="margin-top:14px;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:#0d1e3d;color:#c9a227">Close</button>';
+          CR_SHOW_RECEIPT(vr || {}, order, { name: name, mobile: mobile, email: email, planName: order.plan ? order.plan.name : '', response: response });
         }).catch(function(err2){
           document.getElementById('cust-reg-success').innerHTML =
             '<div style="font-size:36px;margin-bottom:8px">⚠️</div>' +
@@ -9063,6 +9087,41 @@ function SUBMIT_CUST_REG() {
     errEl.textContent = '⚠️ ' + (err.message || 'Unable to create the order. Please try again.');
     errEl.style.display = 'block';
   });
+}
+function CR_SHOW_RECEIPT(vr, order, f) {
+  var esc = function(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var r = vr.receipt || {};
+  var token = vr.trackingId || r.trackingId || vr.id || '';
+  var amt = (r.amount != null ? r.amount : (order && order.fee != null ? order.fee : 0));
+  var paidOn = r.paidOn ? new Date(r.paidOn) : new Date();
+  var row = function(k, v){ return '<div class="rc-row"><span>' + k + '</span><b>' + esc(v) + '</b></div>'; };
+  var ok = document.getElementById('cust-reg-success');
+  ok.innerHTML =
+    '<div style="font-size:36px;margin-bottom:6px">✅</div>' +
+    '<div style="font-size:15px;font-weight:900;color:#0d1e3d;margin-bottom:6px">Application Submitted Successfully</div>' +
+    '<div style="font-size:12px;color:#4a5568;line-height:1.5">' + esc(vr.message || 'Your application has been submitted and sent to the Super Admin panel for approval.') +
+    ' Keep your Tracking ID safe — use it with your registered mobile number under <b>Track Application Status</b> to see your status and, once approved, your User ID and Password.</div>' +
+    '<div class="cr-receipt" id="cr-receipt-print"><h4>Payment Receipt / Slip</h4>' +
+      '<div class="rc-tok">' + esc(token) + '</div>' +
+      row('Receipt No.', r.receiptNo || ('RCP-' + token)) +
+      row('Name', r.name || f.name) +
+      row('Mobile', r.mobile || f.mobile) +
+      row('Plan', r.planName || f.planName || '—') +
+      row('Amount Paid', '\u20b9' + amt) +
+      row('Payment Status', r.paymentStatus || (order && order.free ? 'No payment required' : 'Paid')) +
+      row('Payment Mode', r.paymentMode || (order && order.free ? 'No fee' : 'Online')) +
+      row('Payment / Txn ID', r.paymentRef || (f.response && f.response.razorpay_payment_id) || '—') +
+      row('Date & Time', paidOn.toLocaleString('en-IN')) +
+      row('Application Status', 'Pending — sent to Super Admin') +
+    '</div>' +
+    '<div class="cr-receipt-actions"><button type="button" onclick="CR_PRINT_RECEIPT()" style="background:#0F6E56;color:#fff">🖨️ Print / Save Receipt</button>' +
+    '<button type="button" onclick="CLOSE_CUST_REG()" style="background:#0d1e3d;color:#c9a227">Close</button></div>';
+  ok.style.display = 'block';
+  try { document.getElementById('cr-track-id').value = token; document.getElementById('cr-track-mobile').value = r.mobile || f.mobile; } catch (e) {}
+}
+function CR_PRINT_RECEIPT() {
+  var done = function(){ document.body.classList.remove('cr-printing'); window.removeEventListener('afterprint', done); };
+  document.body.classList.add('cr-printing'); window.addEventListener('afterprint', done); window.print();
 }
 // ESC se modal band karo
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') CLOSE_CUST_REG(); });
@@ -9879,7 +9938,12 @@ function HRMS_SAVE_REG_EDIT(){
 // do employee record ya duplicate approval nahi banega, aur baaki sabhi pending
 // registrations bilkul untouched rehte hain (poori list kabhi overwrite nahi hoti).
 function _genNextHrmsEmpId(){
-  return LIB_NEXT_VACANT('EMP', (HRMS_EMPLOYEES||[]).map(function(e){ return e && e.empId; }));   /* ♻️ lowest vacant EMP number */
+  var maxN = 0;
+  (HRMS_EMPLOYEES||[]).forEach(function(e){
+    var m = /^EMP(\d+)$/i.exec(String(e.empId||'').trim());
+    if (m) maxN = Math.max(maxN, parseInt(m[1],10));
+  });
+  return 'EMP' + String(maxN+1).padStart(3,'0');
 }
 function HRMS_APPROVE_REG(id){
   var r = (HRMS_PENDING_REGS||[]).find(function(x){ return x.id===id; });
