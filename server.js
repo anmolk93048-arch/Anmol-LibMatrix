@@ -4573,8 +4573,20 @@ async function sendFast2SmsOtp(mobile, otp) {
     if (r.status >= 200 && r.status < 300 && (j.return === true || j.return === 'true')) return true;
     const m = Array.isArray(j.message) ? j.message.join(' ') : (j.message || r.text || ('HTTP ' + r.status));
     const err = new Error('Fast2SMS rejected the request (status_code ' + (j.status_code || r.status) + '): ' + String(m).slice(0, 200));
+    err.fast2smsCode = Number(j.status_code || r.status) || 0;
     console.error('[fast2sms] FAILED:', err.message);
     throw err;
+}
+// Any OTP-sending failure (Fast2SMS 996 "website verification pending", 412 bad key, low balance, timeout, network) becomes a
+// friendly JSON answer — never a crash and never a bare 502. The real reason goes to the server log only (OTP_DEBUG=true adds it to the reply).
+function otpSendFailed(res, e, where) {
+    console.error('[' + (where || 'otp') + '] OTP could not be sent:', e && e.message);
+    if (res.headersSent) return;
+    const message = 'SMS Gateway verification pending or failed. Please check Fast2SMS account.';
+    const out = { success: false, message: message, error: message, code: 'SMS_GATEWAY_FAILED' };
+    if (e && e.fast2smsCode) out.gatewayCode = e.fast2smsCode;   // e.g. 996
+    if (String(process.env.OTP_DEBUG || '').toLowerCase() === 'true') out.detail = String(e && e.message || e).slice(0, 300);
+    res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
 async function otpServiceConfigured() { return !!(await fast2smsKey()) || waConfigured() || (await smsConfigured()); }
 // Fast2SMS first → WhatsApp → generic SMS gateway. Returns the channel that actually delivered the OTP.
@@ -4619,7 +4631,9 @@ async function forgotPasswordCore(req, res) {
             return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
         }
         const otp = String(crypto.randomInt(1000, 10000));
-        const channel = await sendOtpMessage(acc.mobile, otp);
+        let channel;
+        try { channel = await sendOtpMessage(acc.mobile, otp); }
+        catch (e) { return otpSendFailed(res, e, 'forgot-password'); }
         await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         const m = acc.mobile;
         res.json({ success: true, channel: channel, message: 'A 4-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
@@ -4770,7 +4784,7 @@ app.post('/api/auth/admin-login-otp', noStore, asyncRoute(async (req, res) => {
     const otp = String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN));
     let channel;
     try { channel = await sendOtpMessage(mobile, otp); }
-    catch (e) { console.error('admin-login-otp send failed:', e.message); return res.status(502).json({ error: 'Unable to send the OTP right now. Please try again.' }); }
+    catch (e) { return otpSendFailed(res, e, 'admin-login-otp'); }
     await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
     res.json({ success: true, channel: channel, message: 'An 8-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
 }));
