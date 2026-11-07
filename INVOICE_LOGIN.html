@@ -558,6 +558,142 @@
 @media (max-width:520px){.wl-actions{flex-direction:column-reverse}.wl-title{font-size:20px}}
 @media print{#wl-overlay,#wl-toast{display:none !important}}
 </style>
+
+<style id="invoice-recovery-premium-refresh">
+  /* Recovery-only refinement: intentionally leaves the login card and portal UI untouched. */
+  .login-recovery-modal{width:min(100%,465px)!important;border:1px solid #e3eaf4!important;border-radius:22px!important;box-shadow:0 30px 90px rgba(15,35,68,.30)!important;}
+  .login-recovery-modal-head{align-items:center!important;padding:22px 22px 19px!important;background:linear-gradient(135deg,#f8fbff 0%,#edf4ff 100%)!important;}
+  .login-recovery-icon{width:48px!important;height:48px!important;border-radius:15px!important;background:linear-gradient(145deg,#dceaff,#c8dcff)!important;color:#1d4ed8!important;box-shadow:inset 0 1px 0 #fff,0 5px 12px rgba(37,99,235,.10);}
+  .recovery-eyebrow{display:block;margin-bottom:5px;color:#5273a5;font-size:9px;font-weight:900;letter-spacing:.15em;}
+  .login-recovery-modal-head h3{font-size:20px!important;letter-spacing:-.025em;}
+  .login-recovery-modal-head p{font-size:12px!important;margin-top:4px!important;}
+  .login-recovery-close{flex-shrink:0!important;font-size:24px!important;}
+  .login-recovery-form{gap:15px!important;padding:21px 22px 18px!important;}
+  .recovery-step-heading{display:flex;align-items:center;gap:11px;margin-bottom:1px;}
+  .recovery-step-number{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:11px;background:#eaf1ff;color:#2458b8;font-size:12px;font-weight:900;}
+  .recovery-step-heading strong{display:block;color:#1e3152;font-size:12px;font-weight:850;}
+  .recovery-step-heading small{display:block;margin-top:3px;color:#718096;font-size:11px;line-height:1.4;}
+  .login-recovery-methods{display:grid!important;grid-template-columns:1fr 1fr;gap:9px!important;padding:0!important;background:transparent!important;}
+  .login-method-choice{display:flex!important;align-items:center;justify-content:center;gap:8px;min-height:47px;border:1px solid #dce5f1!important;border-radius:12px!important;padding:9px 10px!important;background:#fff!important;color:#53647e!important;transition:border-color .15s,background .15s,box-shadow .15s;}
+  .login-method-choice.is-selected{border-color:#7da7f5!important;background:#f3f7ff!important;color:#1d4ed8!important;box-shadow:0 0 0 3px rgba(59,130,246,.09)!important;}
+  .recovery-method-icon{display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:8px;background:#edf3fc;color:#315d9e;font-size:15px;}
+  .login-method-choice.is-selected .recovery-method-icon{background:#dce9ff;color:#1d4ed8;}
+  .recovery-field label{display:flex!important;align-items:center;justify-content:flex-start!important;gap:4px;margin-bottom:7px!important;color:#334155!important;font-size:11px!important;font-weight:800!important;}
+  .recovery-optional{color:#94a3b8;font-size:9px;font-weight:800;letter-spacing:.08em;}
+  .login-recovery-form input{min-height:45px;border:1px solid #d9e3f0!important;border-radius:11px!important;padding:12px 13px!important;font-size:13px!important;transition:border-color .15s,box-shadow .15s;}
+  .login-recovery-form input:focus{border-color:#5b8de8!important;box-shadow:0 0 0 4px rgba(59,130,246,.11)!important;}
+  .recovery-security-note{display:flex;align-items:flex-start;gap:9px;padding:11px 12px;border:1px solid #dcebe4;border-radius:12px;background:#f5fbf8;}
+  .recovery-security-note>span{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#d9f2e5;color:#16804a;font-size:12px;font-weight:900;}
+  .recovery-security-note p{margin:0;color:#647568;font-size:10.5px;line-height:1.5;}
+  .recovery-security-note strong{color:#285b43;}
+  .login-recovery-actions{gap:9px!important;margin-top:1px!important;}
+  .login-recovery-cancel,.login-recovery-submit{min-height:44px;border-radius:11px!important;padding:11px 13px!important;font-size:12px!important;}
+  .login-recovery-cancel{border-color:#dce4ef!important;background:#fff!important;color:#53647e!important;}
+  .login-recovery-submit{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,#2868d9,#174bb4)!important;box-shadow:0 7px 16px rgba(37,99,235,.20)!important;}
+  .login-recovery-submit:hover{filter:brightness(1.05);}
+  .recovery-footer{display:flex;align-items:center;justify-content:center;gap:6px;padding-top:1px;color:#9aa7b8;font-size:10px;font-weight:700;letter-spacing:.02em;}
+  .recovery-lock{color:#6482ad;}
+  @media(max-width:480px){.login-recovery-modal-head{padding:18px 17px 16px!important}.login-recovery-form{padding:17px!important}.login-recovery-actions>*{flex:1;}}
+  @media(prefers-reduced-motion:reduce){.login-recovery-modal{animation:none!important;}}
+</style>
+
+<style id="invoice-recovery-compact-modal">
+  /* Compact, professional recovery dialog — visually aligned with the Invoice Login card. */
+  #loginRecoveryModal { padding:12px !important; }
+  #loginRecoveryModal .login-recovery-modal {
+    box-sizing:border-box !important; width:min(100%,400px) !important; max-width:400px !important;
+    max-height:calc(100vh - 24px) !important; max-height:calc(100dvh - 24px) !important;
+    overflow-x:hidden !important; overflow-y:auto !important; border:1px solid #e1e9f4 !important;
+    border-radius:18px !important; background:#fff !important;
+    box-shadow:0 22px 58px rgba(15,35,68,.24) !important;
+  }
+  #loginRecoveryModal .login-recovery-modal-head {
+    gap:10px !important; padding:14px 16px 12px !important;
+    background:linear-gradient(135deg,#f8fbff 0%,#edf4ff 100%) !important;
+  }
+  #loginRecoveryModal .login-recovery-icon {
+    width:40px !important; height:40px !important; border-radius:12px !important; font-size:18px !important;
+  }
+  #loginRecoveryModal .recovery-eyebrow { margin-bottom:3px !important; font-size:8px !important; letter-spacing:.13em !important; }
+  #loginRecoveryModal .login-recovery-modal-head h3 {
+    margin:0 !important; color:#12305e !important; font-size:16px !important; line-height:1.25 !important;
+    font-weight:850 !important; letter-spacing:-.015em !important;
+  }
+  #loginRecoveryModal .login-recovery-modal-head p {
+    margin:3px 0 0 !important; font-size:10.5px !important; line-height:1.4 !important; color:#64748b !important;
+  }
+  #loginRecoveryModal .login-recovery-close {
+    width:29px !important; height:29px !important; font-size:22px !important; border-radius:8px !important;
+  }
+  #loginRecoveryModal .login-recovery-form { gap:10px !important; padding:13px 16px 14px !important; }
+  #loginRecoveryModal .recovery-step-heading { gap:8px !important; margin:0 !important; }
+  #loginRecoveryModal .recovery-step-number {
+    width:28px !important; height:28px !important; flex:0 0 28px !important;
+    border-radius:9px !important; font-size:10px !important;
+  }
+  #loginRecoveryModal .recovery-step-heading strong { font-size:11px !important; line-height:1.25 !important; }
+  #loginRecoveryModal .recovery-step-heading small { margin-top:2px !important; font-size:9.5px !important; line-height:1.35 !important; }
+  #loginRecoveryModal .login-recovery-methods { gap:8px !important; }
+  #loginRecoveryModal .login-method-choice {
+    min-height:40px !important; gap:7px !important; padding:7px 9px !important;
+    border-radius:10px !important; font-size:11px !important;
+  }
+  #loginRecoveryModal .recovery-method-icon {
+    width:22px !important; height:22px !important; border-radius:7px !important; font-size:13px !important;
+  }
+  #loginRecoveryModal .recovery-field label { margin-bottom:5px !important; font-size:10.5px !important; }
+  #loginRecoveryModal .login-recovery-form input {
+    min-height:39px !important; padding:9px 11px !important; border-radius:9px !important; font-size:12px !important;
+  }
+  #loginRecoveryModal .recovery-security-note {
+    gap:7px !important; padding:8px 9px !important; border-radius:9px !important;
+  }
+  #loginRecoveryModal .recovery-security-note>span {
+    width:17px !important; height:17px !important; flex:0 0 17px !important; font-size:10px !important;
+  }
+  #loginRecoveryModal .recovery-security-note p { font-size:9px !important; line-height:1.4 !important; }
+  #loginRecoveryModal .login-recovery-actions { gap:8px !important; margin-top:0 !important; }
+  #loginRecoveryModal .login-recovery-cancel,
+  #loginRecoveryModal .login-recovery-submit {
+    min-height:39px !important; padding:9px 11px !important; border-radius:9px !important; font-size:10.5px !important;
+  }
+  #loginRecoveryModal .recovery-footer { padding-top:0 !important; font-size:9px !important; }
+  @media (max-width:480px) {
+    #loginRecoveryModal { padding:10px !important; }
+    #loginRecoveryModal .login-recovery-modal-head { padding:13px 13px 11px !important; }
+    #loginRecoveryModal .login-recovery-form { padding:12px 13px 13px !important; }
+  }
+  @media (max-height:620px) {
+    #loginRecoveryModal .login-recovery-modal-head { padding-top:10px !important; padding-bottom:9px !important; }
+    #loginRecoveryModal .login-recovery-form { gap:8px !important; padding-top:10px !important; padding-bottom:10px !important; }
+    #loginRecoveryModal .recovery-security-note { padding:6px 8px !important; }
+  }
+  @media (prefers-reduced-motion:reduce) { #loginRecoveryModal .login-recovery-modal { animation:none !important; } }
+</style>
+
+
+<style id="invoice-recovery-three-step-css">
+  #loginRecoveryModal .recovery-progress{display:flex;align-items:center;justify-content:center;gap:7px;padding:1px 4px 3px;}
+  #loginRecoveryModal .recovery-progress-step{display:flex;align-items:center;gap:5px;color:#94a3b8;font-size:10px;font-weight:800;white-space:nowrap;}
+  #loginRecoveryModal .recovery-progress-step span{display:flex;align-items:center;justify-content:center;width:23px;height:23px;border-radius:50%;border:1px solid #d9e3f0;background:#f8fafc;color:#94a3b8;font-size:10px;}
+  #loginRecoveryModal .recovery-progress-step.is-active{color:#1d4ed8;}
+  #loginRecoveryModal .recovery-progress-step.is-active span{border-color:#2563eb;background:#2563eb;color:#fff;box-shadow:0 2px 7px rgba(37,99,235,.18);}
+  #loginRecoveryModal .recovery-progress-step.is-done{color:#16804a;}
+  #loginRecoveryModal .recovery-progress-step.is-done span{border-color:#a7e1bf;background:#eaf8ef;color:#16804a;}
+  #loginRecoveryModal .recovery-progress>i{display:block;width:25px;height:1px;background:#dce5f1;}
+  #loginRecoveryModal .recovery-step-panel[hidden],#loginRecoveryModal [hidden]{display:none!important;}
+  #loginRecoveryModal .recovery-required{display:inline-block;margin-left:4px;color:#dc2626;font-size:14px;line-height:1;font-weight:900;letter-spacing:0;vertical-align:super;}
+  #loginRecoveryModal .recovery-field-help{display:block;margin-top:5px;color:#7b8798;font-size:9.5px;line-height:1.4;}
+  #loginRecoveryModal .recovery-otp-target{margin:0;padding:9px 10px;border:1px solid #dbeafe;border-radius:9px;background:#f4f8ff;color:#35547e;font-size:10.5px;line-height:1.45;}
+  #loginRecoveryModal .recovery-otp-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:-3px;}
+  #loginRecoveryModal .recovery-link-btn{padding:2px 0;border:0;background:transparent;color:#1d4ed8;font-size:10px;font-weight:800;cursor:pointer;}
+  #loginRecoveryModal .recovery-link-btn:disabled{opacity:.5;cursor:wait;}
+  #loginRecoveryModal .recovery-otp-expiry{color:#94a3b8;font-size:9px;}
+  #loginRecoveryModal .recovery-completion-notice{padding:13px;border:1px solid #bde5cb;border-radius:11px;background:#f0fbf4;color:#166534;font-size:11px;line-height:1.55;text-align:center;}
+  #loginRecoveryModal .recovery-completion-notice strong{display:block;margin-bottom:4px;font-size:13px;}
+  @media(max-width:380px){#loginRecoveryModal .recovery-progress{gap:4px}#loginRecoveryModal .recovery-progress>i{width:15px}#loginRecoveryModal .recovery-progress-step{gap:3px;font-size:9px}}
+</style>
+
 </head>
 <body class="min-h-screen locked">
 
@@ -685,38 +821,121 @@
   </div>
 </div>
 
-<!-- ============ ACCOUNT RECOVERY MODAL ============ -->
+<!-- ============ THREE-STEP ACCOUNT RECOVERY MODAL ============ -->
 <div id="loginRecoveryModal" class="login-recovery-overlay no-print" role="dialog" aria-modal="true"
      aria-labelledby="loginRecoveryTitle" aria-describedby="loginRecoveryDescription" hidden
      onclick="if(event.target===this) closeLoginRecovery()">
   <div class="login-recovery-modal">
     <div class="login-recovery-modal-head">
-      <div class="login-recovery-icon" aria-hidden="true">🔐</div>
+      <div class="login-recovery-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 19 6v5c0 4.5-2.8 7.7-7 10-4.2-2.3-7-5.5-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+      </div>
       <div class="min-w-0 flex-1">
-        <h3 id="loginRecoveryTitle">Recover User ID</h3>
-        <p id="loginRecoveryDescription">Enter your registered email address or mobile number.</p>
+        <span class="recovery-eyebrow">SECURE ACCOUNT ASSISTANCE</span>
+        <h3 id="loginRecoveryTitle">User ID Recovery</h3>
+        <p id="loginRecoveryDescription">Verify your registered details to continue securely.</p>
       </div>
       <button type="button" class="login-recovery-close" onclick="closeLoginRecovery()" aria-label="Close recovery dialog">×</button>
     </div>
+
     <form id="loginRecoveryForm" class="login-recovery-form" onsubmit="submitLoginRecovery(event)">
+      <div class="recovery-progress" id="recoveryProgress" aria-label="Recovery progress">
+        <div class="recovery-progress-step is-active" data-progress-step="1"><span>1</span><small>Details</small></div>
+        <i></i>
+        <div class="recovery-progress-step" data-progress-step="2"><span>2</span><small>OTP</small></div>
+        <i></i>
+        <div class="recovery-progress-step" data-progress-step="3"><span>3</span><small id="recoveryProgressStepThreeLabel">Message</small></div>
+      </div>
+
       <div id="loginRecoveryMessage" class="login-recovery-message" role="status" aria-live="polite" hidden></div>
-      <div class="login-recovery-methods" role="group" aria-label="Registered contact type">
-        <button type="button" id="recoveryMethodEmail" class="login-method-choice is-selected" aria-pressed="true" onclick="setLoginRecoveryMethod('email')">Email</button>
-        <button type="button" id="recoveryMethodMobile" class="login-method-choice" aria-pressed="false" onclick="setLoginRecoveryMethod('mobile')">Mobile Number</button>
-      </div>
-      <div id="recoveryUserIdWrap" hidden>
-        <label for="recoveryUserId">User ID (if known)</label>
-        <input id="recoveryUserId" type="text" autocomplete="username" placeholder="Enter your User ID (optional)">
-      </div>
-      <div>
-        <label id="recoveryContactLabel" for="recoveryContact">Registered email address</label>
-        <input id="recoveryContact" type="email" autocomplete="email" required placeholder="you@example.com">
-      </div>
-      <p class="login-recovery-note">For your security, recovery instructions are sent only by the system server to a registered contact. This page will never display or invent an OTP.</p>
-      <div class="login-recovery-actions">
-        <button type="button" class="login-recovery-cancel" onclick="closeLoginRecovery()">Cancel</button>
-        <button type="submit" id="loginRecoverySubmit" class="login-recovery-submit">Send Recovery Request</button>
-      </div>
+
+      <!-- STEP 1: account details / recovery channel -->
+      <section id="recoveryStepOne" class="recovery-step-panel" aria-labelledby="recoveryStepOneTitle">
+        <div class="recovery-step-heading">
+          <span class="recovery-step-number">01</span>
+          <div><strong id="recoveryStepOneTitle">Confirm your registered details</strong><small id="recoveryStepOneHint">Choose email or mobile to recover your User ID.</small></div>
+        </div>
+
+        <div id="loginRecoveryMethods" class="login-recovery-methods" role="group" aria-label="Recovery method">
+          <button type="button" id="recoveryMethodEmail" class="login-method-choice is-selected" aria-pressed="true" onclick="setLoginRecoveryMethod('email')">
+            <span class="recovery-method-icon" aria-hidden="true">✉</span><span>Email ID</span>
+          </button>
+          <button type="button" id="recoveryMethodMobile" class="login-method-choice" aria-pressed="false" onclick="setLoginRecoveryMethod('mobile')">
+            <span class="recovery-method-icon" aria-hidden="true">▣</span><span>Mobile Number</span>
+          </button>
+        </div>
+
+        <div id="recoveryUserIdWrap" class="recovery-field" hidden>
+          <label for="recoveryUserId">Current Invoice User ID <span class="recovery-required" aria-label="required">*</span></label>
+          <input id="recoveryUserId" type="text" autocomplete="username" placeholder="Enter your current User ID">
+        </div>
+
+        <div class="recovery-field">
+          <label id="recoveryContactLabel" for="recoveryContact">Registered email address <span class="recovery-required" aria-label="required">*</span></label>
+          <input id="recoveryContact" type="email" autocomplete="email" required placeholder="you@example.com">
+          <small id="recoveryContactHelp" class="recovery-field-help">Recovery instructions will be sent to your registered email address.</small>
+        </div>
+
+        <div class="recovery-security-note"><span aria-hidden="true">✓</span><p><strong>Secure verification.</strong> OTP is generated and verified by the server. This page never creates or displays a fake OTP.</p></div>
+        <div class="login-recovery-actions">
+          <button type="button" class="login-recovery-cancel" onclick="closeLoginRecovery()">Back to Login</button>
+          <button type="submit" id="loginRecoverySubmit" class="login-recovery-submit">Continue <span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+
+      <!-- STEP 2: server-issued OTP -->
+      <section id="recoveryStepTwo" class="recovery-step-panel" aria-labelledby="recoveryStepTwoTitle" hidden>
+        <div class="recovery-step-heading">
+          <span class="recovery-step-number">02</span>
+          <div><strong id="recoveryStepTwoTitle">Verify OTP</strong><small>Enter the one-time code sent to your registered mobile number.</small></div>
+        </div>
+        <p id="recoveryOtpTarget" class="recovery-otp-target">OTP sent to your registered mobile number.</p>
+        <div class="recovery-field">
+          <label for="recoveryOtp">6-Digit OTP <span class="recovery-required" aria-label="required">*</span></label>
+          <input id="recoveryOtp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="Enter 6-digit OTP" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
+        </div>
+        <div class="recovery-otp-actions">
+          <button type="button" class="recovery-link-btn" id="recoveryResendOtp" onclick="sendLoginRecoveryOtp(true)">Resend OTP</button>
+          <span class="recovery-otp-expiry">Use the latest OTP received.</span>
+        </div>
+        <div class="login-recovery-actions">
+          <button type="button" class="login-recovery-cancel" onclick="showLoginRecoveryStep(1)">Back</button>
+          <button type="button" id="recoveryVerifyOtpBtn" class="login-recovery-submit" onclick="verifyLoginRecoveryOtp()">Verify OTP <span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+
+      <!-- STEP 3A: set new credentials after verified password-reset OTP -->
+      <section id="recoveryStepThree" class="recovery-step-panel" aria-labelledby="recoveryStepThreeTitle" hidden>
+        <div class="recovery-step-heading">
+          <span class="recovery-step-number">03</span>
+          <div><strong id="recoveryStepThreeTitle">Create your new login credentials</strong><small id="recoveryStepThreeHint">Set a new User ID and a strong password.</small></div>
+        </div>
+        <div id="recoveryNewCredentials">
+          <div class="recovery-field">
+            <label for="recoveryNewUserId">New User ID <span class="recovery-required" aria-label="required">*</span></label>
+            <input id="recoveryNewUserId" type="text" autocomplete="username" maxlength="40" placeholder="Enter new User ID">
+          </div>
+          <div class="recovery-field">
+            <label for="recoveryNewPassword">New Password <span class="recovery-required" aria-label="required">*</span></label>
+            <input id="recoveryNewPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="Create a strong password">
+          </div>
+          <div class="recovery-field">
+            <label for="recoveryConfirmPassword">Confirm New Password <span class="recovery-required" aria-label="required">*</span></label>
+            <input id="recoveryConfirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="Re-enter new password">
+          </div>
+          <p class="recovery-field-help">Use at least 8 characters. Your new credentials are saved only after the server accepts the verified OTP.</p>
+          <div class="login-recovery-actions">
+            <button type="button" class="login-recovery-cancel" onclick="showLoginRecoveryStep(2)">Back</button>
+            <button type="button" id="recoverySaveCredentialsBtn" class="login-recovery-submit" onclick="completeLoginRecovery()">Save New Credentials</button>
+          </div>
+        </div>
+        <div id="recoveryCompletionNotice" class="recovery-completion-notice" role="status" aria-live="polite" hidden></div>
+        <div class="login-recovery-actions" id="recoveryDoneActions" hidden>
+          <button type="button" class="login-recovery-submit" onclick="closeLoginRecovery()">Return to Login</button>
+        </div>
+      </section>
+
+      <div class="recovery-footer"><span class="recovery-lock" aria-hidden="true">▣</span> Secure Invoice Portal Recovery</div>
     </form>
   </div>
 </div>
@@ -3094,125 +3313,292 @@ function withTimeout(promise, ms = 15000, label = 'Request'){
 })();
 
 
-/* ============ LOGIN ACCOUNT RECOVERY ============ */
+/* ============ THREE-STEP LOGIN ACCOUNT RECOVERY ============
+   Required backend routes (must be implemented server-side with rate limits):
+   POST /material/recovery/send-otp       { purpose, method, contact, userId? }
+   POST /material/recovery/verify-otp     { purpose, method, contact, userId?, otp }
+       - password-reset response must include a short-lived resetToken.
+       - userid-recovery must send the recovered User ID by SMS only after OTP verification,
+         then return success (preferably { success:true, smsSent:true, message:"User ID sent by SMS." }).
+   POST /material/recovery/reset-credentials { userId, mobile, newUserId, newPassword, resetToken }
+   Email-based User ID recovery retains the existing /material/forgot-user-id endpoint.
+*/
 let loginRecoveryMode = 'userid';
 let loginRecoveryMethod = 'email';
 let loginRecoveryBusy = false;
+let loginRecoveryResetToken = '';
+let loginRecoveryOriginalUserId = '';
+let loginRecoveryOriginalMobile = '';
+let loginRecoveryOtpVerified = false;
+let loginRecoveryLastPurpose = '';
 
-
-
-function openLoginRecovery(mode){
-  if(window.AnmolRecovery){
-    AnmolRecovery.open({scope:'material', mode: mode==='password'?'password':'userid', userId:(document.getElementById('loginUserId')||{}).value||''});
-    return;
-  }
-  loginRecoveryMode = mode === 'password' ? 'password' : 'userid';
-  loginRecoveryMethod = 'email';
-  const modal = document.getElementById('loginRecoveryModal');
-  const title = document.getElementById('loginRecoveryTitle');
-  const desc = document.getElementById('loginRecoveryDescription');
-  const userWrap = document.getElementById('recoveryUserIdWrap');
-  const contact = document.getElementById('recoveryContact');
-  const msg = document.getElementById('loginRecoveryMessage');
-  if(!modal) return;
-  if(title) title.textContent = loginRecoveryMode === 'password' ? 'Recover Password' : 'Recover User ID';
-  if(desc) desc.textContent = loginRecoveryMode === 'password'
-    ? 'Enter your registered email or mobile number to request password recovery.'
-    : 'Enter your registered email or mobile number to request User ID recovery.';
-  if(userWrap) userWrap.hidden = loginRecoveryMode !== 'password';
-  if(contact){ contact.value=''; contact.type='email'; contact.placeholder='you@example.com'; contact.autocomplete='email'; }
-  const userField=document.getElementById('recoveryUserId'); if(userField) userField.value=(document.getElementById('loginUserId')||{}).value||'';
-  const label=document.getElementById('recoveryContactLabel'); if(label) label.textContent='Registered email address';
-  if(msg){msg.hidden=true;msg.textContent='';msg.removeAttribute('data-kind');}
-  setLoginRecoveryMethod('email');
-  modal.hidden=false;
-  document.body.style.overflow='hidden';
-  window.setTimeout(function(){ if(contact) contact.focus(); }, 30);
+function recoveryApi(){
+  if(typeof API === 'undefined' || !API || typeof API.post !== 'function') throw new Error('The login API client is not available.');
+  return API;
 }
-
-function closeLoginRecovery(){
-  const modal=document.getElementById('loginRecoveryModal');
-  if(modal) modal.hidden=true;
-  document.body.style.overflow='';
-  loginRecoveryBusy=false;
-  const btn=document.getElementById('loginRecoverySubmit');
-  if(btn){btn.disabled=false;btn.textContent='Send Recovery Request';}
+function recoveryServerMessage(result, fallback){
+  return result && typeof result.message === 'string' && result.message.trim() ? result.message.trim() : fallback;
 }
-
-function setLoginRecoveryMethod(method){
-  loginRecoveryMethod = method === 'mobile' ? 'mobile' : 'email';
-  const emailBtn=document.getElementById('recoveryMethodEmail');
-  const mobileBtn=document.getElementById('recoveryMethodMobile');
-  if(emailBtn){emailBtn.classList.toggle('is-selected',loginRecoveryMethod==='email');emailBtn.setAttribute('aria-pressed',String(loginRecoveryMethod==='email'));}
-  if(mobileBtn){mobileBtn.classList.toggle('is-selected',loginRecoveryMethod==='mobile');mobileBtn.setAttribute('aria-pressed',String(loginRecoveryMethod==='mobile'));}
-  const contact=document.getElementById('recoveryContact');
-  const label=document.getElementById('recoveryContactLabel');
-  if(contact){contact.type=loginRecoveryMethod==='email'?'email':'tel';contact.autocomplete=loginRecoveryMethod==='email'?'email':'tel';contact.placeholder=loginRecoveryMethod==='email'?'you@example.com':'10-digit mobile number';contact.value='';}
-  if(label) label.textContent=loginRecoveryMethod==='email'?'Registered email address':'Registered mobile number';
-}
-
-function showLoginRecoveryMessage(text, kind){
+function recoveryResultFailed(result){ return !!(result && (result.success === false || result.ok === false || result.error)); }
+function showRecoveryNotice(text, kind){
   const msg=document.getElementById('loginRecoveryMessage');
   if(!msg) return;
   msg.textContent=String(text||'');
   msg.dataset.kind=kind==='success'?'success':'error';
   msg.hidden=false;
 }
-
-async function submitLoginRecovery(event){
-  if(event) event.preventDefault();
-  if(loginRecoveryBusy) return;
+function clearRecoveryNotice(){
+  const msg=document.getElementById('loginRecoveryMessage');
+  if(msg){msg.hidden=true;msg.textContent='';msg.removeAttribute('data-kind');}
+}
+function updateRecoveryProgressStepThreeLabel(){
+  const label=document.getElementById('recoveryProgressStepThreeLabel');
+  if(!label)return;
+  if(loginRecoveryMode==='password') label.textContent='Complete';
+  else label.textContent=loginRecoveryMethod==='mobile'?'SMS':'Email';
+}
+function showLoginRecoveryStep(step){
+  const current=Math.max(1,Math.min(3,Number(step)||1));
+  [1,2,3].forEach(function(n){
+    const panel=document.getElementById('recoveryStep'+(n===1?'One':n===2?'Two':'Three'));
+    if(panel) panel.hidden=n!==current;
+    const indicator=document.querySelector('#recoveryProgress [data-progress-step="'+n+'"]');
+    if(indicator){indicator.classList.toggle('is-active',n===current);indicator.classList.toggle('is-done',n<current);}
+  });
+  clearRecoveryNotice();
+  const modal=document.querySelector('#loginRecoveryModal .login-recovery-modal');
+  if(modal) modal.scrollTop=0;
+  const focusId=current===1?'recoveryContact':current===2?'recoveryOtp':(loginRecoveryMode==='password'?'recoveryNewUserId':'recoveryDoneActions');
+  window.setTimeout(function(){const el=document.getElementById(focusId);if(el&&typeof el.focus==='function')el.focus();},25);
+}
+function resetRecoveryState(){
+  loginRecoveryBusy=false;loginRecoveryResetToken='';loginRecoveryOriginalUserId='';loginRecoveryOriginalMobile='';loginRecoveryOtpVerified=false;loginRecoveryLastPurpose='';
+  ['recoveryOtp','recoveryNewUserId','recoveryNewPassword','recoveryConfirmPassword'].forEach(function(id){const el=document.getElementById(id);if(el)el.value='';});
+  const done=document.getElementById('recoveryCompletionNotice');if(done){done.hidden=true;done.textContent='';}
+  const credentials=document.getElementById('recoveryNewCredentials');if(credentials)credentials.hidden=false;
+  const doneActions=document.getElementById('recoveryDoneActions');if(doneActions)doneActions.hidden=true;
+}
+function openLoginRecovery(mode){
+  resetRecoveryState();
+  loginRecoveryMode=mode==='password'?'password':'userid';
+  loginRecoveryMethod='email';
+  const modal=document.getElementById('loginRecoveryModal');
+  if(!modal)return;
+  const title=document.getElementById('loginRecoveryTitle');
+  const desc=document.getElementById('loginRecoveryDescription');
+  const methods=document.getElementById('loginRecoveryMethods');
+  const userWrap=document.getElementById('recoveryUserIdWrap');
+  const userField=document.getElementById('recoveryUserId');
+  const contact=document.getElementById('recoveryContact');
+  const label=document.getElementById('recoveryContactLabel');
+  const help=document.getElementById('recoveryContactHelp');
+  const heading=document.getElementById('recoveryStepOneTitle');
+  const hint=document.getElementById('recoveryStepOneHint');
+  const submit=document.getElementById('loginRecoverySubmit');
+  if(title)title.textContent=loginRecoveryMode==='password'?'Password Recovery':'User ID Recovery';
+  if(desc)desc.textContent=loginRecoveryMode==='password'?'Verify your User ID and registered mobile number, then create new credentials.':'Choose your registered email or mobile number to recover your Invoice User ID.';
+  if(methods)methods.hidden=loginRecoveryMode==='password';
+  if(userWrap)userWrap.hidden=loginRecoveryMode!=='password';
+  if(userField){userField.required=loginRecoveryMode==='password';userField.value=(document.getElementById('loginUserId')||{}).value||'';}
+  if(contact){contact.value='';contact.required=true;contact.type=loginRecoveryMode==='password'?'tel':'email';contact.inputMode=loginRecoveryMode==='password'||loginRecoveryMethod==='mobile'?'numeric':'email';contact.autocomplete=loginRecoveryMode==='password'||loginRecoveryMethod==='mobile'?'tel':'email';contact.placeholder=loginRecoveryMode==='password'?'10-digit registered mobile number':'you@example.com';}
+  if(label)label.innerHTML=(loginRecoveryMode==='password'?'Registered Mobile Number':'Registered email address')+' <span class="recovery-required" aria-label="required">*</span>';
+  if(help)help.textContent=loginRecoveryMode==='password'?'Enter the mobile number linked to this User ID. An OTP will be sent by SMS.':'Recovery instructions will be sent to your registered email address.';
+  if(heading)heading.textContent=loginRecoveryMode==='password'?'Confirm your User ID and mobile number':'Confirm your registered contact';
+  if(hint)hint.textContent=loginRecoveryMode==='password'?'Both fields are mandatory. We will send an OTP to your registered mobile.':'Choose email or mobile to recover your User ID.';
+  if(submit)submit.innerHTML=loginRecoveryMode==='password'?'Send OTP <span aria-hidden="true">→</span>':'Continue <span aria-hidden="true">→</span>';
+  setLoginRecoveryMethod('email',true);
+  updateRecoveryProgressStepThreeLabel();
+  modal.hidden=false;document.body.style.overflow='hidden';
+  showLoginRecoveryStep(1);
+}
+function closeLoginRecovery(){
+  const modal=document.getElementById('loginRecoveryModal');if(modal)modal.hidden=true;
+  document.body.style.overflow='';resetRecoveryState();
+  const submit=document.getElementById('loginRecoverySubmit');if(submit){submit.disabled=false;submit.innerHTML=loginRecoveryMode==='password'?'Send OTP <span aria-hidden="true">→</span>':'Continue <span aria-hidden="true">→</span>';}
+}
+function setLoginRecoveryMethod(method, preserveValue){
+  if(loginRecoveryMode==='password')return;
+  loginRecoveryMethod=method==='mobile'?'mobile':'email';
+  updateRecoveryProgressStepThreeLabel();
+  const emailBtn=document.getElementById('recoveryMethodEmail'),mobileBtn=document.getElementById('recoveryMethodMobile');
+  if(emailBtn){emailBtn.classList.toggle('is-selected',loginRecoveryMethod==='email');emailBtn.setAttribute('aria-pressed',String(loginRecoveryMethod==='email'));}
+  if(mobileBtn){mobileBtn.classList.toggle('is-selected',loginRecoveryMethod==='mobile');mobileBtn.setAttribute('aria-pressed',String(loginRecoveryMethod==='mobile'));}
+  const contact=document.getElementById('recoveryContact'),label=document.getElementById('recoveryContactLabel'),help=document.getElementById('recoveryContactHelp'),submit=document.getElementById('loginRecoverySubmit');
+  if(contact){if(!preserveValue)contact.value='';contact.type=loginRecoveryMethod==='email'?'email':'tel';contact.inputMode=loginRecoveryMethod==='email'?'email':'numeric';contact.autocomplete=loginRecoveryMethod==='email'?'email':'tel';contact.placeholder=loginRecoveryMethod==='email'?'you@example.com':'10-digit registered mobile number';}
+  if(label)label.innerHTML=(loginRecoveryMethod==='email'?'Registered email address':'Registered mobile number')+' <span class="recovery-required" aria-label="required">*</span>';
+  if(help)help.textContent=loginRecoveryMethod==='email'?'Recovery instructions will be sent to your registered email address.':'We will send an OTP to this mobile number. After verification, your User ID recovery message will be sent by SMS.';
+  if(submit)submit.innerHTML=loginRecoveryMethod==='mobile'?'Send OTP <span aria-hidden="true">→</span>':'Send Recovery Email <span aria-hidden="true">→</span>';
+}
+function recoveryContactValues(){
   const contactEl=document.getElementById('recoveryContact');
   const userEl=document.getElementById('recoveryUserId');
   const contact=(contactEl&&contactEl.value||'').trim();
   const userId=(userEl&&userEl.value||'').trim();
-  const btn=document.getElementById('loginRecoverySubmit');
-  if(!contact){showLoginRecoveryMessage('Enter the email address or mobile number registered to your account.','error');if(contactEl)contactEl.focus();return;}
-  if(loginRecoveryMethod==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)){
-    showLoginRecoveryMessage('Enter a valid email address.','error');if(contactEl)contactEl.focus();return;
+  if(!contact)throw new Error('Enter your registered '+(loginRecoveryMode==='password'||loginRecoveryMethod==='mobile'?'mobile number.':'email address.'));
+  if(loginRecoveryMode==='password'||loginRecoveryMethod==='mobile'){
+    const digits=contact.replace(/\D/g,'');
+    if(digits.length<10||digits.length>15)throw new Error('Enter a valid registered mobile number (10–15 digits).');
+  }else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact))throw new Error('Enter a valid registered email address.');
+  if(loginRecoveryMode==='password'&&!userId)throw new Error('Enter your current Invoice User ID.');
+  return {contact:contact,userId:userId};
+}
+async function submitLoginRecovery(event){
+  if(event)event.preventDefault();
+  if(loginRecoveryBusy)return;
+  const stepOne=document.getElementById('recoveryStepOne');
+  const stepTwo=document.getElementById('recoveryStepTwo');
+  const stepThree=document.getElementById('recoveryStepThree');
+  if(stepTwo&&!stepTwo.hidden){await verifyLoginRecoveryOtp();return;}
+  if(stepThree&&!stepThree.hidden&&loginRecoveryMode==='password'){
+    const fields=document.getElementById('recoveryNewCredentials');
+    if(fields&&!fields.hidden){await completeLoginRecovery();}
+    return;
   }
-  if(loginRecoveryMethod==='mobile'&&!/^\+?[0-9\s()-]{10,16}$/.test(contact)){
-    showLoginRecoveryMessage('Enter a valid mobile number (10–15 digits).','error');if(contactEl)contactEl.focus();return;
+  if(stepOne&&stepOne.hidden)return;
+  let values;
+  try{values=recoveryContactValues();}catch(err){
+    showRecoveryNotice(err.message,'error');
+    const userField=document.getElementById('recoveryUserId');
+    const contactField=document.getElementById('recoveryContact');
+    const focusField=loginRecoveryMode==='password'&&userField&&!userField.value.trim()?userField:contactField;
+    if(focusField)focusField.focus();
+    return;
   }
-  const paths = loginRecoveryMode==='userid'
-    ? ['/material/forgot-user-id','/material/forgot-username','/auth/forgot-username']
-    : ['/material/forgot-password','/auth/forgot-password'];
-  const payload={method:loginRecoveryMethod,contact:contact};
-  if(userId) payload.userId=userId;
-  loginRecoveryBusy=true;
-  if(btn){btn.disabled=true;btn.textContent='Sending…';}
-  const msg=document.getElementById('loginRecoveryMessage');if(msg){msg.hidden=true;msg.textContent='';}
+  if(loginRecoveryMode==='userid'&&loginRecoveryMethod==='email'){
+    await requestUserIdRecoveryEmail(values.contact);
+    return;
+  }
+  loginRecoveryOriginalUserId=values.userId;
+  loginRecoveryOriginalMobile=values.contact;
+  loginRecoveryLastPurpose=loginRecoveryMode==='password'?'password-reset':'userid-recovery';
+  await sendLoginRecoveryOtp(false);
+}
+async function requestUserIdRecoveryEmail(email){
+  const btn=document.getElementById('loginRecoverySubmit');loginRecoveryBusy=true;if(btn){btn.disabled=true;btn.textContent='Sending…';}
+  clearRecoveryNotice();
   try{
-    if(typeof API==='undefined'||!API||typeof API.post!=='function')throw new Error('The login API client is not available.');
-    let result=null, lastError=null, completed=false;
-    for(let i=0;i<paths.length;i++){
+    const routes=['/material/forgot-user-id','/material/forgot-username','/auth/forgot-username'];
+    let result=null,lastError=null,completed=false;
+    for(let i=0;i<routes.length;i++){
       try{
-        result=await withTimeout(API.post(paths[i],payload),12000,'Recovery request');
+        result=await withTimeout(recoveryApi().post(routes[i],{method:'email',contact:email}),12000,'User ID recovery email');
         completed=true;break;
       }catch(err){
         lastError=err;
-        if(/\b404\b|\b405\b|not found|cannot post|route not configured/i.test(String(err&&err.message||err))) continue;
+        if(/\b404\b|\b405\b|not found|cannot post|route not configured/i.test(String(err&&err.message||err)))continue;
         throw err;
       }
     }
-    if(!completed){
-      showLoginRecoveryMessage('Account recovery is not configured on this server yet. No account details were changed. Please contact the administrator to enable the recovery endpoint.','error');
-    }else{
-      // Use a non-enumerating success message; the server may send instructions privately.
-      showLoginRecoveryMessage((result&&result.message&&typeof result.message==='string')?result.message:'If the details match a registered account, recovery instructions will be sent to the registered contact.','success');
-    }
+    if(!completed)throw new Error('Email recovery is not configured on this server yet. '+String(lastError&&lastError.message||''));
+    if(recoveryResultFailed(result))throw new Error((result&&result.message)||result.error||'The recovery request was not accepted.');
+    const notice=document.getElementById('recoveryCompletionNotice');
+    const credentials=document.getElementById('recoveryNewCredentials');if(credentials)credentials.hidden=true;
+    const doneActions=document.getElementById('recoveryDoneActions');if(doneActions)doneActions.hidden=false;
+    const finalTitle=document.getElementById('recoveryStepThreeTitle'),finalHint=document.getElementById('recoveryStepThreeHint');
+    if(finalTitle)finalTitle.textContent='User ID Message Sent to Email';
+    if(finalHint)finalHint.textContent='Please check your registered email inbox for the User ID recovery message.';
+    if(notice){notice.textContent='Check your email. '+recoveryServerMessage(result,'If the email matches a registered account, User ID recovery instructions will be sent to that address.');notice.hidden=false;}
+    showLoginRecoveryStep(3);
+  }catch(err){showRecoveryNotice('Could not send the recovery email. '+String(err&&err.message||err||'Please try again later.'),'error');}
+  finally{loginRecoveryBusy=false;if(btn){btn.disabled=false;btn.innerHTML='Send Recovery Email <span aria-hidden="true">→</span>';}}
+}
+async function sendLoginRecoveryOtp(isResend){
+  if(loginRecoveryBusy)return;
+  let values;
+  try{values=recoveryContactValues();}catch(err){showRecoveryNotice(err.message,'error');return;}
+  if(loginRecoveryMode==='password'){loginRecoveryOriginalUserId=values.userId;loginRecoveryOriginalMobile=values.contact;}
+  else loginRecoveryOriginalMobile=values.contact;
+  const purpose=loginRecoveryMode==='password'?'password-reset':'userid-recovery';
+  const payload={purpose:purpose,method:'mobile',contact:loginRecoveryOriginalMobile};
+  if(loginRecoveryMode==='password')payload.userId=loginRecoveryOriginalUserId;
+  const btn=document.getElementById(isResend?'recoveryResendOtp':'loginRecoverySubmit');
+  loginRecoveryBusy=true;if(btn){btn.disabled=true;if(!isResend)btn.textContent='Sending OTP…';}
+  clearRecoveryNotice();
+  try{
+    const result=await withTimeout(recoveryApi().post('/material/recovery/send-otp',payload),12000,'OTP request');
+    if(recoveryResultFailed(result))throw new Error((result&&result.message)||result.error||'The server could not send the OTP.');
+    const target=document.getElementById('recoveryOtpTarget');if(target)target.textContent=recoveryServerMessage(result,'A one-time password has been requested for your registered mobile number. Please check your SMS inbox.');
+    showLoginRecoveryStep(2);
+    const otp=document.getElementById('recoveryOtp');if(otp)otp.value='';
   }catch(err){
-    showLoginRecoveryMessage('Could not send the recovery request. '+String(err&&err.message||err||'Please try again later.'),'error');
+    const msg=String(err&&err.message||err||'Please try again.');
+    showRecoveryNotice(/404|not found|route not configured/i.test(msg)?'OTP service is not enabled on the server yet. Please ask the administrator to configure the OTP and SMS service.':'Could not send OTP. '+msg,'error');
   }finally{
     loginRecoveryBusy=false;
-    if(btn){btn.disabled=false;btn.textContent='Send Recovery Request';}
+    if(btn){btn.disabled=false;if(!isResend)btn.innerHTML='Send OTP <span aria-hidden="true">→</span>';}
   }
+}
+async function verifyLoginRecoveryOtp(){
+  if(loginRecoveryBusy)return;
+  const otpEl=document.getElementById('recoveryOtp');const otp=(otpEl&&otpEl.value||'').trim();
+  if(!/^\d{6}$/.test(otp)){showRecoveryNotice('Enter the 6-digit OTP received on your registered mobile.','error');if(otpEl)otpEl.focus();return;}
+  const purpose=loginRecoveryMode==='password'?'password-reset':'userid-recovery';
+  const payload={purpose:purpose,method:'mobile',contact:loginRecoveryOriginalMobile,otp:otp};
+  if(loginRecoveryMode==='password')payload.userId=loginRecoveryOriginalUserId;
+  const btn=document.getElementById('recoveryVerifyOtpBtn');loginRecoveryBusy=true;if(btn){btn.disabled=true;btn.textContent='Verifying…';}clearRecoveryNotice();
+  try{
+    const result=await withTimeout(recoveryApi().post('/material/recovery/verify-otp',payload),12000,'OTP verification');
+    if(recoveryResultFailed(result))throw new Error((result&&result.message)||result.error||'The OTP is incorrect or expired.');
+    if(loginRecoveryMode==='password'){
+      const token=result&&(result.resetToken||result.verificationToken);
+      if(!token)throw new Error('The server did not return a secure reset token. No credentials were changed. Please contact the administrator.');
+      loginRecoveryResetToken=String(token);loginRecoveryOtpVerified=true;
+      const newId=document.getElementById('recoveryNewUserId');if(newId)newId.value=loginRecoveryOriginalUserId;
+      const notice=document.getElementById('recoveryCompletionNotice');if(notice){notice.hidden=true;notice.textContent='';}
+      const finalTitle=document.getElementById('recoveryStepThreeTitle'),finalHint=document.getElementById('recoveryStepThreeHint');
+      if(finalTitle)finalTitle.textContent='Create Your New Credentials';
+      if(finalHint)finalHint.textContent='OTP verified. Set your new User ID and password below.';
+      const credentials=document.getElementById('recoveryNewCredentials');if(credentials)credentials.hidden=false;
+      const doneActions=document.getElementById('recoveryDoneActions');if(doneActions)doneActions.hidden=true;
+      showLoginRecoveryStep(3);
+    }else{
+      loginRecoveryOtpVerified=true;
+      const credentials=document.getElementById('recoveryNewCredentials');if(credentials)credentials.hidden=true;
+      const notice=document.getElementById('recoveryCompletionNotice');
+      const doneActions=document.getElementById('recoveryDoneActions');if(doneActions)doneActions.hidden=false;
+      const finalTitle=document.getElementById('recoveryStepThreeTitle'),finalHint=document.getElementById('recoveryStepThreeHint');
+      if(finalTitle)finalTitle.textContent='User ID Sent by SMS';
+      if(finalHint)finalHint.textContent='Your registered User ID has been sent to your mobile number. Please check your SMS inbox.';
+      if(notice){notice.textContent=recoveryServerMessage(result,'OTP verified successfully. Your recovered User ID has been sent to this registered mobile number by SMS. Please check your messages.');notice.hidden=false;}
+      showLoginRecoveryStep(3);
+    }
+  }catch(err){showRecoveryNotice('OTP verification failed. '+String(err&&err.message||err||'Please request a new OTP.'),'error');}
+  finally{loginRecoveryBusy=false;if(btn){btn.disabled=false;btn.innerHTML='Verify OTP <span aria-hidden="true">→</span>';}}
+}
+async function completeLoginRecovery(){
+  if(loginRecoveryBusy)return;
+  if(!loginRecoveryOtpVerified||!loginRecoveryResetToken){showRecoveryNotice('Please verify the OTP first.','error');showLoginRecoveryStep(2);return;}
+  const newUserId=(document.getElementById('recoveryNewUserId').value||'').trim();
+  const newPassword=document.getElementById('recoveryNewPassword').value||'';
+  const confirmPassword=document.getElementById('recoveryConfirmPassword').value||'';
+  if(!newUserId){showRecoveryNotice('Enter your new User ID.','error');document.getElementById('recoveryNewUserId').focus();return;}
+  if(newUserId.length<4||newUserId.length>40){showRecoveryNotice('New User ID must be between 4 and 40 characters.','error');document.getElementById('recoveryNewUserId').focus();return;}
+  if(newPassword.length<8){showRecoveryNotice('New password must contain at least 8 characters.','error');document.getElementById('recoveryNewPassword').focus();return;}
+  if(newPassword!==confirmPassword){showRecoveryNotice('New password and confirm password do not match.','error');document.getElementById('recoveryConfirmPassword').focus();return;}
+  const btn=document.getElementById('recoverySaveCredentialsBtn');loginRecoveryBusy=true;if(btn){btn.disabled=true;btn.textContent='Saving securely…';}clearRecoveryNotice();
+  try{
+    const payload={userId:loginRecoveryOriginalUserId,mobile:loginRecoveryOriginalMobile,newUserId:newUserId,newPassword:newPassword,resetToken:loginRecoveryResetToken};
+    const result=await withTimeout(recoveryApi().post('/material/recovery/reset-credentials',payload),15000,'Credential update');
+    if(recoveryResultFailed(result))throw new Error((result&&result.message)||result.error||'The server did not accept the new credentials.');
+    loginRecoveryResetToken='';loginRecoveryOtpVerified=false;
+    const credentials=document.getElementById('recoveryNewCredentials');if(credentials)credentials.hidden=true;
+    ['recoveryNewPassword','recoveryConfirmPassword'].forEach(function(id){const field=document.getElementById(id);if(field)field.value='';});
+    const finalTitle=document.getElementById('recoveryStepThreeTitle'),finalHint=document.getElementById('recoveryStepThreeHint');
+    if(finalTitle)finalTitle.textContent='Credentials Updated Successfully';
+    if(finalHint)finalHint.textContent='You can now sign in using your new login details.';
+    const notice=document.getElementById('recoveryCompletionNotice');
+    const doneActions=document.getElementById('recoveryDoneActions');if(doneActions)doneActions.hidden=false;
+    if(notice){notice.innerHTML='<strong>Credentials Updated Successfully</strong>';notice.textContent=recoveryServerMessage(result,'Your new User ID and password have been saved. Please use them to log in.');notice.hidden=false;}
+    showLoginRecoveryStep(3);
+  }catch(err){showRecoveryNotice('Could not update credentials. '+String(err&&err.message||err||'Please try again.'),'error');}
+  finally{loginRecoveryBusy=false;if(btn){btn.disabled=false;btn.textContent='Save New Credentials';}}
 }
 
 document.addEventListener('keydown',function(e){
   const modal=document.getElementById('loginRecoveryModal');
-  if(e.key==='Escape'&&modal&&!modal.hidden) closeLoginRecovery();
+  if(e.key==='Escape'&&modal&&!modal.hidden)closeLoginRecovery();
 });
+window.addEventListener('pagehide',function(){ loginRecoveryResetToken=''; });
 
 async function attemptLogin(){
   const userId  = document.getElementById('loginUserId').value.trim();
