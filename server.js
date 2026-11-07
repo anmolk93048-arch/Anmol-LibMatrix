@@ -2338,11 +2338,18 @@ app.post('/api/auth/login', (req, res) => {
         if (!ok) return res.status(401).json({ error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' });
         if (user && String(user.status || 'active').toLowerCase() !== 'active' && ['blocked', 'inactive', 'suspended', 'disabled'].includes(String(user.status).toLowerCase())) return res.status(403).json({ error: 'This account has been deactivated. Please contact the administrator.' });
         const _isAdminLogin = roleKey === 'admin';
-        const token = _isAdminLogin
-            ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
-            : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
-        logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
-        res.json({ token });
+        const issueToken = () => {
+            const token = _isAdminLogin
+                ? jwt.sign({ role: roleKey, username: String(user.username || username), pregate: true }, JWT_SECRET, { expiresIn: '15m' })
+                : jwt.sign({ role: roleKey, username: String(user.username || username) }, JWT_SECRET, { expiresIn: '7d' });
+            logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
+            res.json({ token });
+        };
+        if (!_isAdminLogin) return issueToken();
+        // 🔐 Super Admin: password sahi hone ke baad bhi 8-digit secondary OTP zaroori hai (server-side check)
+        consumeAdminLoginOtp(user.username || username, String((req.body || {}).otp || '').trim())
+            .then(otpErr => otpErr ? res.status(401).json({ error: otpErr, code: 'INVALID_OTP' }) : issueToken())
+            .catch(e => { console.error('admin login OTP error:', e.message); res.status(500).json({ error: 'Unable to verify the secondary code right now. Please try again.' }); });
     });
 });
 
@@ -4612,6 +4619,97 @@ async function forgotUsernameHandler(req, res) {
     app.post(base + '/reset-password', resetPasswordHandler);
 });
 ['/api/auth/forgot-username', '/api/material/forgot-user-id', '/api/material/forgot-username', '/api/agent/forgot-username'].forEach(p => app.post(p, forgotUsernameHandler));
+
+// ═══════════════════════════════════════════════════════════════════════
+// ✅ RESET-PASSWORD STEP 2 — OTP verify (password change se PEHLE, alag step)
+//   OTP yahan sirf check hota hai, delete nahi hota; asli password change
+//   /reset-password par hota hai jo OTP ko dobara verify karke consume karta hai.
+// ═══════════════════════════════════════════════════════════════════════
+async function verifyResetOtpHandler(req, res) {
+    try {
+        if (hitRateLimit('otpchk:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+        const b = req.body || {};
+        const userId = String(b.user || b.userId || b.username || '').trim();
+        const contact = String(b.contact || '').trim();
+        const code = String(b.code || b.otp || '').trim();
+        if (!/^\d{4}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
+        const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
+        if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        const key = lc(acc.userId) + '|' + acc.kind;
+        const o = await _otpStore.get(key);
+        if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
+        o.tries++;
+        if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return res.status(400).json({ error: 'OTP has expired. Please request a new OTP.' }); }
+        if (o.hash !== sha(code)) { await _otpStore.set(key, o); return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' }); }
+        o.tries = 0; o.verified = true;
+        await _otpStore.set(key, o);
+        res.json({ success: true, message: 'OTP verified. You can now set a new password.' });
+    } catch (e) {
+        console.error('verify-reset-otp error:', e.message);
+        res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' });
+    }
+}
+['/api/auth', '/api/agent', '/api/material'].forEach(base => app.post(base + '/verify-reset-otp', verifyResetOtpHandler));
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🔐 SUPER ADMIN SECONDARY VERIFICATION — 8-digit OTP on the login page
+//   1) POST /api/auth/admin-login-otp  {username,password}  → credentials check + 8-digit OTP to the registered mobile
+//   2) POST /api/auth/login            {role:'admin',username,password,otp} → token only if the OTP is correct
+//   Kill-switch (emergency only): set ADMIN_LOGIN_OTP=false in Render → Environment.
+// ═══════════════════════════════════════════════════════════════════════
+const ADMIN_LOGIN_OTP_ON = String(process.env.ADMIN_LOGIN_OTP || 'true').toLowerCase() !== 'false';
+const adminOtpKey = (u) => 'adm2fa|' + lc(u);
+async function findAdminWithPassword(username, password) {
+    const r = await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['admins']);
+    const list = parseEntityList(r && r[0] && r[0].value);
+    const want = _lcT(username);
+    const user = list.find(u => u && [u.username, u.email, u.id].some(f => f && _lcT(f) === want));
+    if (!user) return { error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
+    if (!user.password) return { error: AUTH_MSG.NO_PASS, code: 'NO_PASSWORD' };
+    const ok = looksHashed(user.password) ? bcrypt.compareSync(password, user.password) : security.safeEqual(user.password, password);
+    if (!ok) return { error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' };
+    if (['blocked', 'inactive', 'suspended', 'disabled'].includes(_lcT(user.status))) return { error: 'This account has been deactivated. Please contact the administrator.', code: 'DEACTIVATED', status: 403 };
+    return { user };
+}
+app.post('/api/auth/admin-login-otp', noStore, asyncRoute(async (req, res) => {
+    if (!ADMIN_LOGIN_OTP_ON) return res.json({ success: true, skipped: true });
+    const b = req.body || {};
+    const username = String(b.username || '').trim(), password = String(b.password || '');
+    if (!username || !password) return res.status(400).json({ error: 'User ID and password are required.' });
+    if (hitRateLimit('adm2fa-ip:' + (req.ip || ''), 10, 10 * 60 * 1000) || hitRateLimit('adm2fa-u:' + lc(username), 5, 10 * 60 * 1000)) {
+        return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    }
+    const found = await findAdminWithPassword(username, password);
+    if (found.error) return res.status(found.status || 401).json({ error: found.error, code: found.code });
+    const admin = found.user;
+    const mobile = last10(admin.mobile || admin.phone);
+    if (mobile.length !== 10) return res.status(422).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+    if (!waConfigured() && !(await smsConfigured())) return res.status(501).json({ error: 'The OTP service (WhatsApp / SMS) is not configured. Please contact the administrator.' });
+    const key = adminOtpKey(admin.username || username);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
+        return res.status(429).json({ error: 'Please wait before requesting a new code.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    }
+    const otp = String(crypto.randomInt(10000000, 100000000));   // always 8 digits
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { console.error('admin login OTP send failed:', e.message); return res.status(502).json({ error: 'Unable to send the code right now. Please try again.' }); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'An 8-digit code has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile ending ' + mobile.slice(-4) + '.', resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+}));
+// Returns null when the code is valid (and consumes it), otherwise the error message to show.
+async function consumeAdminLoginOtp(username, code) {
+    if (!ADMIN_LOGIN_OTP_ON) return null;
+    if (!/^\d{8}$/.test(code)) return 'Please enter the 8-digit OTP / Secondary Verification Code.';
+    const key = adminOtpKey(username);
+    const o = await _otpStore.get(key);
+    if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return 'The verification code has expired or was not requested. Please request a new code.'; }
+    o.tries++;
+    if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return 'Too many incorrect attempts. Please request a new code.'; }
+    if (!security.safeEqual(o.hash, sha(code))) { await _otpStore.set(key, o); return 'Invalid verification code. Please try again.'; }
+    await _otpStore.delete(key);   // one-time use
+    return null;
+}
 
 // Official SMS with User ID, Password and Portal link (used when an agent is created or approved)
 function buildCredentialsMessage(name, userId, password, link, template) {
