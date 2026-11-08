@@ -5030,14 +5030,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <span style="font-size:14px;font-weight:900;color:var(--text-main)" id="preg-success-pwd">—</span>
         </div>
       </div>
-      <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
-        <button class="btn" style="background:#25D366;color:#fff;flex:1;font-size:12px" onclick="SEND_CREDENTIALS_MSG('whatsapp', _pregLastApprovedRec.mobile, _pregLastApprovedRec.name, _pregLastApprovedRec.uid, _pregLastApprovedRec.pwd)">💬 WhatsApp Bhejo</button>
-        <button class="btn" style="background:#0ea5e9;color:#fff;flex:1;font-size:12px" onclick="SEND_CREDENTIALS_MSG('sms', _pregLastApprovedRec.mobile, _pregLastApprovedRec.name, _pregLastApprovedRec.uid, _pregLastApprovedRec.pwd)">📩 SMS Bhejo</button>
-      </div>
-      <div style="margin-top:8px">
-        <button class="btn" style="background:#7c3aed;color:#fff;width:100%;font-size:12px" onclick="SEND_CREDENTIALS_VIA_API(_pregLastApprovedRec.mobile, _pregLastApprovedRec.name, _pregLastApprovedRec.uid, _pregLastApprovedRec.pwd)">🤖 API se Auto-Bhejo</button>
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:8px">ℹ️ The login details message will be sent to the agent mobile only when the button is clicked.</div>
+      <div id="preg-send-status" role="status" style="margin-top:14px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:600;background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.3)">Login details are sent automatically on WhatsApp.</div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
         <button class="btn btn-ghost" onclick="CLOSE_MODAL('modal-preg-success')">OK, Close</button>
         <button class="btn btn-gold" onclick="PREG_SUCCESS_ADD_STUDENT()">➕ Add to Students</button>
@@ -5222,14 +5215,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           </div>
         </div>
         <div id="agent-cred-preview" style="display:none;background:rgba(15,110,86,.1);border:1px solid rgba(15,110,86,.3);border-radius:8px;padding:10px 14px;margin-top:8px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#4ade80"></div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button type="button" class="btn" style="background:#25D366;color:#fff;flex:1;font-size:12px;padding:9px" onclick="SEND_CREDENTIALS_MSG('whatsapp', document.getElementById('af-mobile').value, document.getElementById('af-name').value, document.getElementById('af-username').value, document.getElementById('af-password').value)">💬 WhatsApp Bhejo</button>
-          <button type="button" class="btn" style="background:#0ea5e9;color:#fff;flex:1;font-size:12px;padding:9px" onclick="SEND_CREDENTIALS_MSG('sms', document.getElementById('af-mobile').value, document.getElementById('af-name').value, document.getElementById('af-username').value, document.getElementById('af-password').value)">📩 SMS Bhejo</button>
-        </div>
-        <div style="margin-top:8px">
-          <button type="button" class="btn" style="background:#7c3aed;color:#fff;width:100%;font-size:12px;padding:9px" onclick="AGENT_FORM_SEND_VIA_FAST2SMS()"><i class="fa fa-android"></i> API se Auto-Bhejo</button>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:6px">ℹ️ The login details message will be sent to the agent only when the button is clicked.</div>
-        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:10px">Login details are sent to the agent automatically on WhatsApp when the record is saved.</div>
       </div>
 
       <!-- ── SUBSCRIPTION / EXPIRY ── -->
@@ -5723,7 +5709,7 @@ html,body,#admin-app{width:100%;min-width:0;}
       <p style="font-size:11px;color:var(--text-muted);margin-top:12px">Please note this User ID and Mobile Number. The user will use them to log in to the Anmol LibMatrix Material Entry portal.</p>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="mu-created-wa" style="width:100%;margin-bottom:8px;background:#25D366;border-color:#25D366;color:#fff;font-weight:800;display:none" onclick="MU_SEND_WHATSAPP()">💬 Share credentials via WhatsApp</button>
+      <div id="mu-send-status" role="status" style="margin-top:14px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:600;background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.3);margin-bottom:10px;text-align:left">Login details are sent automatically on WhatsApp.</div>
       <button class="btn btn-gold" style="width:100%" onclick="CLOSE_MODAL('modal-mu-created')">OK, understood</button>
     </div>
   </div>
@@ -8462,7 +8448,7 @@ function RENDER_AGENTS(filter=''){
         <button class="btn btn-ghost btn-sm btn-icon" onclick="OPEN_AGENT_MONITOR('${a.id}')" title="Monitor" style="font-size:14px">📊</button>
         <button class="btn btn-ghost btn-sm btn-icon" onclick="OPEN_AGENT_RENEW('${a.id}')" title="Renew Subscription" style="font-size:14px">🔄</button>
         <button class="btn btn-ghost btn-sm btn-icon" onclick="EDIT_AGENT('${a.id}')" title="Edit" style="font-size:14px">✏️</button>
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="AGENT_RESEND_CREDENTIALS('${a.id}')" title="Login Details Bhejo (SMS/WhatsApp)" style="font-size:14px">📩</button>
+        
         <button class="btn btn-ghost btn-sm btn-icon" onclick="TOGGLE_AGENT_STATUS('${a.id}')" title="${a.status==='active'?'Deactivate':'Activate'}" style="font-size:14px">${a.status==='active'?'🔴':'🟢'}</button>
         <button class="btn btn-sm btn-icon" onclick="BLOCK_AGENT_CONFIRM('${a.id}','${a.name.replace(/'/g,"\\'")}',${a.blocked?'true':'false'})" title="${a.blocked?'Unblock Account':'Block Account'}" style="font-size:14px;background:${a.blocked?'rgba(15,110,86,.15);color:#0F6E56':'rgba(124,58,237,.15);color:#7c3aed'};border:1px solid ${a.blocked?'rgba(15,110,86,.3)':'rgba(124,58,237,.3)'};border-radius:6px;padding:5px 8px;cursor:pointer">${a.blocked?'🔓 Unblock':'🚫 Block'}</button>
         <button class="btn btn-danger btn-sm btn-icon" onclick="DEL_CONFIRM('agent:${a.id}','${a.name.replace(/'/g,"\\'")} — delete this record?')" title="Delete">🗑️</button>
@@ -8574,7 +8560,7 @@ function RENDER_HR_AGENTS_TABLE(filter=''){
       <td style="text-align:center">
         <button class="btn btn-ghost btn-sm btn-icon" onclick="OPEN_HR_VIEW('agent','${a.id}')" title="Full Profile Dekho" style="font-size:14px">👁️</button>
         <button class="btn btn-ghost btn-sm btn-icon" onclick="EDIT_AGENT('${a.id}')" title="Edit" style="font-size:14px">✏️</button>
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="AGENT_RESEND_CREDENTIALS('${a.id}')" title="Login Details Bhejo (SMS/WhatsApp)" style="font-size:14px">📩</button>
+        
         <button class="btn btn-sm btn-icon" onclick="BLOCK_AGENT_CONFIRM('${a.id}','${a.name.replace(/'/g,"\\'")}',${a.blocked?'true':'false'})" title="${a.blocked?'Unblock':'Block'}" style="font-size:14px;background:${a.blocked?'rgba(15,110,86,.15);color:#0F6E56':'rgba(124,58,237,.15);color:#7c3aed'};border:1px solid ${a.blocked?'rgba(15,110,86,.3)':'rgba(124,58,237,.3)'};border-radius:6px;padding:5px 8px;cursor:pointer">${a.blocked?'🔓':'🚫'}</button>
         <button class="btn btn-danger btn-sm btn-icon" onclick="DEL_CONFIRM('agent:${a.id}','${a.name.replace(/'/g,"\\'")} — delete this record?')" title="Delete" style="font-size:14px">🗑️</button>
       </td>
@@ -9369,43 +9355,7 @@ function AGENT_AUTO_PWD(){
   SHOW_TOAST('🔐 Password: '+pwd+' (2 sec visible)');
 }
 
-// ── Send Login Credentials via SMS or WhatsApp ──
-// Sirf click karne par hi message jaata hai — click nahi kiya to kuch nahi bhejta.
-function SEND_CREDENTIALS_MSG(via, mobile, name, uid, pwd){
-  mobile = (mobile||'').replace(/\D/g,'').slice(-10);
-  if(!mobile || mobile.length!==10){ SHOW_TOAST('A valid 10-digit mobile number was not found.'); return; }
-  if(!uid || !uid.trim() || !pwd || !pwd.trim()){ SHOW_TOAST('Please generate or enter the UserID and Password first.'); return; }
-  var msg = 'Hello '+(name||'Agent')+',\n\nYour Anmol LibMatrix Agent App login is ready:\n\nUserID: '+uid+'\nPassword: '+pwd+'\n\nPlease log in to the app to get started.\n- Team Anmol LibMatrix';
-  var encoded = encodeURIComponent(msg);
-  if(via==='whatsapp'){
-    // Professional Hindi click-to-chat message with a direct, clickable portal login link
-    var portal = String((window.ANMOL_CONFIG && (window.ANMOL_CONFIG.PORTAL_URL || window.ANMOL_CONFIG.SITE_URL)) || 'https://anmol-libmatrix.onrender.com').replace(/\/+$/,'');
-    var loginLink = portal + '/';   /* shared links point to the public home page; per-session portal links expire */
-    var waMsg = 'नमस्ते! Anmol LibMatrix में आपका स्वागत है। आपका रजिस्ट्रेशन अप्रूव कर दिया गया है।\n'+
-      'आपकी यूजर डिटेल्स नीचे दी गई हैं:\n'+
-      '- User ID: '+uid+'\n'+
-      '- Password: '+pwd+'\n'+
-      '- Login Link: '+loginLink+'\n\n'+
-      'कृपया इस लिंक पर क्लिक करके लॉगिन करें। धन्यवाद!';
-    window.open('https://wa.me/91'+mobile+'?text='+encodeURIComponent(waMsg), '_blank');
-  } else {
-    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    window.location.href = 'sms:+91'+mobile+(isIOS?'&':'?')+'body='+encoded;
-  }
-  SHOW_TOAST(via==='whatsapp' ? '💬 WhatsApp is opening. Please press Send.' : '📩 The SMS app is opening. Please press Send.');
-}
 
-// Agents table se kabhi bhi login details resend karne ke liye
-function AGENT_RESEND_CREDENTIALS(id){
-  var agents = DB.get('agents')||[];
-  var a = agents.find(function(x){ return x.id===id; });
-  if(!a){ SHOW_TOAST('Agent record not found.'); return; }
-  var cfg=_SMS_API_CFG();
-  var choice = prompt('📩 Login Details Kaise Bhejein?\n\n1 = 💬 WhatsApp\n2 = 📩 SMS (device app)\n3 = 🤖 API se Auto-Bhejo'+(cfg.endpoint?'':' (please complete the setup first)'), '1');
-  if(choice==='2') SEND_CREDENTIALS_MSG('sms', a.mobile, a.name, a.username, a.password);
-  else if(choice==='3') SEND_CREDENTIALS_VIA_API(a.mobile, a.name, a.username, a.password);
-  else if(choice==='1') SEND_CREDENTIALS_MSG('whatsapp', a.mobile, a.name, a.username, a.password);
-}
 
 // ── SMS/WhatsApp API Config (custom backend jaise Fast2SMS/MSG91/Twilio/apna server) ──
 // NOTE: DB.get/DB.set ka use hota hai (localStorage + Firebase 'shdl/sms_api_config') taaki
@@ -9567,48 +9517,7 @@ function SAVE_RAZORPAY_CONFIG(){
   LOG_ACTIVITY('⚙️ Razorpay config updated');
 }
 
-// Fast2SMS Quick SMS (route=q) ke through direct credentials bhejta hai (bina app khole)
-// Fast2SMS browser se CORS allow nahi karta, isliye Image() GET-trick use karte hain.
-function SEND_CREDENTIALS_VIA_API(mobile, name, uid, pwd){
-    mobile = (mobile||'').replace(/\D/g,'').slice(-10);
-    if(!mobile || mobile.length!==10){ SHOW_TOAST('A valid 10-digit mobile number is required.'); return; }
-    if(!uid || !uid.trim() || !pwd || !pwd.trim()){ SHOW_TOAST('Please generate the UserID and Password first.'); return; }
 
-    var cfg = _SMS_API_CFG();
-    var apiKey = cfg.key || "2IcR7D6s9PxGfmoYiVwga58QCnN1Be4FUM3SkTlErA0vdujyqhe7ZV9QBDUKLsv2x3AoW8wcImjuNqGX";
-    var template = cfg.template || 'Hello {name}, your Anmol LibMatrix Agent App login is ready. UserID: {user} Password: {pass}';
-    var msg = template.replace('{name}', name||'Agent').replace('{user}', uid).replace('{pass}', pwd);
-
-    var finalUrl = "https://www.fast2sms.com/dev/bulkV2?authorization=" + encodeURIComponent(apiKey) +
-                   "&route=q&message=" + encodeURIComponent(msg) +
-                   "&language=english&numbers=" + mobile;
-
-    SHOW_TOAST('📡 Sending...');
-    var imgReq = new Image();
-    imgReq.onload = function() {
-        SHOW_TOAST('🚀 The message was sent successfully.');
-    };
-    imgReq.onerror = function() {
-        // Fast2SMS response image nahi deta, isliye "error" aana normal hai —
-        // request phir bhi chali jaati hai. Delivery Fast2SMS dashboard par confirm karein.
-        SHOW_TOAST('🚀 The message was sent through the API.');
-    };
-    imgReq.src = finalUrl;
-}
-
-// Agent-add form ke input boxes (af-mobile, af-username, af-password) se seedha
-// value uthakar Fast2SMS API se bhejta hai — "API se Auto-Bhejo" button isi ko call karta hai.
-function AGENT_FORM_SEND_VIA_FAST2SMS(){
-  var mobileEl = document.getElementById('af-mobile');
-  var nameEl = document.getElementById('af-name');
-  var userEl = document.getElementById('af-username');
-  var passEl = document.getElementById('af-password');
-  var mobile = mobileEl ? mobileEl.value : '';
-  var name = nameEl ? nameEl.value : '';
-  var uid = userEl ? userEl.value : '';
-  var pwd = passEl ? passEl.value : '';
-  SEND_CREDENTIALS_VIA_API(mobile, name, uid, pwd);
-}
 
 function OPEN_ADD_AGENT(){
   document.getElementById('agent-modal-title').textContent='🧑‍💼 Agent Register';
@@ -10015,8 +9924,8 @@ function RENDER_MATERIAL_REQUESTS(){
       +'<td>'+MAT_ESC(r.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(r.aadhaarMasked||'—')+'</td>'
       +'<td style="font-size:10px">'+MAT_ESC(r.requestedAt||'—')+'</td>'
-      +'<td style="display:flex;gap:6px"><button class="btn-icon" title="View, edit &amp; verify — then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+r._docId+'\')">🔍</button>'
-      +'<button class="btn-icon" title="Reject / Delete" onclick="REJECT_MATERIAL_REQUEST(\''+r._docId+'\')">❌</button></td></tr>';
+      +'<td style="display:flex;gap:6px"><button class="btn btn-gold btn-sm" title="Review the details, then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+r._docId+'\')">Approve</button>'
+      +'<button class="btn btn-danger btn-sm" onclick="REJECT_MATERIAL_REQUEST(\''+r._docId+'\')">Reject</button></td></tr>';
   }).join('');
   var t1=document.getElementById('material-requests-table'); if(t1) t1.innerHTML=rows;
   MAT_PAINT_BADGE();
@@ -10228,25 +10137,22 @@ function WALLET_REJECT_REQ(id){
   if(!confirm('Reject this top-up request?')) return;
   apiFetch('/admin/material/wallet/requests/'+id+'/reject',{method:'POST',body:'{}'}).then(function(){ WALLET_LOAD(); }).catch(function(e){ WALLET_MSG('❌ '+e.message); });
 }
-function MU_WHATSAPP_URL(mobile,userId,password){
-  var m=String(mobile||'').replace(/\D/g,'').slice(-10);
-  if(m.length!==10||!userId||!password) return '';
-  var msg='नमस्ते! Anmol LibMatrix में आपका स्वागत है। आपका रजिस्ट्रेशन अप्रूव कर दिया गया है। \n'
-    +'आपकी यूजर डिटेल्स नीचे दी गई हैं:\n'
-    +'- User ID: '+userId+'\n'
-    +'- Password: '+password+'\n'
-    +'- Login Link: https://anmol-libmatrix.onrender.com\n\n'
-    +'कृपया इस लिंक पर क्लिक करके लॉगिन करें। धन्यवाद!';
-  return 'https://api.whatsapp.com/send?phone=91'+m+'&text='+encodeURIComponent(msg);
-}
-function MU_SEND_WHATSAPP(){
-  var c=window.MU_LAST_CRED||{}, url=MU_WHATSAPP_URL(c.mobile,c.userId,c.password);
-  if(!url){ SHOW_TOAST('❌ A valid mobile number and password are needed to share via WhatsApp.'); return; }
-  window.open(url,'_blank','noopener');
+function SHOW_DELIVERY_STATUS(elId, userId){
+/* Credentials are dispatched automatically by the server (Meta WhatsApp Cloud API). This only displays the delivery result. */
+var el=document.getElementById(elId); if(!el||!userId) return;
+var tries=0, paint=function(t,c){ el.textContent=t; el.style.color=c||''; };
+paint('Sending login details on WhatsApp\u2026');
+(function poll(){
+apiFetch('/admin/credential-delivery/'+encodeURIComponent(userId)).then(function(d){
+if(d.status==='sent') paint('\u2705 User ID, password and login link were sent to the user\u2019s WhatsApp.','#16a34a');
+else if(d.status==='sms') paint('\u2705 Sent by SMS because WhatsApp was unavailable.','#16a34a');
+else if(d.status==='failed') paint('\u26a0\ufe0f Could not be delivered after automatic retries. The user can recover access with \u201cForgot Password\u201d.','#d97706');
+else if(++tries<8) setTimeout(poll,2500); else paint('Delivery is still in progress\u2026');
+}).catch(function(){ if(++tries<8) setTimeout(poll,2500); });
+})();
 }
 function MU_SHOW_CREATED(name,village,userId,mobile,password,photo){
-  window.MU_LAST_CRED={userId:userId,password:password,mobile:mobile};
-  var wa=document.getElementById('mu-created-wa'); if(wa) wa.style.display=MU_WHATSAPP_URL(mobile,userId,password)?'block':'none';
+SHOW_DELIVERY_STATUS('mu-send-status',userId);
   document.getElementById('mu-created-name').textContent=name||'';
   document.getElementById('mu-created-village').textContent=village||'';
   document.getElementById('mu-created-id').textContent=userId;
@@ -13635,7 +13541,8 @@ function PREG_APPROVE_FROM_MODAL() {
     document.getElementById('preg-success-name').textContent = rec.name + ' (' + rec.mobile + ')';
     document.getElementById('preg-success-uid').textContent = uid;
     document.getElementById('preg-success-pwd').textContent = pwdShown;
-    OPEN_MODAL('modal-preg-success');
+OPEN_MODAL('modal-preg-success');
+SHOW_DELIVERY_STATUS('preg-send-status', uid);
   } catch(fatalErr) {
     console.error('PREG_APPROVE_FROM_MODAL error:', fatalErr);
     SHOW_TOAST('❌ Error: ' + (fatalErr && fatalErr.message ? fatalErr.message : 'Something went wrong. Please try again.'), 5000);
@@ -16603,7 +16510,7 @@ function PREG_MAT_RENDER(){
       actions='<button class="btn-icon" title="View details" onclick="OPEN_MU_REQUEST_REVIEW(\''+id+'\')">🔍</button><button class="btn-icon" title="Re-open as pending" onclick="PREG_MAT_REOPEN(\''+id+'\')">↩️</button><button class="btn-icon" title="Remove permanently" style="color:#c0262d" onclick="PREG_MAT_REMOVE(\''+id+'\')">🗑️</button>';
     } else {
       badge='<span class="badge" style="background:rgba(201,162,39,.18);color:#c9a227">⏳ Pending</span>';
-      actions='<button class="btn-icon" title="View, edit &amp; verify — then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+id+'\')">🔍</button><button class="btn-icon" title="Reject" onclick="REJECT_MATERIAL_REQUEST(\''+id+'\')">❌</button>';
+      actions='<button class="btn btn-gold btn-sm" title="Review the details, then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+id+'\')">Approve</button><button class="btn btn-danger btn-sm" onclick="REJECT_MATERIAL_REQUEST(\''+id+'\')">Reject</button>';
     }
     return '<tr><td>'+MAT_PHOTO(r)+'</td><td style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:800;color:#c9a227">'+MAT_ESC(r.tracking_id||'—')+'</td><td>'+MAT_ESC(r.name||'—')+'</td><td>'+MAT_ESC(r.village||'—')+'</td>'
       +'<td style="font-size:11px">'+MAT_ESC(r.email||'—')+'</td><td>'+MAT_ESC(r.mobile||'—')+'</td>'

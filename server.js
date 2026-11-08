@@ -1844,8 +1844,9 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
             const credEnc = piiReady() ? piiEncrypt(plainPassword) : null;
             db.query("UPDATE material_user_requests SET status='approved', reviewed_at=CURRENT_TIMESTAMP, approved_userid=?, aadhaar_enc=NULL, aadhaar_hash=NULL, cred_enc=?, cred_at=?, cred_views=0 WHERE id = ?", [userId, credEnc, credEnc ? Date.now() : null, reqId], () => {
                 auditPii(req, 'material_approve', userId, 'request=' + reqId);
-                notifyAccount({ kind: 'credentials', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) });   // 💬 WhatsApp the approved applicant (fire-and-forget)
-                res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '' });
+                notifyAccount({ kind: 'credentials', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
+                    res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '', notified: ch || null });
+                });
             });
         }
     );
@@ -1984,8 +1985,9 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-            notifyAccount({ kind: 'credentials', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) });   // 💬 WhatsApp the new Invoicing user (fire-and-forget)
-            res.status(201).json({ success: true, userId, password: plainPassword });
+            notifyAccount({ kind: 'credentials', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp the moment Super Admin creates the user
+                res.status(201).json({ success: true, userId, password: plainPassword, notified: ch || null });
+            });
         }
     );
 }));
@@ -4478,7 +4480,7 @@ const NOTICE_TEXT = {
     hr_approved: 'your HRMS profile has been approved.',
     username_recovered: 'as requested, your Anmol LibMatrix Username is shown below. Your password is never sent by message. Please do not share this message.'
 };
-async function notifyAccount(ev) {
+async function _notifyAccountOnce(ev) {
     try {
         const mobile = last10(ev.mobile);
         if (mobile.length !== 10) return null;
@@ -4502,6 +4504,28 @@ async function notifyAccount(ev) {
         if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
         return null;
     } catch (e) { console.warn('notifyAccount (' + (ev && ev.kind) + ') failed:', e.message); return null; }
+}
+// Automatic dispatch + delivery tracking. Credential / approval messages go out the moment Super Admin approves or creates a record.
+// The first attempt is awaited (so the API answer can report it); if it fails, two background retries follow (3 s, 12 s).
+// Only the DELIVERY RESULT is stored (status, channel, time), never the password. Read it via GET /api/admin/credential-delivery/:userId.
+const CRED_KINDS = ['credentials', 'approved', 'hr_approved'];
+async function _setDelivery(uid, st) { try { await _otpStore.set('cn|' + lc(uid), Object.assign({ at: Date.now(), exp: Date.now() + 7 * 24 * 60 * 60 * 1000 }, st)); } catch (e) {} }
+async function notifyAccount(ev) {
+    const track = !!(ev && CRED_KINDS.indexOf(ev.kind) >= 0 && ev.userId);
+    const ch = await _notifyAccountOnce(ev);
+    if (!track) return ch;
+    if (ch) { await _setDelivery(ev.userId, { status: ch === 'whatsapp' ? 'sent' : 'sms', channel: ch }); return ch; }
+    await _setDelivery(ev.userId, { status: 'retrying' });
+    (async () => {
+        for (const wait of [3000, 12000]) {
+            await new Promise((r) => setTimeout(r, wait));
+            const c = await _notifyAccountOnce(ev);
+            if (c) return _setDelivery(ev.userId, { status: c === 'whatsapp' ? 'sent' : 'sms', channel: c });
+        }
+        console.warn('[notify] ' + ev.kind + ' message for ' + ev.userId + ' could not be delivered after retries.');
+        await _setDelivery(ev.userId, { status: 'failed' });
+    })().catch(() => {});
+    return null;
 }
 // Saved lists (admins / agents / staff / students): a record that arrives with a NEW plain-text password (created or reset by
 // Super Admin / Admin / Agent) gets its credentials on WhatsApp; a freshly approved agent whose own password is already hashed gets
@@ -4934,16 +4958,11 @@ function buildCredentialsMessage(name, userId, password, link, template) {
     return base.replace(/\{name\}/g, name || 'User').replace(/\{user\}/g, userId).replace(/\{pass\}/g, password).replace(/\{link\}/g, link || '');
 }
 // (autoSendAgentCredentials was replaced by autoNotifyEntityCredentials — WhatsApp first, SMS fallback)
-app.post('/api/admin/send-agent-credentials', requireRole('admin'), async (req, res) => {
-    try {
-        const b = req.body || {};
-        if (!b.userId || !b.password || last10(b.mobile).length !== 10) return res.status(400).json({ error: 'User ID, password and a valid 10-digit mobile number are required.' });
-        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'Neither Fast2SMS, WhatsApp nor the SMS gateway is configured. Please complete the setup first.' });
-        const channel = await notifyAccount({ kind: 'credentials', mobile: b.mobile, name: b.name, userId: b.userId, password: b.password, link: portalLink(req) });
-        if (!channel) return res.status(502).json({ error: 'Unable to deliver the credentials on WhatsApp or SMS.' });
-        res.json({ success: true, channel: channel });
-    } catch (e) { res.status(502).json({ error: 'Unable to send the message: ' + e.message }); }
-});
+// Manual "send credentials" route removed: messages are now dispatched automatically on approval / creation.
+app.get('/api/admin/credential-delivery/:userId', requireRole('admin'), noStore, asyncRoute(async (req, res) => {
+    const r = await _otpStore.get('cn|' + lc(req.params.userId));
+    res.json({ status: r ? r.status : 'unknown', channel: (r && r.channel) || null, at: (r && r.at) || null });
+}));
 
 // Announcement / ticker settings (public read, Super Admin write)
 async function readAnnouncements() {
