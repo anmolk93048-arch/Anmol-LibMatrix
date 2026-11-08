@@ -4470,7 +4470,9 @@ function sendWhatsAppOtp(mobile, otp) { return waSendTemplate(mobile, waConfig()
 
 // ── 🔔 Account notifications: login credentials / approvals / password changes ─────────────────────────────
 //   Templates (UTILITY category, approved in WhatsApp Manager — bodies are in setup-wa-template.js):
-//     WA_CRED_TEMPLATE   (default libmatrix_credentials)    {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal link
+//     CREDENTIALS_WA_TEMPLATE_NAME (default anmol_libmatrix_login_info; legacy WA_CRED_TEMPLATE still honoured)
+//                        {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link
+//                        sent via Fast2SMS WhatsApp first, then Meta Cloud API, then SMS
 //     WA_NOTICE_TEMPLATE (default libmatrix_account_notice) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link
 //   Every send is best-effort: WhatsApp first → SMS fallback → never throws, never blocks or fails the registration itself.
 const waTxt = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 500) || '-';
@@ -4487,8 +4489,15 @@ async function _notifyAccountOnce(ev) {
         const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId), link = waTxt(ev.link || process.env.PORTAL_URL || process.env.FRONTEND_URL || '');
         let template, params, sms;
         if (ev.kind === 'credentials') {
-            template = process.env.WA_CRED_TEMPLATE || 'libmatrix_credentials';
+            // Credentials template (CREDENTIALS_WA_TEMPLATE_NAME = anmol_libmatrix_login_info):
+            // {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal link.
+            // Channel order: Fast2SMS WhatsApp → Meta Cloud API (same template name) → SMS.
+            template = credentialsWaTemplateName();
             params = [name, uid, waTxt(ev.password), link];
+            if (await otpServiceConfigured()) {
+                try { await sendFast2SmsWhatsAppCredentials(mobile, name, uid, params[2], link); return 'whatsapp'; }
+                catch (e) { console.warn('Fast2SMS WhatsApp credentials failed' + (waConfigured() ? ', trying Meta Cloud API' : ', falling back to SMS') + ':', e.message); }
+            }
             const cfg = await loadSmsConfig();
             sms = buildCredentialsMessage(name, uid, String(ev.password), link, cfg.template && /\{pass\}/.test(cfg.template) ? cfg.template : '');
         } else {
@@ -4534,7 +4543,7 @@ const WA_NOTIFY_ENTITIES = ['admins', 'agents', 'staff', 'students'];
 const credSig = (uid, pwd) => crypto.createHmac('sha256', JWT_SECRET).update(String(uid) + '|' + String(pwd)).digest('hex').slice(0, 24);
 async function autoNotifyEntityCredentials(key, incoming, existing, link) {
     if (!Array.isArray(incoming) || WA_NOTIFY_ENTITIES.indexOf(key) < 0) return;
-    if (!waConfigured() && !(await smsConfigured())) return;
+    if (!waConfigured() && !(await otpServiceConfigured()) && !(await smsConfigured())) return;
     const same = (o, r) => o && ((r.id != null && o.id === r.id) || (r.username && o.username === r.username) || (r.agentId && o.agentId === r.agentId) || (r.studentId && o.studentId === r.studentId) || (r.empId && o.empId === r.empId));
     const jobs = [];
     for (const rec of incoming) {
@@ -4604,29 +4613,29 @@ function fast2smsWaPost(urlObj, key, bodyObj, timeoutMs) {
         rq.write(payload); rq.end();
     });
 }
-async function sendFast2SmsWhatsAppOtp(mobile, otp) {
+// Generic Fast2SMS WhatsApp template sender (shared by the OTP template and the Credentials template).
+//   bodyParams      → {{1}}, {{2}} … of the template body
+//   urlButtonParam  → optional Copy-code / URL button parameter (authentication templates only)
+// Parameter VALUES (OTP / password) are never logged — only the template name and a masked mobile number.
+async function fast2smsWaSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
     const key = await fast2smsOtpKey();
     if (!key) throw waError('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
     const num = last10(mobile);
     if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
+    if (!templateName) throw waError('WhatsApp template name is not configured.');
     const c = fast2smsWaConfig();
     let u;
     try { u = new URL(fast2smsWaEndpoint()); } catch (e) { throw waError('FAST2SMS_WA_URL is invalid.'); }
+    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
+    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
     const body = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: c.cc + num,
         type: 'template',
-        template: {
-            name: c.template,
-            language: { code: c.lang },
-            components: [
-                { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },                                              // {{1}} in the message body
-                { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] }                // Copy-code / One-tap button
-            ]
-        }
+        template: { name: templateName, language: { code: c.lang }, components: components }
     };
-    console.log('[fast2sms-wa] → POST ' + u.pathname + ' template=' + c.template + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
+    console.log('[fast2sms-wa] → POST ' + u.pathname + ' template=' + templateName + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
     let r;
     try { r = await fast2smsWaPost(u, key, body, 12000); }
     catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); e.channel = 'whatsapp'; throw e; }
@@ -4639,6 +4648,19 @@ async function sendFast2SmsWhatsAppOtp(mobile, otp) {
     const err = waError('Fast2SMS WhatsApp rejected the request (status ' + code + '): ' + String(m).slice(0, 200), { fast2smsCode: code });
     console.error('[fast2sms-wa] FAILED:', err.message);
     throw err;
+}
+// ── Template 1: OTP (authentication template). Env: FAST2SMS_WA_TEMPLATE_NAME ──
+//    The 8-digit OTP goes in the body {{1}} AND the Copy-code / One-tap button.
+function sendFast2SmsWhatsAppOtp(mobile, otp) {
+    return fast2smsWaSendTemplate(mobile, fast2smsWaConfig().template, [otp], otp);
+}
+// ── Template 2: Credentials (utility template). Env: CREDENTIALS_WA_TEMPLATE_NAME (value: anmol_libmatrix_login_info) ──
+//    Body: {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link.   No button.
+function credentialsWaTemplateName() {
+    return String(process.env.CREDENTIALS_WA_TEMPLATE_NAME || process.env.WA_CRED_TEMPLATE || 'anmol_libmatrix_login_info').trim();
+}
+function sendFast2SmsWhatsAppCredentials(mobile, name, userId, password, link) {
+    return fast2smsWaSendTemplate(mobile, credentialsWaTemplateName(), [name, userId, password, link]);
 }
 // Any OTP-sending failure (wrong key, template not approved, wallet balance, timeout, network) becomes a friendly JSON answer —
 // never a crash and never a bare 502. The real reason goes to the server log only (OTP_DEBUG=true adds it to the reply).
