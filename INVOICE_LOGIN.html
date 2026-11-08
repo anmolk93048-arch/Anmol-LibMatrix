@@ -2870,7 +2870,17 @@ function hideLoginError(){
   el.style.display = 'none';
 }
 
+/* 🧾 Unified-login dispatcher: users mapped to Option B (DV Enterprises) are sent to their own invoice screen.
+   The JWT travels in the URL fragment (never sent to a server / logged) so it also works when this page and the API are on different domains. */
+function goDvPortal(){
+  var tok = AUTH_TOKEN || '';
+  try{ tok = tok || sessionStorage.getItem('anmol_auth_token') || ''; }catch(e){}
+  var base = String(API_BASE).replace(/\/api\/?$/, '');
+  try{ sessionStorage.removeItem('anmolPortalUser'); }catch(e){}
+  location.replace(base + '/dv-invoice#t=' + encodeURIComponent(tok) + '&b=' + encodeURIComponent(location.href.split('#')[0]));
+}
 function enterPortal(userDoc){
+  if(userDoc && (userDoc.invoiceVersion === 'B' || userDoc.invoice_version === 'B')){ goDvPortal(); return; }   // Option B → new dashboard; Option A continues below unchanged
   loggedInUser = {
     docId: userDoc._docId, userId: userDoc.userId, name: userDoc.name,
     village: userDoc.village || '', mobile: userDoc.mobile,

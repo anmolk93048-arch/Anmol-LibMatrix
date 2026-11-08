@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>DV Enterprises – Invoice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16202e; --muted:#5d6b7e; --line:#d6dce5; --bg:#eef1f5; --card:#fff;
+  --brand:#1f3a5f; --brand-2:#2c5282; --ok:#0f6e56; --danger:#b42318; --warn:#9a6700;
+  --sheet-blue:#1f4e96; --sheet-red:#e60000; --sheet-sky:#1f7fc4;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Noto Sans Devanagari","Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+button{font:inherit;cursor:pointer}
+.no-print{}
+.hidden{display:none!important}
+
+/* ───── app chrome ───── */
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--brand);color:#fff;position:sticky;top:0;z-index:20}
+.topbar .brand{font-weight:800;letter-spacing:.3px;font-size:15px}
+.topbar .sp{flex:1}
+.topbar .who{font-size:12.5px;opacity:.9}
+.topbar .btn-out{background:transparent;border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:8px;padding:6px 12px;font-size:12.5px}
+.topbar .btn-out:hover{background:rgba(255,255,255,.12)}
+
+.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;max-width:1360px;margin:0 auto;padding:16px}
+@media(max-width:980px){.layout{grid-template-columns:1fr;padding:10px}}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.side{align-self:start;position:sticky;top:64px;max-height:calc(100vh - 80px);display:flex;flex-direction:column}
+@media(max-width:980px){.side{position:static;max-height:none}}
+.side h2{margin:0 0 10px;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.search{position:relative}
+.search input{width:100%;padding:10px 12px 10px 34px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fbfcfe}
+.search input:focus{outline:2px solid var(--brand-2);outline-offset:0;background:#fff}
+.search:before{content:"🔍";position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.7}
+.list{margin:10px 0 0;padding:0;list-style:none;overflow:auto;flex:1;min-height:80px;max-height:60vh}
+@media(max-width:980px){.list{max-height:240px}}
+.list li{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:7px;cursor:pointer;background:#fff}
+.list li:hover{border-color:var(--brand-2);background:#f5f9ff}
+.list li.active{border-color:var(--brand-2);background:#eaf2ff;box-shadow:inset 3px 0 0 var(--brand-2)}
+.list .r1{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.list .r2{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-top:2px}
+.list .empty{color:var(--muted);text-align:center;cursor:default;border-style:dashed}
+.list .empty:hover{background:#fff;border-color:var(--line)}
+
+.main{min-width:0}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:9px;padding:9px 14px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+.btn:hover{border-color:var(--brand-2)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.primary:hover{background:var(--brand-2)}
+.btn.danger{color:var(--danger);border-color:#f1c0bb}
+.btn.danger:hover{background:#fff4f3;border-color:var(--danger)}
+.actions .sp{flex:1}
+.banner{border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;line-height:1.45;border:1px solid}
+.banner.edit{background:#fff8e6;border-color:#f0d58a;color:#6b4b00}
+.banner.new{background:#eef7f3;border-color:#b6dccb;color:#0b4f3d}
+.banner.err{background:#fff4f3;border-color:#f1c0bb;color:var(--danger)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#16202e;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;max-width:90vw;z-index:50;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.toast.err{background:var(--danger)}
+
+/* ───── the invoice sheet (mirrors the DV Enterprises tax invoice) ───── */
+.sheet-wrap{overflow:hidden}
+.sheet{width:794px;background:#fff;color:#000;margin:0 auto;padding:18px 26px 26px;border:1px solid var(--line);font-family:Arial,"Noto Sans Devanagari",sans-serif;font-size:12px;transform-origin:top left}
+.sheet .title{text-align:center;font-size:20px;line-height:1.1;margin:0 0 4px;font-weight:400}
+.frame{border:1px solid #000}
+.hdr{display:grid;grid-template-columns:1fr 38%;border-bottom:1px solid #000}
+.hdr .left{padding:2px 6px 6px;text-align:center}
+.hdr .company{font:700 34px/1.1 Arial,Helvetica,sans-serif;color:var(--sheet-red);margin:6px 0 10px;letter-spacing:.3px}
+.hdr .addr{font:700 19px/1.2 Arial,sans-serif;color:var(--sheet-blue);margin-bottom:14px}
+.hdr .gst{font:700 11.5px/1.3 "Cambria","Times New Roman",serif;color:var(--sheet-blue);text-align:left}
+.hdr .right{border-left:1px solid #000;display:grid;grid-template-rows:repeat(4,1fr)}
+.hdr .right .f{display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #000;font-weight:700;min-height:31px}
+.hdr .right .f:last-child{border-bottom:0}
+.f .lbl{white-space:nowrap}
+.cust{padding:3px 6px;font-weight:700;min-height:56px;border-bottom:1px solid #000;display:flex;gap:4px;align-items:flex-start}
+.cust textarea{flex:1;font-weight:400;resize:none;height:44px}
+.blkrow{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #000;font-weight:700}
+.blkrow>div{padding:3px 6px;display:flex;gap:4px;align-items:center;min-height:25px}
+.blkrow>div+div{border-left:1px solid #000}
+.blkrow span,.cust>span{white-space:nowrap}
+.gapline{height:14px;border-bottom:1px solid #000}
+
+/* editable fields inside the sheet look like plain text when printed */
+.sheet input,.sheet textarea{font:inherit;color:inherit;border:0;background:transparent;padding:1px 2px;width:100%;min-width:0;outline:0;border-bottom:1px dashed #b9c2cf;border-radius:0}
+.sheet input:focus,.sheet textarea:focus{background:#fffbe6;border-bottom-color:#2c5282}
+.sheet input::placeholder,.sheet textarea::placeholder{color:#b3bcc9;font-weight:400}
+.sheet input[type=number]{-moz-appearance:textfield}
+.sheet input::-webkit-outer-spin-button,.sheet input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.printonly{display:none}
+
+table.items{width:100%;border-collapse:collapse;table-layout:fixed}
+table.items th,table.items td{padding:2px 4px;border-left:1px solid #000;vertical-align:top}
+table.items th:first-child,table.items td:first-child{border-left:0}
+table.items thead th{border-bottom:1px solid #000;font-weight:700;text-align:center;font-size:11.5px;line-height:1.15;vertical-align:middle;padding:5px 3px}
+table.items tbody td{height:22px;font-size:13px}
+table.items tbody tr.fill td{height:0}
+table.items td.c{text-align:center}
+table.items td.r{text-align:right}
+table.items td.num input{text-align:right}
+table.items td.sl{text-align:right;padding-right:6px}
+table.items tfoot td{border-top:1px solid #000;border-bottom:1px solid #000;font-weight:700;text-align:center;padding:3px 4px;height:24px}
+.pcell{display:flex;align-items:center;gap:2px}
+.rm{border:0;background:transparent;color:#b42318;font-size:15px;line-height:1;padding:0 3px;border-radius:4px;opacity:.55}
+.rm:hover{opacity:1;background:#fdecea}
+
+.bottom{display:grid;grid-template-columns:52.7% 1fr;font-size:12.5px}
+.bank{display:grid;grid-template-rows:repeat(5,25px) auto;border-right:1px solid #000}
+.bank>div{padding:3px 6px;text-align:center;font-weight:700;border-bottom:1px solid #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bank .words{grid-row:6;text-align:left;white-space:normal;border-bottom:0;line-height:1.35;min-height:50px}
+.sum{display:grid;grid-template-columns:48% 1fr;grid-auto-rows:25px}
+.sum div{padding:3px 6px;font-weight:700;border-bottom:1px solid #000}
+.sum .v{text-align:center;border-left:1px solid #000}
+.sum .tot{font-size:15px;height:30px;grid-row-end:span 1;border-bottom:0}
+.sum .tot.l{padding-top:4px}
+.spacer{height:16px;border-top:1px solid #000;border-bottom:1px solid #000}
+.sign{display:grid;grid-template-columns:52.7% 1fr;height:104px}
+.sign .l{border-right:1px solid #000}
+.sign .r{text-align:center;display:flex;flex-direction:column;justify-content:space-between;padding:4px 6px 12px}
+.sign .co{font:400 19px Arial,sans-serif;color:var(--sheet-sky);letter-spacing:.2px}
+.sign .as{font-size:11.5px;font-weight:400}
+
+/* ───── print: only the sheet ───── */
+@page{size:A4 portrait;margin:8mm}
+@media print{
+  html,body{background:#fff!important}
+  .no-print,.topbar,.side,.actions,.banner,.toast,.rm,#idleBox{display:none!important}
+  .layout{display:block;padding:0;max-width:none}
+  .sheet-wrap{overflow:visible;height:auto!important}
+  .sheet{width:calc(100% - 2px)!important;border:0;padding:0;margin:0 1px 0 0;zoom:1!important;transform:none!important}
+  .sheet input,.sheet textarea{border-bottom:0!important;background:transparent!important}
+  .sheet input::placeholder,.sheet textarea::placeholder{color:transparent}
+  .screenonly{display:none!important}
+  .printonly{display:inline!important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar no-print">
+  <div class="brand">🧾 DV Enterprises · Invoice</div>
+  <div class="sp"></div>
+  <div class="who" id="who">—</div>
+  <button class="btn-out" id="btnLogout" type="button">Log out</button>
+</header>
+
+<div class="layout">
+  <!-- ───── saved bills + instant search ───── -->
+  <aside class="panel side no-print">
+    <h2>Saved bills</h2>
+    <div class="search"><input id="q" type="search" inputmode="search" placeholder="Search by Bill No. (e.g. 101)" autocomplete="off" aria-label="Search saved invoices by bill number"></div>
+    <ul class="list" id="list" aria-live="polite"></ul>
+  </aside>
+
+  <main class="main">
+    <div class="actions no-print">
+      <button class="btn primary" id="btnSave" type="button">💾 Save</button>
+      <button class="btn" id="btnPrint" type="button">🖨️ Print / PDF</button>
+      <button class="btn" id="btnAdd" type="button">➕ Add row</button>
+      <button class="btn" id="btnReset" type="button">↺ Reset</button>
+      <span class="sp"></span>
+      <button class="btn danger hidden" id="btnDelete" type="button">🗑️ Delete</button>
+    </div>
+    <div id="banner" class="banner new no-print">New invoice — enter the Bill No., date and materials. Tax and totals are calculated automatically.</div>
+
+    <div class="sheet-wrap" id="sheetWrap">
+      <div class="sheet" id="sheet">
+        <div class="title">TAX INVOICE</div>
+        <div class="frame">
+          <div class="hdr">
+            <div class="left">
+              <div class="company" id="coName">DV ENTERPRISES</div>
+              <div class="addr" id="coAddr">Garhpura, Begusarai</div>
+              <div class="gst"><span id="coGst"></span></div>
+            </div>
+            <div class="right">
+              <div class="f"><span class="lbl">Invoice No :-</span><input id="billNo" maxlength="40" placeholder="Bill No." autocomplete="off"></div>
+              <div class="f"><span class="lbl">Invoice Date :-</span>
+                <input id="invDate" type="date" class="screenonly"><span class="printonly" id="invDateTxt"></span></div>
+              <div class="f"><span class="lbl">Transportation Mode :-</span><input id="transport" maxlength="120"></div>
+              <div class="f"><span class="lbl">Vehicle No :-</span><input id="vehicle" maxlength="60"></div>
+            </div>
+          </div>
+          <div class="cust"><span style="white-space:nowrap">Customer Name :-</span><textarea id="customer" maxlength="255" placeholder="Customer name"></textarea></div>
+          <div class="blkrow">
+            <div><span>Block :-</span><input id="block" maxlength="120" placeholder="Block"></div>
+            <div><span>District :-</span><input id="district" maxlength="120" placeholder="District"></div>
+          </div>
+          <div class="gapline"></div>
+
+          <table class="items" id="items">
+            <colgroup>
+              <col style="width:4.8%"><col style="width:21.3%"><col style="width:10%"><col style="width:6.5%"><col style="width:10%">
+              <col style="width:8.4%"><col style="width:5.2%"><col style="width:9.6%"><col style="width:5%"><col style="width:9.6%"><col style="width:9.6%">
+            </colgroup>
+            <thead><tr>
+              <th>Sl.<br>No.</th><th>Particulars</th><th>Quantity</th><th>Unit</th><th>Rate</th>
+              <th>Taxable<br>Amount</th><th>CGST<br>%</th><th>CGST<br>Amount</th><th>SGST<br>%</th><th>SGST<br>Amount</th><th>Total<br>Amount</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+            <tfoot><tr>
+              <td colspan="2" style="text-align:center">Total :-</td><td></td><td></td><td></td>
+              <td id="tTax"></td><td></td><td id="tCgst"></td><td></td><td id="tSgst"></td><td id="tTot"></td>
+            </tr></tfoot>
+          </table>
+
+          <div class="bottom">
+            <div class="bank">
+              <div>Bank Details:-</div>
+              <div>Bank :- <span id="bkName"></span></div>
+              <div>Branch :- <span id="bkBranch"></span></div>
+              <div>IFSC :- <span id="bkIfsc"></span></div>
+              <div>A/C No. :- <span id="bkAcc"></span></div>
+              <div class="words">Amount in Word :- <span id="words"></span></div>
+            </div>
+            <div class="sum">
+              <div>Taxable Amount :-</div><div class="v" id="sTax"></div>
+              <div>CGST:-</div><div class="v" id="sCgst"></div>
+              <div>SGST:-</div><div class="v" id="sSgst"></div>
+              <div>Royalti &amp; SF :-</div><div class="v"></div>
+              <div>Total Amount :-</div><div class="v" id="sTot"></div>
+              <div>Round off :-</div><div class="v" id="sRound"></div>
+              <div class="tot l">INVOICE TOTAL</div><div class="v tot" id="sGrand"></div>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <div class="sign">
+            <div class="l"></div>
+            <div class="r"><div class="co" id="coSign">DV ENTERPRISES</div><div class="as">Authorized Signature</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ═════════ session hand-off from the unified login page ═════════ */
+var TOKEN_KEY = 'anmol_auth_token', LOGIN_KEY = 'dv_login_url';
+try{
+  var hp = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if(hp.get('t')) sessionStorage.setItem(TOKEN_KEY, hp.get('t'));
+  var back = hp.get('b');
+  if(back){ try{ var bu = new URL(back, location.href); if(bu.origin === location.origin) sessionStorage.setItem(LOGIN_KEY, bu.href); }catch(e){} }
+  if(location.hash) history.replaceState(null, '', location.pathname + location.search);   // never leave the token in the address bar
+}catch(e){}
+
+var API_BASE = window.SHDL_API_BASE || (location.pathname.replace(/\/+$/, '') === '/dv-invoice' ? '/api' : 'https://anmol-libmatrix.onrender.com/api');
+var TOKEN = ''; try{ TOKEN = sessionStorage.getItem(TOKEN_KEY) || ''; }catch(e){}
+
+function $(id){ return document.getElementById(id); }
+function goLogin(msg){
+  var url = '/';
+  try{ url = sessionStorage.getItem(LOGIN_KEY) || window.SHDL_HOME_URL || '/'; }catch(e){}
+  try{ if(msg) sessionStorage.setItem('anmol_logout_notice', msg); }catch(e){}
+  try{ var n = null; try{ n = sessionStorage.getItem('anmol_logout_notice'); }catch(e){} sessionStorage.clear(); localStorage.clear(); if(n) sessionStorage.setItem('anmol_logout_notice', n); }catch(e){}
+  location.replace(url);
+}
+async function api(path, opt){
+  opt = opt || {};
+  var h = { 'Content-Type':'application/json' }; if(TOKEN) h.Authorization = 'Bearer ' + TOKEN;
+  var res = await fetch(API_BASE + path, Object.assign({}, opt, { headers:h }));
+  var data = null; try{ data = await res.json(); }catch(e){}
+  if(res.status === 401){ goLogin((data && data.error) || 'Your session has expired. Please log in again.'); throw new Error('Session expired'); }
+  if(!res.ok){ var er = new Error((data && data.error) || ('Server error (' + res.status + ')')); er.status = res.status; er.code = data && data.code; throw er; }
+  return data;
+}
+if(!TOKEN){ goLogin('Please log in to open your invoices.'); return; }
+
+/* ═════════ calculation (mirrors the server — the server recalculates on save) ═════════ */
+function toP(x){ return Math.round(x * 100); }
+function fmt(n){ n = Number(n) || 0; var s = (Math.round(n * 100) / 100).toFixed(2).replace(/\.?0+$/, ''); return s === '-0' ? '0' : s; }
+function calc(items, cg, sg, roundOff){
+  var t=0,c=0,s=0;
+  var rows = items.map(function(it){
+    var tp = toP(it.qty * it.rate), cp = Math.round(tp * cg / 100), sp = Math.round(tp * sg / 100);
+    t+=tp; c+=cp; s+=sp;
+    return { taxable:tp/100, cgstAmt:cp/100, sgstAmt:sp/100, total:(tp+cp+sp)/100 };
+  });
+  var tot = t+c+s, grand = roundOff ? Math.round(tot/100)*100 : tot;
+  return { rows:rows, taxable:t/100, cgst:c/100, sgst:s/100, total:tot/100, roundOff:(grand-tot)/100, grand:grand/100 };
+}
+var ONES=['','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+var TENS=['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+function b100(n){ return n<20 ? ONES[n] : TENS[Math.floor(n/10)] + (n%10 ? ' '+ONES[n%10] : ''); }
+function b1000(n){ return (n>=100 ? ONES[Math.floor(n/100)]+' hundred'+(n%100?' ':'') : '') + (n%100 ? b100(n%100) : ''); }
+function words(a){
+  var pt = Math.round(Math.abs(a)*100), r = Math.floor(pt/100), p = pt%100;
+  if(!r && !p) return '';
+  var parts=[], cr=Math.floor(r/1e7); r%=1e7; var lk=Math.floor(r/1e5); r%=1e5; var th=Math.floor(r/1e3); r%=1e3;
+  if(cr) parts.push(b1000(cr)+' crore'); if(lk) parts.push(b100(lk)+' lakh'); if(th) parts.push(b100(th)+' thousand'); if(r) parts.push(b1000(r));
+  var w = parts.join(' '); if(p) w += (w?' and ':'') + b100(p) + ' paise'; return w;
+}
+window.__dvCalc = { calc:calc, words:words, fmt:fmt };   // exposed for testing only
+
+/* ═════════ state ═════════ */
+var settings = null;          // Super-Admin presets (current)
+var cfg = null;               // presets used to DISPLAY the sheet (snapshot of the saved bill when one is open)
+var editingId = null, loadedBillNo = '', dirty = false, listTimer = null, rowsData = [];
+
+function today(){ var d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dmy(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(iso||'') ? iso.slice(8)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4) : ''; }
+function toast(msg, err){
+  var t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ t.className = 'toast hidden'; }, err ? 6500 : 3500);
+}
+function setBanner(kind, html){ var b = $('banner'); b.className = 'banner no-print ' + kind; b.innerHTML = html; }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+/* ═════════ company / bank block (preset by the Super Admin — read-only here) ═════════ */
+function paintCompany(c){
+  $('coName').textContent = c.companyName; $('coSign').textContent = c.companyName; $('coAddr').textContent = c.address;
+  $('coGst').textContent = 'GSTIN -' + c.gstin + ' Mob :-' + c.mobile;
+  $('bkName').textContent = c.bankName; $('bkBranch').textContent = c.branch; $('bkIfsc').textContent = c.ifsc; $('bkAcc').textContent = c.accountNo;
+}
+
+/* ═════════ item rows ═════════ */
+function addRow(r, focus){
+  r = r || {};
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td class="sl"></td>' +
+    '<td><div class="pcell"><input class="f-name" placeholder="Material name" maxlength="200"><button type="button" class="rm no-print" title="Remove row" aria-label="Remove row">×</button></div></td>' +
+    '<td class="num"><input class="f-qty" type="number" inputmode="decimal" min="0" step="any"></td>' +
+    '<td><input class="f-unit" maxlength="20"></td>' +
+    '<td class="num"><input class="f-rate" type="number" inputmode="decimal" min="0" step="any"></td>' +
+    '<td class="c o-tax"></td><td class="c o-cp"></td><td class="c o-ca"></td><td class="c o-sp"></td><td class="c o-sa"></td><td class="c o-tot"></td>';
+  tr.querySelector('.f-name').value = r.name || '';
+  tr.querySelector('.f-qty').value = r.qty != null ? r.qty : '';
+  tr.querySelector('.f-unit').value = r.unit || '';
+  tr.querySelector('.f-rate').value = r.rate != null ? r.rate : '';
+  $('rows').insertBefore(tr, $('rows').querySelector('tr.fill'));
+  if(focus) tr.querySelector('.f-name').focus();
+  return tr;
+}
+function ensureFill(){
+  var tb = $('rows'), f = tb.querySelector('tr.fill');
+  if(!f){ f = document.createElement('tr'); f.className = 'fill'; f.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'; tb.appendChild(f); }
+  return f;
+}
+function readItems(){
+  return Array.prototype.map.call($('rows').querySelectorAll('tr:not(.fill)'), function(tr){
+    return { name: tr.querySelector('.f-name').value.trim(), qty: tr.querySelector('.f-qty').value, unit: tr.querySelector('.f-unit').value.trim(), rate: tr.querySelector('.f-rate').value };
+  });
+}
+function isBlankRow(it){ return !it.name && it.qty === '' && it.rate === ''; }
+
+/* ═════════ live recalculation ═════════ */
+function recalc(){
+  var trs = $('rows').querySelectorAll('tr:not(.fill)');
+  var raw = readItems(), live = [], idx = [];
+  raw.forEach(function(it, i){
+    var q = parseFloat(it.qty), r = parseFloat(it.rate);
+    if(isFinite(q) && q > 0 && isFinite(r) && r >= 0){ live.push({ qty:q, rate:r }); idx.push(i); }
+  });
+  var c = calc(live, Number(cfg.cgstPct), Number(cfg.sgstPct), !!cfg.roundOff);
+  var n = 0;
+  Array.prototype.forEach.call(trs, function(tr, i){
+    tr.querySelector('.sl').textContent = i + 1;
+    var k = idx.indexOf(i), o = k >= 0 ? c.rows[k] : null;
+    tr.querySelector('.o-tax').textContent = o ? fmt(o.taxable) : '';
+    tr.querySelector('.o-cp').textContent  = o ? fmt(cfg.cgstPct) : '';
+    tr.querySelector('.o-ca').textContent  = o ? fmt(o.cgstAmt) : '';
+    tr.querySelector('.o-sp').textContent  = o ? fmt(cfg.sgstPct) : '';
+    tr.querySelector('.o-sa').textContent  = o ? fmt(o.sgstAmt) : '';
+    tr.querySelector('.o-tot').textContent = o ? fmt(o.total) : '';
+    n++;
+  });
+  var has = live.length > 0;
+  $('tTax').textContent = has ? fmt(c.taxable) : ''; $('tCgst').textContent = has ? fmt(c.cgst) : ''; $('tSgst').textContent = has ? fmt(c.sgst) : ''; $('tTot').textContent = has ? fmt(c.total) : '';
+  $('sTax').textContent = has ? fmt(c.taxable) : ''; $('sCgst').textContent = has ? fmt(c.cgst) : ''; $('sSgst').textContent = has ? fmt(c.sgst) : '';
+  $('sTot').textContent = has ? fmt(c.total) : '';
+  $('sRound').textContent = has && c.roundOff !== 0 ? (c.roundOff > 0 ? '+' : '') + fmt(c.roundOff) : '';
+  $('sGrand').textContent = has ? fmt(c.grand) : '';
+  $('words').textContent = has ? words(c.grand) : '';
+  // keep the blank ruled area of the sheet a constant height so the page looks like the printed format
+  var fill = ensureFill(), want = Math.max(0, 250 - n * 24);
+  Array.prototype.forEach.call(fill.children, function(td){ td.style.height = want + 'px'; });
+  $('invDateTxt').textContent = dmy($('invDate').value);
+  refreshSaveLabel();
+}
+
+function refreshSaveLabel(){
+  var no = $('billNo').value.trim(), b = $('btnSave');
+  if(editingId){
+    var same = no.toLowerCase() === String(loadedBillNo).toLowerCase();
+    b.textContent = same ? '💾 Update Bill ' + loadedBillNo : '💾 Save as New Bill ' + (no || '…');
+  } else b.textContent = '💾 Save';
+}
+
+/* ═════════ new / reset / load ═════════ */
+function resetForm(){
+  editingId = null; loadedBillNo = ''; dirty = false; cfg = settings;
+  paintCompany(cfg);
+  $('billNo').value = ''; $('invDate').value = today(); $('transport').value = ''; $('vehicle').value = '';
+  $('customer').value = settings.defaultCustomer || ''; $('block').value = settings.defaultBlock || ''; $('district').value = settings.defaultDistrict || '';
+  $('rows').innerHTML = ''; addRow(); addRow(); addRow(); ensureFill();
+  $('btnDelete').classList.add('hidden');
+  setBanner('new', 'New invoice — enter the Bill No., date and materials. Tax and totals are calculated automatically.');
+  Array.prototype.forEach.call($('list').querySelectorAll('li.active'), function(li){ li.classList.remove('active'); });
+  recalc();
+}
+function confirmDiscard(){ return !dirty || confirm('You have unsaved changes on this invoice. Discard them?'); }
+
+function loadInvoice(inv){
+  editingId = inv.id; loadedBillNo = inv.billNo; dirty = false;
+  cfg = Object.assign({}, settings, inv.company || {});          // show the bill exactly as it was issued
+  paintCompany(cfg);
+  $('billNo').value = inv.billNo; $('invDate').value = inv.date; $('transport').value = inv.transport; $('vehicle').value = inv.vehicle;
+  $('customer').value = inv.customer; $('block').value = inv.block; $('district').value = inv.district;
+  $('rows').innerHTML = '';
+  (inv.items || []).forEach(function(it){ addRow(it); }); ensureFill();
+  $('btnDelete').classList.remove('hidden');
+  setBanner('edit', '✏️ Editing saved <b>Bill No. ' + esc(inv.billNo) + '</b>. Change the Bill No. (for example to a new number) and Save — a <b>new</b> bill is created and Bill ' + esc(inv.billNo) + ' stays exactly as it is.');
+  recalc(); markActive();
+}
+async function openInvoice(id){
+  if(!confirmDiscard()) return;
+  try{ loadInvoice(await api('/dv/invoices/' + id)); window.scrollTo({ top:0, behavior:'smooth' }); }
+  catch(e){ toast(e.message, true); }
+}
+
+/* ═════════ saved bills list + instant search ═════════ */
+function paintList(){
+  var ul = $('list');
+  if(!rowsData.length){ ul.innerHTML = '<li class="empty">' + ($('q').value.trim() ? 'No bill found for “' + esc($('q').value.trim()) + '”.' : 'No saved bills yet.') + '</li>'; return; }
+  ul.innerHTML = rowsData.map(function(r){
+    return '<li data-id="' + r.id + '" tabindex="0"><div class="r1"><span>Bill ' + esc(r.billNo) + '</span><span>₹' + fmt(r.grandTotal) + '</span></div>' +
+           '<div class="r2"><span>' + esc(r.customer || '—').slice(0, 34) + '</span><span>' + esc(dmy(r.date)) + '</span></div></li>';
+  }).join('');
+  markActive();
+}
+function markActive(){ Array.prototype.forEach.call($('list').querySelectorAll('li[data-id]'), function(li){ li.classList.toggle('active', String(li.dataset.id) === String(editingId)); }); }
+async function loadList(){
+  var q = $('q').value.trim();
+  try{ rowsData = await api('/dv/invoices?limit=100' + (q ? '&q=' + encodeURIComponent(q) : '')); }
+  catch(e){ if(e.message !== 'Session expired'){ $('list').innerHTML = '<li class="empty">' + esc(e.message) + '</li>'; } return; }
+  if($('q').value.trim() !== q) return;            // a newer keystroke is already pending
+  paintList();
+}
+$('q').addEventListener('input', function(){ clearTimeout(listTimer); listTimer = setTimeout(loadList, 160); });   // instant search as you type
+$('q').addEventListener('keydown', function(e){
+  if(e.key !== 'Enter') return; e.preventDefault();
+  var q = $('q').value.trim().toLowerCase();
+  var hit = rowsData.find(function(r){ return String(r.billNo).toLowerCase() === q; }) || (rowsData.length === 1 ? rowsData[0] : null);
+  if(hit) openInvoice(hit.id);
+});
+$('list').addEventListener('click', function(e){ var li = e.target.closest('li[data-id]'); if(li) openInvoice(li.dataset.id); });
+$('list').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ var li = e.target.closest('li[data-id]'); if(li) openInvoice(li.dataset.id); } });
+
+/* ═════════ save (create / update / fork) ═════════ */
+function collect(){
+  return { billNo:$('billNo').value.trim(), date:$('invDate').value, customer:$('customer').value.trim(), block:$('block').value.trim(), district:$('district').value.trim(),
+           transport:$('transport').value.trim(), vehicle:$('vehicle').value.trim(), items: readItems().filter(function(it){ return !isBlankRow(it); }) };
+}
+function validate(b){
+  if(!b.billNo) return 'Please enter the Bill No.';
+  if(!b.date) return 'Please choose the invoice date.';
+  if(!b.items.length) return 'Add at least one material row.';
+  for(var i=0;i<b.items.length;i++){
+    var it = b.items[i], n = i+1;
+    if(!it.name) return 'Row '+n+': enter the material name.';
+    if(!(parseFloat(it.qty) > 0)) return 'Row '+n+': enter a quantity greater than 0.';
+    if(!(parseFloat(it.rate) >= 0)) return 'Row '+n+': enter the rate.';
+  }
+  return '';
+}
+async function save(){
+  var b = collect(), err = validate(b);
+  if(err){ toast(err, true); return; }
+  var btn = $('btnSave'); btn.disabled = true;
+  try{
+    var r = editingId ? await api('/dv/invoices/' + editingId, { method:'PUT', body:JSON.stringify(b) })
+                      : await api('/dv/invoices',            { method:'POST', body:JSON.stringify(b) });
+    loadInvoice(await api('/dv/invoices/' + r.id));       // show what the server actually stored
+    if(r.mode === 'created' && r.previousBillNo) toast('Saved as new Bill ' + r.billNo + '. Bill ' + r.previousBillNo + ' is unchanged.');
+    else toast(r.mode === 'updated' ? 'Bill ' + r.billNo + ' updated.' : 'Bill ' + r.billNo + ' saved.');
+    loadList();
+  }catch(e){
+    if(e.code === 'GONE'){ editingId = null; loadedBillNo = ''; $('btnDelete').classList.add('hidden'); setBanner('err', 'That saved bill no longer exists. Press Save to store this as a new bill.'); refreshSaveLabel(); }
+    toast(e.message, true);
+  }finally{ btn.disabled = false; }
+}
+
+async function del(){
+  if(!editingId) return;
+  if(!confirm('Delete Bill No. ' + loadedBillNo + ' permanently? This cannot be undone.')) return;
+  try{ await api('/dv/invoices/' + editingId, { method:'DELETE' }); toast('Bill ' + loadedBillNo + ' deleted.'); dirty = false; resetForm(); loadList(); }
+  catch(e){ toast(e.message, true); }
+}
+
+function printSheet(){
+  var old = document.title, no = $('billNo').value.trim();
+  document.title = 'Invoice-' + (no || 'draft') + '-' + (cfg.companyName || 'DV').replace(/\s+/g, '_');
+  recalc(); window.print();
+  setTimeout(function(){ document.title = old; }, 600);
+}
+
+/* ═════════ wiring ═════════ */
+$('btnSave').addEventListener('click', save);
+$('btnDelete').addEventListener('click', del);
+$('btnPrint').addEventListener('click', printSheet);
+$('btnAdd').addEventListener('click', function(){ addRow(null, true); recalc(); dirty = true; });
+$('btnReset').addEventListener('click', function(){ if(confirmDiscard()) resetForm(); });
+$('btnLogout').addEventListener('click', function(){ if(confirm('Do you want to log out?')) goLogin(); });
+$('rows').addEventListener('click', function(e){
+  var b = e.target.closest('.rm'); if(!b) return;
+  var trs = $('rows').querySelectorAll('tr:not(.fill)');
+  if(trs.length <= 1){ var tr0 = trs[0]; Array.prototype.forEach.call(tr0.querySelectorAll('input'), function(i){ i.value = ''; }); }
+  else b.closest('tr').remove();
+  dirty = true; recalc();
+});
+$('rows').addEventListener('keydown', function(e){          // Enter on the last Rate cell → next row
+  if(e.key === 'Enter' && e.target.classList.contains('f-rate')){
+    e.preventDefault(); var tr = e.target.closest('tr'), next = tr.nextElementSibling;
+    if(next && !next.classList.contains('fill')) next.querySelector('.f-name').focus(); else { addRow(null, true); recalc(); }
+  }
+});
+$('sheet').addEventListener('input', function(){ dirty = true; recalc(); });
+$('invDate').addEventListener('change', function(){ dirty = true; recalc(); });
+window.addEventListener('beforeprint', recalc);
+window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue = ''; } });
+document.addEventListener('keydown', function(e){ if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's'){ e.preventDefault(); save(); } });
+
+/* scale the A4-wide sheet down on phones / narrow windows so the whole format stays visible */
+function fit(){
+  var wrap = $('sheetWrap'), s = $('sheet'); s.style.zoom = 1;
+  var w = wrap.clientWidth, k = Math.min(1, w / 794);
+  s.style.zoom = k < 1 ? k : 1;
+}
+window.addEventListener('resize', fit);
+
+/* 15-minute inactivity logout (same limit as the legacy portal) */
+(function(){
+  var IDLE = 15*60*1000, last = Date.now();
+  ['click','keydown','mousemove','touchstart','scroll'].forEach(function(ev){ document.addEventListener(ev, function(){ last = Date.now(); }, { passive:true }); });
+  setInterval(function(){ if(Date.now() - last > IDLE){ dirty = false; goLogin('⏰ You were logged out because of inactivity. Please log in again.'); } }, 15000);
+})();
+
+/* ═════════ boot ═════════ */
+(async function boot(){
+  try{
+    var me = await api('/dv/me');
+    settings = me.settings; cfg = settings;
+    $('who').textContent = '👤 ' + (me.user.name || me.user.userId) + ' · ' + me.user.userId;
+    resetForm(); fit(); loadList();
+  }catch(e){
+    if(e.code === 'NOT_OPTION_B'){ setBanner('err', e.message + ' Please log in again, or ask the administrator to enable Option B for your ID.'); }
+    else if(e.message !== 'Session expired'){ setBanner('err', 'Unable to open the invoice screen: ' + esc(e.message)); }
+  }
+})();
+})();
+</script>
+</body>
+</html>

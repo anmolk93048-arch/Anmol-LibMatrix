@@ -139,6 +139,10 @@ const routeMask = require('./route-mask').create({
     notFound: function (req, res) { res.status(404).type('html').send(INLINE_404); },
     getDbPage: function (slug, cb) { db.query('SELECT data FROM site_files WHERE LOWER(slug)=LOWER(?)', [slug], function (err, rows) { cb(err, rows && rows[0] && rows[0].data); }); }
 });
+// 🧾 OPTION B — DV Enterprises custom invoice. Fully separate module: no Option A (wallet / Razorpay) route is touched.
+const dvInvoice = require('./dv-invoice-module');
+dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAuthUser, asyncRoute: asyncRoute, noStore: noStore,
+                         escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); } });
 app.use(routeMask.guard);
 routeMask.mount(app);
 // 🔐 Session security (global logout on password change, idle timeout, change-password) + ♻️ Recycle Bin
@@ -179,7 +183,7 @@ const FRONTEND_DIR = (function () {
 const STATIC_DIRS = [PUBLIC_DIR, FRONTEND_DIR, __dirname].filter(Boolean);
 const ROOT_DENY_NAMES = new Set(['server.js', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
     'procfile', 'dockerfile', 'render.yaml', 'readme.md',
-    'security.js', 'route-mask.js', 'supabase-portals.js', 'account-security.js', 'recycle.js']); // 🔒 backend modules must never be downloadable
+    'security.js', 'route-mask.js', 'supabase-portals.js', 'account-security.js', 'recycle.js', 'dv-invoice-module.js']); // 🔒 backend modules must never be downloadable
 const ROOT_ALLOW_EXT = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.map', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
     '.woff', '.woff2', '.ttf', '.otf', '.eot', '.txt', '.xml', '.webmanifest', '.pdf']);
 const STATIC_OPTS = {
@@ -1407,6 +1411,7 @@ db.getConnection((err, connection) => {
     // ko catch karo" pattern se kaafi seedha/saaf hai, koi error-message
     // pattern-matching ki zaroorat nahi.
     const COLUMN_FIXES = [
+        ...require('./dv-invoice-module').SCHEMA_SQL,   // 🧾 Option B tables + material_users.invoice_version
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS address VARCHAR(500)",
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
@@ -1717,7 +1722,7 @@ async function materialDuplicate(mobile, aadhaarHash, excludeUserRowId, excludeR
     }
     return null;
 }
-const MU_PUBLIC_COLS = 'id, userid, name, village, address, email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", created_at';
+const MU_PUBLIC_COLS = 'id, userid, name, village, address, email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", invoice_version AS "invoiceVersion", created_at';
 function muRowOut(u) {
     const o = Object.assign({ _docId: String(u.id) }, u);
     o.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
@@ -1825,11 +1830,11 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
     const passwordHash = bcrypt.hashSync(plainPassword, 10);
     insertMaterialUserWithRetry(
         (userId) => ({
-            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc)
-                  VALUES (?,?,?,?,?,?,?,?, 'active', ?,?, ?,?,?)`,
+            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
+                  VALUES (?,?,?,?,?,?,?,?, 'active', ?,?, ?,?,?, ?)`,
             params: [userId, r.name, r.village, r.address, r.email, r.mobile, r.photo, passwordHash,
                 !!(req.body && req.body.invoicePaymentExempt), sanitizeInvoiceAmount(req.body && req.body.invoiceAmount),
-                r.aadhaar_last4 || null, r.aadhaar_hash || null, r.aadhaar_enc || null]
+                r.aadhaar_last4 || null, r.aadhaar_hash || null, r.aadhaar_enc || null, dvInvoice.normVersion(req.body && req.body.invoiceVersion)]
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
@@ -1972,10 +1977,10 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
     const status = b.status === 'blocked' ? 'blocked' : 'active';
     insertMaterialUserWithRetry(
         (userId) => ({
-            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             params: [userId, name, village, cleanText(b.address, 500) || null, cleanText(b.email, 255) || null, mobile, b.photo || null, passwordHash, status,
-                !!b.invoicePaymentExempt, sanitizeInvoiceAmount(b.invoiceAmount), aad.last4, aad.hash, aad.enc]
+                !!b.invoicePaymentExempt, sanitizeInvoiceAmount(b.invoiceAmount), aad.last4, aad.hash, aad.enc, dvInvoice.normVersion(b.invoiceVersion)]
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
@@ -2011,6 +2016,9 @@ app.put('/api/material/users/:id', requireRole('admin'), asyncRoute(async (req, 
     // per-user custom payment amount (invalid/empty → NULL = Global Default Amount)
     if (Object.prototype.hasOwnProperty.call(fields, 'invoiceAmount')) {
         sets.push('invoiceAmount = ?'); values.push(sanitizeInvoiceAmount(fields.invoiceAmount));
+    }
+    if (Object.prototype.hasOwnProperty.call(fields, 'invoiceVersion')) {   // 🧾 Option A / Option B mapping
+        sets.push('invoice_version = ?'); values.push(dvInvoice.normVersion(fields.invoiceVersion));
     }
     if (!sets.length) return res.status(400).json({ error: 'No update data was provided.' });
     values.push(req.params.id);
@@ -2080,7 +2088,9 @@ app.post('/api/material/login', (req, res) => {
                 const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
                 userSafe._docId = String(u.id);
                 userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
-                res.json({ user: userSafe, token });
+                userSafe.invoiceVersion = dvInvoice.normVersion(u.invoice_version);
+                delete userSafe.invoice_version;
+                res.json({ user: userSafe, token, invoiceVersion: userSafe.invoiceVersion, redirectTo: userSafe.invoiceVersion === 'B' ? '/dv-invoice' : null });
             } catch (innerErr) {
                 console.error('❌ /material/login inner error:', innerErr.message);
                 res.status(500).json({ error: 'An error occurred during login: ' + innerErr.message });
