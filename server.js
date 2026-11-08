@@ -4475,7 +4475,8 @@ const waTxt = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').repla
 const NOTICE_TEXT = {
     approved: 'your account has been approved. Please sign in with the password you chose at registration.',
     password_changed: 'your password was changed successfully. If this was not you, please contact the administrator immediately.',
-    hr_approved: 'your HRMS profile has been approved.'
+    hr_approved: 'your HRMS profile has been approved.',
+    username_recovered: 'as requested, your Anmol LibMatrix Username is shown below. Your password is never sent by message. Please do not share this message.'
 };
 async function notifyAccount(ev) {
     try {
@@ -4714,18 +4715,69 @@ async function resetPasswordHandler(req, res) {
         res.status(500).json({ error: 'Unable to reset the password right now. Please try again.' });
     }
 }
+// === FORGOT USERNAME (OTP) START ===
+// Step 1  POST <base>/forgot-username           {mobile}               -> OTP sent on WhatsApp to the REGISTERED number, returns {challengeId}
+// Step 2  POST <base>/forgot-username/verify    {challengeId, otp}     -> correct OTP -> ONLY the Username is sent to that WhatsApp number
+//         POST <base>/forgot-username/resend    {challengeId}
+// The response never contains the Username or any password. Unknown numbers get an identical-looking step-1 answer (no account enumeration).
+const FU_LEN = 8;
+const FU_ID_RE = /^[0-9a-f]{48}$/;
 async function forgotUsernameHandler(req, res) {
     try {
+        const b = req.body || {};
         if (hitRateLimit('fuid:' + (req.ip || ''), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-        const contact = String((req.body || {}).contact || (req.body || {}).mobile || (req.body || {}).email || '').trim();
-        if (!contact) return res.status(400).json({ error: 'Please provide your registered email or phone number to recover access.' });
+        const contact = String(b.mobile || b.contact || b.email || '').trim();
+        if (!contact || contact.length > 120) return res.status(400).json({ error: 'Please enter your registered mobile number.' });
+        if (hitRateLimit('fuc:' + lc(contact), 5, 30 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
         const acc = await findRecoveryAccount('', contact, recoveryScope(req));
-        if (acc && recoveryExtraOk(acc, req.body) && acc.mobile.length === 10 && await smsConfigured()) {
-            await sendSms(acc.mobile, 'Your Anmol LibMatrix User ID is ' + acc.userId + '.');
+        const real = !!(acc && recoveryExtraOk(acc, b) && acc.mobile.length === 10);
+        const id = crypto.randomBytes(24).toString('hex');
+        const m4 = (real ? acc.mobile : last10(contact)).slice(-4) || '0000';
+        if (real) {
+            const otp = String(crypto.randomInt(10 ** (FU_LEN - 1), 10 ** FU_LEN));
+            try { await sendOtpMessage(acc.mobile, otp); } catch (e) { return otpSendFailed(res, e, 'forgot-username'); }
+            await _otpStore.set('fu|' + id, { hash: sha(otp), userId: acc.userId, mobile: acc.mobile, name: acc.rec && (acc.rec.name || acc.rec.fullName) || '', sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         }
-        res.json({ success: true, message: 'If the details match a registered account, the User ID has been sent to the registered mobile number.' });
-    } catch (e) { res.status(502).json({ error: 'Unable to process the request right now. Please try again.' }); }
+        res.json({ success: true, challengeId: id, otpLength: FU_LEN, maskedMobile: 'XXXXXX' + m4, expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000),
+            message: 'If this number is registered, an ' + FU_LEN + '-digit OTP has been sent on WhatsApp to the number ending ' + m4 + '.' });
+    } catch (e) { console.error('[forgot-username] failed:', e && e.message); if (!res.headersSent) res.status(502).json({ error: 'Unable to process the request right now. Please try again.' }); }
 }
+async function forgotUsernameResendHandler(req, res) {
+    try {
+        const id = String((req.body || {}).challengeId || '');
+        if (!FU_ID_RE.test(id) || hitRateLimit('fur:' + id, 5, 30 * 60 * 1000) || hitRateLimit('fur:' + (req.ip || ''), 15, 30 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please start again later.' });
+        const ch = await _otpStore.get('fu|' + id);
+        if (!ch) return res.json({ success: true, resendInSec: Math.round(OTP_RESEND_MS / 1000) });   // unknown / expired id looks the same
+        if (Date.now() - ch.sentAt < OTP_RESEND_MS) return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - ch.sentAt)) / 1000) });
+        const otp = String(crypto.randomInt(10 ** (FU_LEN - 1), 10 ** FU_LEN));
+        try { await sendOtpMessage(ch.mobile, otp); } catch (e) { return otpSendFailed(res, e, 'forgot-username'); }
+        Object.assign(ch, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+        await _otpStore.set('fu|' + id, ch);
+        res.json({ success: true, resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+    } catch (e) { console.error('[forgot-username/resend] failed:', e && e.message); if (!res.headersSent) res.status(502).json({ error: 'Unable to resend the OTP right now. Please try again.' }); }
+}
+async function forgotUsernameVerifyHandler(req, res) {
+    try {
+        const b = req.body || {}, id = String(b.challengeId || ''), otp = String(b.otp || '').replace(/\D/g, '');
+        if (hitRateLimit('fuv:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+        const bad = () => res.status(400).json({ error: 'Invalid or expired OTP. Please try again.', code: 'INVALID_OTP' });
+        if (!FU_ID_RE.test(id) || otp.length !== FU_LEN) return bad();
+        const ch = await _otpStore.get('fu|' + id);
+        if (!ch || Date.now() > ch.exp) { await _otpStore.delete('fu|' + id); return bad(); }
+        ch.tries++;
+        if (ch.tries > OTP_MAX_TRIES) { await _otpStore.delete('fu|' + id); return res.status(400).json({ error: 'Too many incorrect attempts. Please start again.', code: 'OTP_LOCKED' }); }
+        await _otpStore.set('fu|' + id, ch);
+        if (!security.safeEqual(ch.hash, sha(otp))) return bad();
+        // OTP proven: send ONLY the Username (utility template, WhatsApp first, SMS fallback). Passwords are never read or sent here.
+        const via = await notifyAccount({ kind: 'username_recovered', mobile: ch.mobile, name: ch.name, userId: ch.userId });
+        if (!via) return res.status(424).json({ error: 'Your OTP was verified, but the message could not be delivered right now. Please try again shortly.', code: 'DELIVERY_FAILED' });
+        await _otpStore.delete('fu|' + id);
+        res.json({ success: true, channel: via, maskedMobile: 'XXXXXX' + ch.mobile.slice(-4),
+            message: 'Your Username has been sent to your registered ' + (via === 'whatsapp' ? 'WhatsApp number' : 'mobile number by SMS') + ' ending ' + ch.mobile.slice(-4) + '.' });
+    } catch (e) { console.error('[forgot-username/verify] failed:', e && e.message); if (!res.headersSent) res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' }); }
+}
+// === FORGOT USERNAME (OTP) END ===
 // Step 2 of the Super Admin "Reset Password" modal: checks the 4-digit OTP WITHOUT consuming it
 // (reset-password re-checks and consumes it when the new password is saved).
 async function verifyResetOtpHandler(req, res) {
@@ -4870,7 +4922,11 @@ app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
     app.post(base + '/forgot-password', forgotPasswordHandler);
     app.post(base + '/reset-password', resetPasswordHandler);
 });
-['/api/auth/forgot-username', '/api/material/forgot-user-id', '/api/material/forgot-username', '/api/agent/forgot-username'].forEach(p => app.post(p, forgotUsernameHandler));
+['/api/auth/forgot-username', '/api/material/forgot-user-id', '/api/material/forgot-username', '/api/agent/forgot-username'].forEach(p => {
+    app.post(p, forgotUsernameHandler);
+    app.post(p + '/resend', forgotUsernameResendHandler);
+    app.post(p + '/verify', forgotUsernameVerifyHandler);
+});
 
 // Official SMS with User ID, Password and Portal link (used when an agent is created or approved)
 function buildCredentialsMessage(name, userId, password, link, template) {
