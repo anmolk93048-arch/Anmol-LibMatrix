@@ -16849,6 +16849,21 @@ img,svg,video,canvas,iframe{max-width:100%}
 .modal-overlay,.bkp-modal-overlay{padding:12px;overflow:auto}
 .modal-box,.confirm-modal,.sa-modal,.bkp-modal{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow-y:auto;overflow-x:hidden}
 .modal-body{min-width:0;overflow-wrap:break-word}
+/* New / Edit Material User form: compact, aligned layout (scoped to this one modal; other modals are unchanged) */
+#modal-material-user .modal-box{max-width:560px}
+#modal-material-user .modal-box > .modal-header{padding:12px 18px}
+#modal-material-user .modal-box > .modal-body{padding:16px 18px}
+#modal-material-user .modal-box > .modal-footer{padding:10px 18px}
+#modal-material-user .adm-photo-upload{margin:0 0 12px;padding:10px}
+#modal-material-user .adm-photo-circle{width:56px;height:56px;font-size:22px;margin-bottom:6px}
+#modal-material-user .modal-body > .form-group{margin-bottom:10px!important}
+#modal-material-user .modal-body > .form-group > div{padding:8px 12px!important}
+#modal-material-user #mu-userid-preview{font-size:16px!important}
+#modal-material-user .modal-body .form-group{margin-bottom:10px}
+#modal-material-user .form-grid{grid-template-columns:1fr 1fr;gap:0 12px}
+#modal-material-user .form-grid > .form-group:nth-child(6){grid-column:1/-1}
+#modal-material-user .modal-body .alert{margin-bottom:10px}
+@media (max-width:640px){#modal-material-user .form-grid{grid-template-columns:1fr}#modal-material-user .modal-box > .modal-body{padding:14px}}
 
 /* 6b ─ inline-styled multi-column forms/grids (many pages use style="display:grid;grid-template-columns:…") collapse to what fits */
 @media(max-width:700px){

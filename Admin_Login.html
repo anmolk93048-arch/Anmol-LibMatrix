@@ -2200,6 +2200,38 @@ html,body,#admin-app{width:100%;min-width:0;}
 #l-box .otp-trust{display:flex;align-items:flex-start;gap:8px;margin:10px 0 2px;font-size:12px;line-height:1.45;color:var(--login-muted,#557493);cursor:pointer}
 #l-box .otp-trust input{margin-top:2px;flex:0 0 auto;width:15px;height:15px;accent-color:#0d63c8}
 #l-box .otp-trust small{display:block;font-size:10.5px;opacity:.85}
+/* Recover Username: stepper, method cards, OTP boxes, success view */
+#alm-recovery-modal #alm-username-panel .alm-recovery-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:2px 0 18px;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step{position:relative;flex-direction:column;justify-content:flex-start;align-items:center;gap:6px;padding:0 4px;border:0;background:none;font-size:11.5px;font-weight:700;line-height:1.3;text-align:center;color:#6b8199;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step::before{content:"";position:absolute;top:13px;left:calc(-50% + 18px);right:calc(50% + 18px);height:2px;background:#d5e2ef;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step:first-child::before{display:none;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step.active::before,#alm-recovery-modal #alm-username-panel .alm-recovery-step.done::before{background:#1a7f4b;}
+#alm-recovery-modal #alm-username-panel .alm-step-no{position:relative;z-index:1;width:26px;height:26px;flex:0 0 26px;font-size:12px;font-weight:800;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step.active{color:#0f5fb0;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step.active .alm-step-no{background:#1a73d9;color:#fff;box-shadow:0 0 0 4px rgba(26,115,217,.15);}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step.done{color:#1a7f4b;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-step.done .alm-step-no{background:#1a7f4b;color:#fff;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-method{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:3px;min-height:0;padding:11px 12px;text-align:left;white-space:normal;line-height:1.3;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-method .m-t{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-method .m-t i{font-style:normal;font-size:16px;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-method small{font-size:10.5px;font-weight:600;color:#6b8199;}
+#alm-recovery-modal #alm-username-panel .alm-recovery-intro{font-size:12px;color:#40617f;}
+.alm-un-otp{display:flex;gap:6px;justify-content:center;margin:4px 0 12px;}
+.alm-un-otp input{flex:1;min-width:0;max-width:42px;height:48px;padding:0;text-align:center;font:800 20px 'Nunito',Arial,sans-serif;color:#13355c;background:#f8fbff;border:1.5px solid #cbdced;border-radius:9px;box-sizing:border-box;transition:border-color .15s,box-shadow .15s;}
+.alm-un-otp input:focus{outline:none;border-color:#2376cf;box-shadow:0 0 0 3px rgba(35,118,207,.15);background:#fff;}
+.alm-un-otp input.f{border-color:#2376cf;background:#fff;}
+.alm-un-bar{height:3px;border-radius:2px;background:#e1eaf4;overflow:hidden;}
+.alm-un-bar i{display:block;height:100%;background:#2376cf;transform-origin:left;transition:transform 1s linear;}
+.alm-un-row{display:flex;justify-content:space-between;align-items:center;margin:7px 0 12px;font-size:11.5px;color:#557493;}
+.alm-un-link{background:none;border:0;padding:4px 0;font:700 11.5px 'Nunito',Arial,sans-serif;color:#1766b8;text-decoration:underline;cursor:pointer;}
+.alm-un-link:disabled{color:#8a9db2;text-decoration:none;cursor:default;}
+.alm-un-back{display:block;margin:10px auto 0;}
+.alm-un-done{text-align:center;padding:4px 0 2px;}
+.alm-un-done h3{margin:8px 0 6px;font-size:17px;color:#166534;}
+.alm-un-done p{margin:0 0 10px;font-size:12px;line-height:1.6;color:#40617f;}
+.alm-un-done .alm-recovery-primary{margin-top:6px;}
+@media(max-width:420px){.alm-un-otp{gap:4px}.alm-un-otp input{height:44px;font-size:18px}#alm-recovery-modal #alm-username-panel .alm-recovery-step{font-size:10.5px}}
+@media(prefers-reduced-motion:reduce){.alm-un-bar i{transition:none}}
 </style>
 
 <style id="remove-login-brand-logos">
@@ -2584,31 +2616,47 @@ resume();
     </header>
     <div class="alm-recovery-body">
       <div id="alm-username-panel">
-        <p class="alm-recovery-intro">अपना registered Email ID <strong>या</strong> Mobile Number चुनें। दोनों में से किसी एक के माध्यम से account identity verify करके Username retrieval आगे बढ़ेगा।</p>
-        <div class="alm-recovery-steps" aria-label="Username recovery steps">
-          <div class="alm-recovery-step active"><span class="alm-step-no">1</span><span>Choose Method</span></div>
-          <div class="alm-recovery-step"><span class="alm-step-no">2</span><span>Verify Identity</span></div>
-          <div class="alm-recovery-step"><span class="alm-step-no">3</span><span>Get Username</span></div>
-        </div>
-        <p class="alm-required-note"><span class="alm-required-star" aria-hidden="true">*</span> स्टार (*) वाले फ़ील्ड भरना अनिवार्य है।</p>
-        <form id="alm-username-form" autocomplete="on">
-          <div class="alm-recovery-field">
-            <span class="alm-recovery-label required-label">Select Verification Method</span>
-            <div class="alm-recovery-method-switch" role="group" aria-label="Choose email or mobile verification">
-              <button class="alm-recovery-method active" id="alm-username-email-method" type="button" aria-pressed="true" onclick="SET_USERNAME_RECOVERY_METHOD('email')"><span aria-hidden="true">✉</span> Registered Email ID</button>
-              <button class="alm-recovery-method" id="alm-username-mobile-method" type="button" aria-pressed="false" onclick="SET_USERNAME_RECOVERY_METHOD('mobile')"><span aria-hidden="true">☎</span> Mobile Number</button>
-            </div>
-          </div>
-          <div class="alm-recovery-field">
-            <label class="alm-recovery-label" id="alm-username-contact-label" for="alm-username-contact">Registered Email ID</label>
-            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" id="alm-username-contact-icon" aria-hidden="true">✉</span><input class="alm-recovery-input" id="alm-username-contact" name="contact" type="email" placeholder="Enter your registered email address" autocomplete="email" required></div>
-            <p class="alm-recovery-hint" id="alm-username-contact-hint">अपने Super Admin Account से जुड़ा हुआ registered Email ID दर्ज करें।</p>
-          </div>
-          <div class="alm-recovery-alert" id="alm-username-alert" role="status" aria-live="polite"></div>
-          <button class="alm-recovery-primary" type="submit">Verify &amp; Retrieve Username&nbsp; →</button>
-        </form>
-      </div>
-      <div id="alm-password-panel" hidden>
+<p class="alm-recovery-intro" id="alm-username-intro">Recover your Super Admin username in three quick steps. To confirm it is you, we will send a one-time password (OTP) on WhatsApp to the mobile number registered with your account.</p>
+<div class="alm-recovery-steps" id="alm-username-steps" aria-label="Username recovery progress">
+<div class="alm-recovery-step active"><span class="alm-step-no">1</span><span>Choose Method</span></div>
+<div class="alm-recovery-step"><span class="alm-step-no">2</span><span>Verify Identity</span></div>
+<div class="alm-recovery-step"><span class="alm-step-no">3</span><span>Get Username</span></div>
+</div>
+<form id="alm-username-form" autocomplete="on" novalidate>
+<div class="alm-recovery-field">
+<span class="alm-recovery-label required-label" id="alm-method-legend">Select verification method</span>
+<div class="alm-recovery-method-switch" role="group" aria-labelledby="alm-method-legend">
+<button class="alm-recovery-method active" id="alm-username-mobile-method" type="button" aria-pressed="true" onclick="SET_USERNAME_RECOVERY_METHOD('mobile')"><strong class="m-t"><i aria-hidden="true">&#128241;</i>Registered Mobile Number</strong><small>Use the 10-digit number on record</small></button>
+<button class="alm-recovery-method" id="alm-username-email-method" type="button" aria-pressed="false" onclick="SET_USERNAME_RECOVERY_METHOD('email')"><strong class="m-t"><i aria-hidden="true">&#9993;</i>Registered Email ID</strong><small>Use the email address on record</small></button>
+</div>
+</div>
+<div class="alm-recovery-field">
+<label class="alm-recovery-label" id="alm-username-contact-label" for="alm-username-contact">Registered Mobile Number</label>
+<div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" id="alm-username-contact-icon" aria-hidden="true">&#128241;</span><input class="alm-recovery-input" id="alm-username-contact" name="contact" type="tel" inputmode="numeric" maxlength="10" placeholder="Enter 10-digit mobile number" autocomplete="tel" required></div>
+<p class="alm-recovery-hint" id="alm-username-contact-hint">Enter the mobile number registered with your Super Admin account.</p>
+</div>
+<div class="alm-recovery-alert" id="alm-username-alert" role="status" aria-live="polite"></div>
+<button class="alm-recovery-primary" id="alm-username-submit" type="submit">Send OTP on WhatsApp</button>
+<p class="alm-recovery-security-note">For your security the OTP is always sent to the mobile number on record, whichever method you choose.</p>
+</form>
+<form id="alm-un-otp-form" autocomplete="off" hidden novalidate>
+<p class="alm-recovery-intro" id="alm-un-otp-text">Enter the OTP sent on WhatsApp.</p>
+<div class="alm-un-otp" id="alm-un-otp" role="group" aria-label="One-time password"></div>
+<div class="alm-un-bar" aria-hidden="true"><i id="alm-un-bar"></i></div>
+<div class="alm-un-row"><span id="alm-un-clock"></span><button type="button" class="alm-un-link" id="alm-un-resend" disabled>Resend OTP</button></div>
+<div class="alm-recovery-alert" id="alm-un-otp-alert" role="status" aria-live="polite"></div>
+<button class="alm-recovery-primary" id="alm-un-verify" type="submit">Verify OTP</button>
+<button type="button" class="alm-un-link alm-un-back" id="alm-un-back">&larr; Change verification method</button>
+</form>
+<div id="alm-un-done" class="alm-un-done" hidden>
+<svg viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><circle cx="28" cy="28" r="26" fill="#effaf3" stroke="#1a7f4b" stroke-width="2"/><path d="M16 29l8 8 16-17" fill="none" stroke="#1a7f4b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<h3>Username sent</h3>
+<p id="alm-un-done-text" role="status"></p>
+<p class="alm-recovery-security-note">Your password is never sent by message. If you also need to reset it, use &ldquo;Forgot Password&rdquo; on the sign-in page.</p>
+<button type="button" class="alm-recovery-primary" onclick="CLOSE_SUPER_RECOVERY()">Back to sign in</button>
+</div>
+</div>
+<div id="alm-password-panel" hidden>
         <p class="alm-recovery-intro" id="alm-password-intro">Password reset से पहले आपके Super Admin Account की ownership verify की जाएगी। <strong>User ID और Registered Mobile Number अनिवार्य हैं</strong>; Email ID देना वैकल्पिक है।</p>
         <div class="alm-recovery-steps" id="alm-password-steps" aria-label="Password reset steps">
           <div class="alm-recovery-step active"><span class="alm-step-no">1</span><span>Account Details</span></div>
@@ -2676,31 +2724,28 @@ resume();
     if(target)target.style.display='none';if(fallback)fallback.style.display='inline';
   }
   window.SET_USERNAME_RECOVERY_METHOD=function(method){
-    var input=byId('alm-username-contact'),label=byId('alm-username-contact-label'),hint=byId('alm-username-contact-hint'),icon=byId('alm-username-contact-icon');
-    var email=method!=='mobile';
-    byId('alm-username-email-method').classList.toggle('active',email);
-    byId('alm-username-email-method').setAttribute('aria-pressed',String(email));
-    byId('alm-username-mobile-method').classList.toggle('active',!email);
-    byId('alm-username-mobile-method').setAttribute('aria-pressed',String(!email));
-    input.value='';input.type=email?'email':'tel';input.inputMode=email?'email':'numeric';
-    input.maxLength=email?254:10;input.pattern=email?'':'[0-9]{10}';input.autocomplete=email?'email':'tel';
-    input.placeholder=email?'Enter your registered email address':'Enter 10-digit registered mobile number';
-    label.textContent=email?'Registered Email ID':'Registered Mobile Number';
-    hint.textContent=email?'अपने Super Admin Account से जुड़ा हुआ registered Email ID दर्ज करें।':'अपने Super Admin Account में registered 10-digit mobile number दर्ज करें।';
-    icon.textContent=email?'✉':'☎';
-  };
+var input=byId('alm-username-contact'),label=byId('alm-username-contact-label'),hint=byId('alm-username-contact-hint'),icon=byId('alm-username-contact-icon');
+var email=method==='email';
+byId('alm-username-email-method').classList.toggle('active',email);byId('alm-username-email-method').setAttribute('aria-pressed',String(email));
+byId('alm-username-mobile-method').classList.toggle('active',!email);byId('alm-username-mobile-method').setAttribute('aria-pressed',String(!email));
+input.value='';input.type=email?'email':'tel';input.inputMode=email?'email':'numeric';input.maxLength=email?254:10;input.autocomplete=email?'email':'tel';
+input.placeholder=email?'Enter your registered email address':'Enter 10-digit mobile number';
+label.textContent=email?'Registered Email ID':'Registered Mobile Number';
+hint.textContent=email?'Enter the email address registered with your Super Admin account.':'Enter the mobile number registered with your Super Admin account.';
+icon.innerHTML=email?'&#9993;':'&#128241;';
+byId('alm-username-alert').className='alm-recovery-alert';
+};
   window.OPEN_SUPER_RECOVERY=function(mode){
     if(!modal)return;
     var isUsername=mode==='username';
     byId('alm-username-panel').hidden=!isUsername;
     byId('alm-password-panel').hidden=isUsername;
     byId('alm-recovery-title').textContent=isUsername?'Recover Username':'Reset Super Admin Password';
-    byId('alm-recovery-subtitle').textContent=isUsername?'Verify with your registered Email ID or Mobile Number.':'Verify your User ID and Mobile Number. Email ID is optional.';
+    byId('alm-recovery-subtitle').textContent=isUsername?'Confirm your identity to receive your username on WhatsApp.':'Verify your User ID and Mobile Number. Email ID is optional.';
     byId('alm-username-alert').className='alm-recovery-alert';
     byId('alm-password-alert').className='alm-recovery-alert';
     if(isUsername){
-      window.SET_USERNAME_RECOVERY_METHOD('email');
-      byId('alm-username-form').reset();
+      window.ALM_UN_FLOW.reset();
     }else{
       byId('alm-password-form').reset();window.ALM_RESET_FLOW.reset();
       /* Ask for User ID explicitly; the login field can contain either username or email. */
@@ -2711,13 +2756,72 @@ resume();
     setTimeout(function(){var focus=byId(isUsername?'alm-username-contact':'alm-password-user-id');if(focus)focus.focus();},60);
   };
   window.CLOSE_SUPER_RECOVERY=function(){
-    if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.style.overflow='';if(window.ALM_RESET_FLOW)window.ALM_RESET_FLOW.reset();
+    if(!modal)return;if(window.ALM_UN_FLOW)window.ALM_UN_FLOW.reset();modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.style.overflow='';if(window.ALM_RESET_FLOW)window.ALM_RESET_FLOW.reset();
   };
-  byId('alm-username-form').addEventListener('submit',function(e){
-    e.preventDefault();if(!this.reportValidity())return;
-    var method=byId('alm-username-contact').type==='email'?'registered Email ID':'registered Mobile Number';
-    alertBox('alm-username-alert','Details का format सही है। अब '+method+' को account record से match करके OTP/verification भेजने के लिए backend recovery API आवश्यक है। अभी कोई verification या username retrieval नहीं किया गया है।');
-  });
+  /* Recover Username: 1 Choose Method -> 2 Verify Identity (OTP on WhatsApp) -> 3 Get Username (sent to WhatsApp). The username is never shown on screen. */
+window.ALM_UN_FLOW=(function(){
+var API=window.ALM_RESOLVE_API?window.ALM_RESOLVE_API():String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
+var P={1:'alm-username-form',2:'alm-un-otp-form',3:'alm-un-done'},ch=null,cells=[],timer=null,busy=false;
+function say(id,msg,kind){var el=byId(id);if(!el)return;el.textContent=msg||'';el.className=msg?'alm-recovery-alert show '+(kind||'info'):'alm-recovery-alert';}
+function post(path,body){return fetch(API+'/auth/forgot-username'+path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok&&d.success!==false,d:d};});});}
+function show(n){
+Object.keys(P).forEach(function(k){byId(P[k]).hidden=Number(k)!==n;});
+var st=byId('alm-username-steps').children;
+for(var i=0;i<st.length;i++){st[i].classList.toggle('active',i===n-1);st[i].classList.toggle('done',i<n-1);st[i].firstChild.textContent=i<n-1?'\u2713':String(i+1);}
+byId('alm-username-intro').hidden=n!==1;
+var f=n===1?byId('alm-username-contact'):n===2?cells[0]:null;if(f)setTimeout(function(){f.focus();},60);
+}
+function tick(sec){
+var total=Math.max(sec,1),b=byId('alm-un-resend'),bar=byId('alm-un-bar'),clk=byId('alm-un-clock');clearTimeout(timer);
+bar.style.transition='none';bar.style.transform='scaleX(1)';void bar.offsetWidth;bar.style.transition='';
+(function t(){bar.style.transform='scaleX('+(Math.max(sec-1,0)/total)+')';b.disabled=sec>0;clk.textContent=sec>0?'Resend OTP in '+sec+' seconds':'You can now request a new OTP';if(sec-->0)timer=setTimeout(t,1000);})();
+}
+function boxes(n){
+var row=byId('alm-un-otp');row.innerHTML='';cells=[];
+for(var i=0;i<n;i++)(function(i){
+var c=document.createElement('input');c.type='text';c.inputMode='numeric';c.maxLength=1;c.autocomplete=i?'off':'one-time-code';c.setAttribute('aria-label','OTP digit '+(i+1)+' of '+n);
+c.oninput=function(){c.value=c.value.replace(/\D/g,'').slice(-1);c.classList.toggle('f',!!c.value);if(c.value&&cells[i+1])cells[i+1].focus();};
+c.onkeydown=function(e){if(e.key==='Backspace'&&!c.value&&cells[i-1])cells[i-1].focus();};
+c.onpaste=function(e){var d=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,n);if(!d)return;e.preventDefault();cells.forEach(function(x,k){x.value=d[k]||'';x.classList.toggle('f',!!x.value);});cells[Math.min(d.length,n-1)].focus();};
+row.appendChild(c);cells.push(c);
+})(i);
+}
+function lock(btn,on,txt){busy=on;if(!btn)return;if(on){btn.dataset.t=btn.textContent;btn.textContent=txt;}else if(btn.dataset.t){btn.textContent=btn.dataset.t;}btn.disabled=on;}
+function reset(){clearTimeout(timer);ch=null;cells=[];busy=false;byId('alm-username-form').reset();window.SET_USERNAME_RECOVERY_METHOD('mobile');say('alm-un-otp-alert','');show(1);}
+byId('alm-username-form').addEventListener('submit',function(e){
+e.preventDefault();if(busy)return;
+var mobile=byId('alm-username-contact').type!=='email',v=byId('alm-username-contact').value.trim(),btn=byId('alm-username-submit');
+if(mobile&&!/^\d{10}$/.test(v))return say('alm-username-alert','Enter a valid 10-digit registered mobile number.','err');
+if(!mobile&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))return say('alm-username-alert','Enter a valid registered email address.','err');
+say('alm-username-alert','');lock(btn,true,'Sending OTP\u2026');
+post('',{contact:v,portal:'admin'}).then(function(x){
+lock(btn,false);if(!x.ok)return say('alm-username-alert',x.d.error||'Unable to send the OTP right now. Please try again.','err');
+ch=x.d;boxes(ch.otpLength||8);
+byId('alm-un-otp-text').textContent='Enter the '+(ch.otpLength||8)+'-digit OTP sent on WhatsApp to the mobile number ending '+String(ch.maskedMobile||'').slice(-4)+'.';
+say('alm-un-otp-alert','');show(2);tick(ch.resendInSec||60);
+}).catch(function(){lock(btn,false);say('alm-username-alert','Unable to reach the server. Please check your connection and try again.','err');});
+});
+byId('alm-un-otp-form').addEventListener('submit',function(e){
+e.preventDefault();if(busy||!ch)return;var otp=cells.map(function(c){return c.value;}).join(''),btn=byId('alm-un-verify');
+if(otp.length!==cells.length)return say('alm-un-otp-alert','Enter all '+cells.length+' digits of your OTP.','err');
+say('alm-un-otp-alert','');lock(btn,true,'Verifying\u2026');
+post('/verify',{challengeId:ch.challengeId,otp:otp}).then(function(x){
+lock(btn,false);
+if(x.ok){clearTimeout(timer);byId('alm-un-done-text').textContent=x.d.message||'Your username has been sent to your registered WhatsApp number.';return show(3);}
+say('alm-un-otp-alert',x.d.error||'Invalid or expired OTP. Please try again.','err');
+if(/LOCKED/.test(x.d.code||'')){setTimeout(reset,1800);}else{cells.forEach(function(c){c.value='';c.classList.remove('f');});if(cells[0])cells[0].focus();}
+}).catch(function(){lock(btn,false);say('alm-un-otp-alert','Unable to reach the server. Please try again.','err');});
+});
+byId('alm-un-resend').addEventListener('click',function(){
+if(!ch||busy)return;say('alm-un-otp-alert','');
+post('/resend',{challengeId:ch.challengeId}).then(function(x){
+if(x.ok){say('alm-un-otp-alert','A new OTP has been sent on WhatsApp.','ok');tick(x.d.resendInSec||60);}
+else{say('alm-un-otp-alert',x.d.error||'Unable to resend the OTP right now.','err');if(x.d.resendInSec)tick(x.d.resendInSec);}
+});
+});
+byId('alm-un-back').addEventListener('click',reset);
+return {reset:reset};
+})();
   /* ── Super Admin password reset: 1 Account Details → 2 OTP Verification → 3 Set New Password ── */
   window.ALM_RESET_FLOW=(function(){
     var API=window.ALM_RESOLVE_API?window.ALM_RESOLVE_API():String(window.SHDL_API_BASE||'/api').replace(/\/$/,'');
