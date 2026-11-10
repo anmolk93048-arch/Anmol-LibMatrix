@@ -8,6 +8,7 @@ try { require('dotenv').config(); } catch (e) { console.log('dotenv not installe
     alias('SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
     alias('SMS_API_KEY', 'APP2SMS_API_KEY');
     alias('PORTAL_URL', 'FRONTEND_URL');
+    alias('BASE_URL', 'PORTAL_URL', 'PUBLIC_URL');   // 🔗 optional manual override for the site's public link (normally NOT needed — the live domain is auto-detected)
 })();
 const express = require('express');
 const { Pool } = require('pg');
@@ -77,11 +78,8 @@ app.set('trust proxy', 1);
 // NOTE: agar future mein koi custom domain jodna ho, ya Netlify deploy-preview
 // URLs (jaise https://deploy-preview-3--digitallibraryanmollive.netlify.app)
 // bhi allow karne hon, to bas neeche is array mein add kar dein.
-const ALLOWED_ORIGINS = [
-    'https://digitallibraryanmollive.netlify.app',
-    'https://wondrous-jelly-3ffe47.netlify.app',
-    'https://anmol-libmatrix.onrender.com',
-]
+const ALLOWED_ORIGINS = []   // 🔗 no domain is hardcoded any more — everything comes from Environment (BASE_URL, FRONTEND_URL, NETLIFY_URL, EXTRA_CORS_ORIGINS, Vercel's own VERCEL_* vars)
+    .concat([process.env.BASE_URL, process.env.PUBLIC_URL].filter(Boolean).map(function (x) { return String(x).trim().replace(/\/$/, ''); }))
     // 🆕 Render ka apna (custom) domain + koi extra origin — Environment se, code badle bina:
     //   EXTRA_CORS_ORIGINS="https://mydomain.com,https://www.mydomain.com"
     
@@ -93,7 +91,7 @@ const ALLOWED_ORIGINS = [
     .concat(String(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(function (x) { return x.trim().replace(/\/$/, ''); }).filter(Boolean));
 // 🆕 Netlify deploy-preview / branch-deploy URLs (sirf isi site ke: <x>--digitallibraryanmollive.netlify.app)
 const NETLIFY_ANY_RE = /^https:\/\/[a-z0-9-]+\.netlify\.app$/;
-const NETLIFY_PREVIEW_RE = /^https:\/\/[a-z0-9-]+--digitallibraryanmollive\.netlify\.app$/;
+const NETLIFY_PREVIEW_RE = process.env.NETLIFY_SITE_NAME ? new RegExp('^https://[a-z0-9-]+--' + String(process.env.NETLIFY_SITE_NAME).replace(/[^a-z0-9-]/gi, '') + '\\.netlify\\.app$') : /$^/;   // optional: set NETLIFY_SITE_NAME to allow that site's deploy previews
 // 🆕 Local development (sirf production ke bahar)
 const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 // 🔒 CORS: STRICT by default. Only the allow-list above (+ FRONTEND_URL / NETLIFY_URL / EXTRA_CORS_ORIGINS and this
@@ -152,7 +150,7 @@ dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAut
 // ▲ RENDER-URL REWRITE (safety net): any page/script served by THIS server that still contains the old Render origin
 //   (theme.js, config.js, portal pages ...) gets it replaced by the current site's own origin → every API call becomes
 //   same-origin (no CORS, no "Failed to fetch"). Fix the source files too; this keeps old copies working meanwhile.
-const OLD_RENDER_ORIGIN_RE = /https?:\/\/anmol-libmatrix\.onrender\.com/gi;
+const OLD_RENDER_ORIGIN_RE = /https?:\/\/[a-z0-9-]+\.onrender\.com/gi;   // any old Render host (no single domain hardcoded)
 app.use(function (req, res, next) {
     if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/img/')) return next();
     const origWrite = res.write, origEnd = res.end, chunks = [];
@@ -2740,7 +2738,7 @@ function kvSetCore(table, key, value, res) {
                 // New account created / password set or reset by Super Admin, Admin or an Agent (admins / agents / staff / students):
                 // WhatsApp the User ID, password and portal link (SMS fallback, best effort, bounded to 9 s).
                 const t = new Promise(r => setTimeout(r, 9000));
-                return Promise.race([autoNotifyEntityCredentials(key, merged, prevList, process.env.PORTAL_URL || process.env.FRONTEND_URL || ''), t]).catch(() => {}).then(() => finishRaw(merged));
+                return Promise.race([autoNotifyEntityCredentials(key, merged, prevList, portalLink(req)), t]).catch(() => {}).then(() => finishRaw(merged));
             }
             finishRaw(merged);
         });
@@ -4577,23 +4575,39 @@ const _otpStore = {
     async delete(k) { await ensureOtpTable(); await dbq('DELETE FROM otp_codes WHERE "key" = ?', [k]); }
 };
 const lc = (v) => String(v == null ? '' : v).trim().toLowerCase();
-// 🔗 LIVE LINK — every WhatsApp / SMS that carries a portal link must point to the CURRENT site, never to the old Render / Netlify host.
-//    Order: PORTAL_URL / FRONTEND_URL / PUBLIC_URL (if not a stale host) → Vercel production domain → this request's own origin →
-//    the last live domain seen → this deployment's URL.  A link that already contains an old host is rewritten to the live one.
-const STALE_LINK_HOST_RE = /https?:\/\/[^\/\s"'<>]*\.(?:onrender\.com|netlify\.app)(?=[\/:?#\s"'<>]|$)/gi;
+// 🔗 LIVE LINK — every WhatsApp / SMS / notification that carries a portal link points to the CURRENT live domain.
+//    Nothing is hardcoded. Detection order:
+//      1) BASE_URL (or PORTAL_URL / FRONTEND_URL / PUBLIC_URL) — only if YOU set it as a manual override
+//      2) the domain of the request being served right now (x-forwarded-host / Host — works automatically on Vercel)
+//      3) the last live domain seen by this server instance
+//      4) Vercel's own env: VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL
+//    Change the domain tomorrow → nothing to edit (just remove/update BASE_URL if you had set it).
+//    Any old host (onrender.com / netlify.app / *.vercel.app) found inside a stored link or SMS template is rewritten to the live one.
+const STALE_LINK_HOST_RE = /https?:\/\/[^\/\s"'<>]*\.(?:onrender\.com|netlify\.app|vercel\.app)(?=[\/:?#\s"'<>]|$)/gi;
 let _lastLiveOrigin = '';
+function _isLocalHost(h) { return /^(localhost|127\.|0\.0\.0\.0|\[::1\])/i.test(h); }
+function requestOrigin(req) {   // origin of THIS request (never throws, '' if unknown or local)
+    try {
+        if (!req || typeof req.get !== 'function') return '';
+        const h = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+        if (!h || _isLocalHost(h)) return '';
+        return 'https://' + h;
+    } catch (e) { return ''; }
+}
 app.use(function (req, res, next) {
     try {
-        const h = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-        if (h && !/^(localhost|127\.|0\.0\.0\.0)/i.test(h) && !/\.(onrender\.com|netlify\.app)$/i.test(h)) { const o = 'https://' + h; if (isOriginAllowed(o)) _lastLiveOrigin = o; }
+        const o = requestOrigin(req);
+        if (o && !/\.onrender\.com$/i.test(o)) _lastLiveOrigin = o;
     } catch (e) { /* never block a request */ }
     next();
 });
 function liveBaseUrl(req) {
     const clean = (u) => String(u || '').trim().replace(/\/+$/, '');
-    const good = (u) => /^https?:\/\/[^\s]+$/i.test(u) && !/\.(onrender\.com|netlify\.app)(?=[\/:?#]|$)/i.test(u);
-    const list = [process.env.PORTAL_URL, process.env.FRONTEND_URL, process.env.PUBLIC_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL && 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL,
-        req && req.headers && req.headers.origin && isOriginAllowed(req.headers.origin) ? req.headers.origin : '', _lastLiveOrigin, process.env.VERCEL_URL && 'https://' + process.env.VERCEL_URL];
+    const good = (u) => /^https?:\/\/[^\s]+$/i.test(u);
+    const list = [process.env.BASE_URL, process.env.PORTAL_URL, process.env.FRONTEND_URL, process.env.PUBLIC_URL,
+        requestOrigin(req), _lastLiveOrigin,
+        process.env.VERCEL_PROJECT_PRODUCTION_URL && 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL,
+        process.env.VERCEL_URL && 'https://' + process.env.VERCEL_URL];
     for (const c of list) { const u = clean(c); if (u && good(u)) return u; }
     return '';
 }
@@ -8449,11 +8463,12 @@ app.use((err, req, res, next) => {
 //   yeh env var kisi wajah se na mile, to neeche wala fallback URL
 //   (ALLOWED_ORIGINS wala apna hi backend domain) use hota hai.
 // ══════════════════════════════════════════════════════════════════
-const SELF_PING_URL = process.env.RENDER_EXTERNAL_URL || 'https://anmol-libmatrix.onrender.com';
+const SELF_PING_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || '';   // no hardcoded fallback; empty → ping is skipped
 const SELF_PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minute (15 minute wali sleep-limit se kam)
 
 function selfPing() {
     try {
+        if (!SELF_PING_URL) return;   // nothing to ping (e.g. local / Vercel)
         const url = SELF_PING_URL.replace(/\/$/, '') + '/api/health';
         const lib = url.startsWith('https') ? require('https') : require('http');
         const req = lib.get(url, { timeout: 15000 }, (res) => {

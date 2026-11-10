@@ -679,7 +679,7 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
 // DEFAULT_LOGIN_OPTIONS mein bhi match honi chahiye (source of truth).
 // 🆕 CRITICAL FIX (Admin Panel sync never worked on Netlify): every live-sync
 // fetch() below used to call a RELATIVE path like '/api/site-data'. On
-// Netlify that resolves to https://digitallibraryanmollive.netlify.app/api/...
+// a static host that resolves to https://<your-static-host>/api/...
 // — Netlify is static hosting, it has NO /api routes, so every one of these
 // requests silently 404'd and the page only ever showed the hardcoded
 // defaults, no matter what was saved in the Admin Panel. The real backend
