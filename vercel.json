@@ -3,17 +3,18 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "*.html", "public/**", "frontend/**", "dist/**", "static/**",
+          "route-mask.js", "security.js", "supabase-portals.js", "account-security.js", "recycle.js", "dv-invoice-module.js",
+          "*.css", "*.js", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.ico", "*.webp", "*.avif",
+          "*.woff", "*.woff2", "*.ttf", "*.otf", "*.pdf", "*.txt", "*.xml", "*.webmanifest"
+        ]
+      }
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
-    }
+    { "src": "/(.*)", "dest": "server.js" }
   ]
 }

@@ -259,7 +259,19 @@ const FRONTEND_DIR = (function () {
     const p = path.join(__dirname, '..', 'frontend');
     try { return fs.statSync(p).isDirectory() ? p : null; } catch (e) { return null; }
 })();
-const STATIC_DIRS = [PUBLIC_DIR, FRONTEND_DIR, __dirname].filter(Boolean);
+// ▲ Vercel: __dirname is /var/task and only files listed in vercel.json "includeFiles" exist there. Look in the usual places
+//   (project root, process.cwd(), public/, frontend/, dist/ ...) so index.html and the login pages are found wherever they were bundled.
+const STATIC_DIRS = (function () {
+    const cands = [PUBLIC_DIR, FRONTEND_DIR, __dirname, process.cwd()];
+    ['public', 'frontend', 'dist', 'static', 'www', 'web', 'client'].forEach(function (d) {
+        cands.push(path.join(__dirname, d), path.join(process.cwd(), d));
+    });
+    const seen = {}, out = [];
+    cands.filter(Boolean).forEach(function (d) {
+        try { if (!seen[d] && fs.statSync(d).isDirectory()) { seen[d] = 1; out.push(d); } } catch (e) { /* not there */ }
+    });
+    return out;
+})();
 const ROOT_DENY_NAMES = new Set(['server.js', 'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
     'procfile', 'dockerfile', 'render.yaml', 'readme.md',
     'security.js', 'route-mask.js', 'supabase-portals.js', 'account-security.js', 'recycle.js', 'dv-invoice-module.js']); // 🔒 backend modules must never be downloadable
@@ -7761,6 +7773,10 @@ CLEAN_PAGES.filter(function (pg) { return pg.clean === '/'; }).forEach(function 
             if (p !== pg.clean) { const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : ''; return res.redirect(301, pg.clean + q); } // alias -> canonical clean URL
             const f = findStaticFile(pg.file);
             if (f) { return routeMask.sendHome(req, res, pg.file); }
+            if (p === '/' && IS_VERCEL) {   // ▲ index.html is part of THIS project now — a missing file is a deployment error, not "backend only"
+                console.error('❌ index.html was not found in the Vercel bundle. Check vercel.json includeFiles and that index.html is committed next to server.js. Searched:', STATIC_DIRS.join(', '));
+                return res.status(500).type('html').send('<!doctype html><meta charset="utf-8"><title>Deployment error</title><body style="font-family:Arial;padding:40px"><h2>Main page is not available</h2><p>index.html is missing from this deployment. Please contact the administrator.</p></body>');
+            }
             if (p === '/') return res.send('Library App Backend is running successfully!'); // frontend on Netlify: same as before
             if (pg.slug) return res.redirect(302, '/api/pages/' + pg.slug);                 // uploaded copy from the database
             next();
@@ -7772,7 +7788,7 @@ app.get('/favicon.ico', function (req, res, next) {
     if (f) return res.sendFile(f);
     res.status(204).end();
 });
-app.get(['/health', '/healthz'], function (req, res) { res.json({ status: 'ok', running: true }); });
+app.get(['/health', '/healthz'], function (req, res) { res.json({ status: 'ok', running: true, indexBundled: !!findStaticFile('index.html') }); });
 
 
 // 🆕 HEALTH CHECK ROUTE — frontend ka status dot (Admin/Agent/HRMS/Student
