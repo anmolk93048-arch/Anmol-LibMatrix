@@ -187,7 +187,7 @@ app.use(function (req, res, next) {
 //        • a link to another portal whose label says "login" opens in a NEW tab (dashboard stays open).
 //   3) Masked pages are never cached (no-store) → the Back button can not show a logged-out page again.
 // ══════════════════════════════════════════════════════════════════
-const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;window.__amBridge=1;var HOME='/',done=false,bc=null;" +
+const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;window.__amBridge=1;var HOME=(window.location.origin||'')+'/',done=false,bc=null;" +
     "try{bc=new BroadcastChannel('anmol-auth');}catch(e){}" +
     "function wipe(){var st=[window.localStorage,window.sessionStorage];for(var i=0;i<st.length;i++){try{var s=st[i],ks=[];for(var j=0;j<s.length;j++)ks.push(s.key(j));" +
     "ks.forEach(function(k){if(/token|jwt|bearer|auth|session/i.test(k))s.removeItem(k);});}catch(e){}}}" +
@@ -287,6 +287,20 @@ app.get('/_am/otp-toggle.js', function (req, res) {
     res.send(AM_OTP_TOGGLE_JS);
 });
 
+// 🏠 LIVE HOME URL — the main page of the domain the user is on RIGHT NOW (auto-detected, nothing hardcoded).
+//    Used after logout from the Admin / Agent / HRMS / Student / Material portals. Falls back to '/', which the browser
+//    also resolves against the current domain, so a logout can never land on an old or wrong site.
+function liveHomeUrl(req) {
+    try {
+        const h = String((req && typeof req.get === 'function' && (req.get('x-forwarded-host') || req.get('host'))) || '').split(',')[0].trim().toLowerCase();
+        if (h && /^[a-z0-9.\-]+(:\d{1,5})?$/.test(h) && !_isLocalHost(h)) {
+            const proto = IS_VERCEL ? 'https' : (String(req.protocol || 'https').toLowerCase() === 'http' ? 'http' : 'https');
+            return proto + '://' + h + '/';
+        }
+    } catch (e) { /* fall through */ }
+    const base = (typeof liveBaseUrl === 'function') ? liveBaseUrl(req) : '';
+    return base ? base + '/' : '/';
+}
 function clearSessionCookies(req, res) {
     // security.clearSessionCookie's signature lives in security.js — try both common forms; a wrong form just throws and is ignored.
     try { security.clearSessionCookie(res); } catch (e) { try { security.clearSessionCookie(req, res); } catch (e2) { /* nothing to clear */ } }
@@ -294,7 +308,7 @@ function clearSessionCookies(req, res) {
 app.get('/logout', function (req, res) {
     clearSessionCookies(req, res);
     res.set({ 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache' });
-    res.redirect(303, '/');
+    res.redirect(303, liveHomeUrl(req));   // 🏠 straight to the home page of the current live domain
 });
 
 // Inject the bridge into masked HTML pages and make them uncacheable.
@@ -2619,7 +2633,7 @@ app.post('/api/security/verify-admin', noStore, asyncRoute(async (req, res) => {
 app.post('/api/auth/logout', noStore, (req, res) => {
     const auth = getAuthUser(req); // galat/expired token ho tab bhi null milega, error nahi
     clearSessionCookies(req, res); // ▲ the HTTP-only session cookie is removed on the server, not only the localStorage token
-    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null, redirect: '/' });
+    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null, redirect: liveHomeUrl(req) });
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -8484,14 +8498,15 @@ function selfPing() {
     }
 }
 // Server start hone ke thodi der baad pehla ping, fir har 10 minute mein.
-if (!IS_VERCEL) {   // ▲ Vercel functions sleep by themselves — a self-ping timer is useless there
+const RUN_STANDALONE = !IS_VERCEL && require.main === module;   // ▲ true only for `node server.js` (Render / local); false on Vercel or when required by another file
+if (RUN_STANDALONE) {   // ▲ Vercel functions sleep by themselves — a self-ping timer is useless there
     setTimeout(selfPing, 30 * 1000);
     setInterval(selfPing, SELF_PING_INTERVAL_MS);
 }
 
 // Start Server
 // ▲ On Vercel the platform calls the exported app per request; app.listen() is only for Render/local.
-const server = IS_VERCEL ? null : app.listen(PORT, () => {
+const server = !RUN_STANDALONE ? null : app.listen(PORT, () => {
     console.log(`🚀 Server started on port ${PORT}`);
     console.log(`📁 Static: ${PUBLIC_DIR ? 'public/ + safe root files' : 'safe root files (public/ folder not found)'}`);
     // 🆕 Deploy ke waqt turant dikh jaaye ki "/" par kaunsi index.html serve hogi (ya nahi mili).
@@ -8515,7 +8530,7 @@ function gracefulShutdown(sig) {
     if (!server) return process.exit(0);
     server.close(() => { Promise.resolve(db.end()).catch(() => {}).then(() => process.exit(0)); });
 }
-if (!IS_VERCEL) {
+if (RUN_STANDALONE) {
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
