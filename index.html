@@ -687,7 +687,7 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
 // own API_BASE constant) and it already whitelists this Netlify domain in
 // CORS. Pointing every fetch at the SAME absolute backend URL fixes the
 // sync. If the backend URL ever changes, update it in ONE place here.
-const SHDL_API_BASE = window.SHDL_API_BASE || 'https://anmol-libmatrix.onrender.com/api';
+const SHDL_API_BASE = window.SHDL_API_BASE || '/api';   // same-origin (Vercel) — no hard-coded host
 const LOGIN_FEATURES = [
   {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'nav:admin'},
   {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'nav:agent'},

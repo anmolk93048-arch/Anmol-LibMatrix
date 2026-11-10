@@ -149,6 +149,37 @@ const routeMask = require('./route-mask').create({
 const dvInvoice = require('./dv-invoice-module');
 dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAuthUser, asyncRoute: asyncRoute, noStore: noStore,
                          escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); } });
+// ▲ RENDER-URL REWRITE (safety net): any page/script served by THIS server that still contains the old Render origin
+//   (theme.js, config.js, portal pages ...) gets it replaced by the current site's own origin → every API call becomes
+//   same-origin (no CORS, no "Failed to fetch"). Fix the source files too; this keeps old copies working meanwhile.
+const OLD_RENDER_ORIGIN_RE = /https?:\/\/anmol-libmatrix\.onrender\.com/gi;
+app.use(function (req, res, next) {
+    if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/img/')) return next();
+    const origWrite = res.write, origEnd = res.end, chunks = [];
+    let hit = null;
+    const wanted = function () { return /text\/html|javascript|ecmascript/i.test(String(res.getHeader('Content-Type') || '')); };
+    const toBuf = function (c, enc) { return Buffer.isBuffer(c) ? c : Buffer.from(String(c), typeof enc === 'string' ? enc : 'utf8'); };
+    res.write = function (c, enc, cb) {
+        if (hit === null) hit = wanted();
+        if (!hit) return origWrite.apply(res, arguments);
+        if (c) chunks.push(toBuf(c, enc));
+        const done = typeof enc === 'function' ? enc : cb; if (typeof done === 'function') done();
+        return true;
+    };
+    res.end = function (c, enc, cb) {
+        if (hit === null) hit = wanted();
+        if (!hit) return origEnd.apply(res, arguments);
+        if (c && typeof c !== 'function') chunks.push(toBuf(c, enc));
+        const done = typeof c === 'function' ? c : (typeof enc === 'function' ? enc : cb);
+        res.write = origWrite; res.end = origEnd;
+        if (!chunks.length) return origEnd.call(res, done);
+        const own = (IS_VERCEL ? 'https' : req.protocol) + '://' + (req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+        const out = Buffer.concat(chunks).toString('utf8').replace(OLD_RENDER_ORIGIN_RE, own);
+        res.removeHeader('Content-Length'); res.removeHeader('ETag');
+        return origEnd.call(res, out, 'utf8', done);
+    };
+    next();
+});
 // ══════════════════════════════════════════════════════════════════
 // ▲ VERCEL / ROUTE-MASK SESSION BRIDGE  (must stay BEFORE routeMask.guard so the guard cannot 404 it)
 //   1) /logout (GET) — clears the session cookie and sends the browser to the main page "/".
