@@ -16,7 +16,7 @@
 // requests, aur wallet/transactions — sab kuch ab Postgres REST API se
 // (Firebase real-time listeners hata diye gaye hain, sirf REST poll).
 // ══════════════════════════════════════════════════════════════════
-const API_BASE = window.SHDL_API_BASE || 'https://anmol-libmatrix.onrender.com/api';
+const API_BASE = window.SHDL_API_BASE || '/api';
 // 🆕 This page can be served either statically on Netlify or dynamically
 // from Render via /api/pages/<slug> — a relative redirect would 404 in the
 // second case, so Logout always sends the browser to the real, absolute

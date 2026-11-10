@@ -1,7 +1,6 @@
-/* Anmol LibMatrix — one place to point every portal at the backend (Render).
-   Change API_BASE only if your Render URL changes. */
+/* Anmol LibMatrix — one place to point every portal at the backend (same domain on Vercel → relative /api). */
 window.ANMOL_CONFIG = {
-  API_BASE: 'https://anmol-libmatrix.onrender.com/api',
+  API_BASE: '/api',   // same-origin: the backend now runs on this same (Vercel) domain
   HOME: '/'
 };
 window.SHDL_API_BASE = window.SHDL_API_BASE || window.ANMOL_CONFIG.API_BASE; // used by every portal page
