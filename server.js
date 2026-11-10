@@ -58,6 +58,8 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// ▲ Vercel serverless: no long-running listener / timers (see the bottom of this file). Set automatically by Vercel.
+const IS_VERCEL = !!(process.env.VERCEL || process.env.VERCEL_ENV);
 
 // 🆕 Render ek reverse proxy ke peeche chalta hai — isके bina Express hamesha
 // req.protocol ko 'http' samajhta, jisse upload-file wala absolute URL galti se
@@ -84,6 +86,10 @@ const ALLOWED_ORIGINS = [
     //   EXTRA_CORS_ORIGINS="https://mydomain.com,https://www.mydomain.com"
     
     .concat([process.env.FRONTEND_URL, process.env.NETLIFY_URL].filter(Boolean).map(function (x) { return x.trim().replace(/\/$/, ''); }))
+    // ▲ Vercel: this deployment's own domains (production alias, branch URL, per-deployment URL). Without these,
+    //   every same-origin POST (login, logout, ...) is rejected by the CORS/CSRF origin check.
+    .concat([process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+        .filter(Boolean).map(function (x) { return 'https://' + String(x).trim().replace(/^https?:\/\//, '').replace(/\/$/, ''); }))
     .concat(String(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(function (x) { return x.trim().replace(/\/$/, ''); }).filter(Boolean));
 // 🆕 Netlify deploy-preview / branch-deploy URLs (sirf isi site ke: <x>--digitallibraryanmollive.netlify.app)
 const NETLIFY_ANY_RE = /^https:\/\/[a-z0-9-]+\.netlify\.app$/;
@@ -143,6 +149,79 @@ const routeMask = require('./route-mask').create({
 const dvInvoice = require('./dv-invoice-module');
 dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAuthUser, asyncRoute: asyncRoute, noStore: noStore,
                          escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); } });
+// ══════════════════════════════════════════════════════════════════
+// ▲ VERCEL / ROUTE-MASK SESSION BRIDGE  (must stay BEFORE routeMask.guard so the guard cannot 404 it)
+//   1) /logout (GET) — clears the session cookie and sends the browser to the main page "/".
+//   2) /_am/bridge.js — tiny same-origin script that is injected into every masked page (/app/<token>):
+//        • after ANY call to /api/auth/logout it clears the local session and sends EVERY open tab
+//          (dashboard + portal tabs) back to the main page "/";
+//        • a link to another portal whose label says "login" opens in a NEW tab (dashboard stays open).
+//   3) Masked pages are never cached (no-store) → the Back button can not show a logged-out page again.
+// ══════════════════════════════════════════════════════════════════
+const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;window.__amBridge=1;var HOME='/',done=false,bc=null;" +
+    "try{bc=new BroadcastChannel('anmol-auth');}catch(e){}" +
+    "function wipe(){var st=[window.localStorage,window.sessionStorage];for(var i=0;i<st.length;i++){try{var s=st[i],ks=[];for(var j=0;j<s.length;j++)ks.push(s.key(j));" +
+    "ks.forEach(function(k){if(/token|jwt|bearer|auth|session/i.test(k))s.removeItem(k);});}catch(e){}}}" +
+    "function home(){if(done)return;done=true;wipe();try{window.location.replace(HOME);}catch(e){window.location.href=HOME;}}" +
+    "function logout(){wipe();try{if(bc)bc.postMessage('logout');}catch(e){}try{localStorage.setItem('__am_logout',String(Date.now()));}catch(e){}setTimeout(home,250);}" +
+    "if(bc)bc.onmessage=function(e){if(e&&e.data==='logout')home();};" +
+    "window.addEventListener('storage',function(e){if(e.key==='__am_logout')home();});" +
+    "var LOGOUT=/\\/api\\/auth\\/logout(?:[?#]|$)/i;" +
+    "if(window.fetch){var f=window.fetch;window.fetch=function(i){var u='';try{u=typeof i==='string'?i:(i&&i.url)||String(i);}catch(e){}" +
+    "var p=f.apply(this,arguments);if(LOGOUT.test(u)){p.then(logout,logout);}return p;};}" +
+    "if(window.XMLHttpRequest){var o=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){try{if(LOGOUT.test(String(u)))this.addEventListener('loadend',logout);}catch(e){}return o.apply(this,arguments);};}" +
+    "document.addEventListener('click',function(ev){if(ev.defaultPrevented||ev.button>0)return;var a=ev.target&&ev.target.closest?ev.target.closest('a[href]'):null;if(!a)return;" +
+    "var u;try{u=new URL(a.getAttribute('href'),window.location.href);}catch(e){return;}" +
+    "if(u.origin!==window.location.origin||!/^\\/app\\//i.test(u.pathname)||u.pathname===window.location.pathname)return;" +
+    "var label=(a.textContent||'')+' '+(a.getAttribute('title')||'')+' '+(a.getAttribute('aria-label')||'');" +
+    "if(/login/i.test(label)){a.setAttribute('target','_blank');a.setAttribute('rel','noopener noreferrer');}},true);})();";
+
+app.get('/_am/bridge.js', function (req, res) {
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+    res.send(AM_BRIDGE_JS);
+});
+
+function clearSessionCookies(req, res) {
+    // security.clearSessionCookie's signature lives in security.js — try both common forms; a wrong form just throws and is ignored.
+    try { security.clearSessionCookie(res); } catch (e) { try { security.clearSessionCookie(req, res); } catch (e2) { /* nothing to clear */ } }
+}
+app.get('/logout', function (req, res) {
+    clearSessionCookies(req, res);
+    res.set({ 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache' });
+    res.redirect(303, '/');
+});
+
+// Inject the bridge into masked HTML pages and make them uncacheable.
+app.use(function (req, res, next) {
+    if (req.method !== 'GET' || !/^\/app\//i.test(req.path)) return next();
+    delete req.headers['if-none-match']; delete req.headers['if-modified-since'];   // never answer 304 for a masked page
+    const origWrite = res.write, origEnd = res.end, chunks = [];
+    let html = null;
+    const isHtml = function () { return /text\/html/i.test(String(res.getHeader('Content-Type') || '')); };
+    const toBuf = function (c, enc) { return Buffer.isBuffer(c) ? c : Buffer.from(String(c), typeof enc === 'string' ? enc : 'utf8'); };
+    res.write = function (c, enc, cb) {
+        if (html === null) html = isHtml();
+        if (!html) return origWrite.apply(res, arguments);
+        if (c) chunks.push(toBuf(c, enc));
+        const done = typeof enc === 'function' ? enc : cb; if (typeof done === 'function') done();
+        return true;
+    };
+    res.end = function (c, enc, cb) {
+        if (html === null) html = isHtml();
+        if (!html) return origEnd.apply(res, arguments);
+        if (c && typeof c !== 'function') chunks.push(toBuf(c, enc));
+        const done = typeof c === 'function' ? c : (typeof enc === 'function' ? enc : cb);
+        res.write = origWrite; res.end = origEnd;
+        res.setHeader('Cache-Control', 'no-store, max-age=0'); res.setHeader('Pragma', 'no-cache');
+        if (!chunks.length) return origEnd.call(res, done);
+        let out = Buffer.concat(chunks).toString('utf8');
+        const tag = '<script src="/_am/bridge.js" defer></script>';
+        out = /<\/body>/i.test(out) ? out.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : out + tag;
+        res.removeHeader('Content-Length'); res.removeHeader('ETag');
+        return origEnd.call(res, out, 'utf8', done);
+    };
+    next();
+});
 app.use(routeMask.guard);
 routeMask.mount(app);
 // 🔐 Session security (global logout on password change, idle timeout, change-password) + ♻️ Recycle Bin
@@ -788,7 +867,7 @@ const db = new Pool(
             idleTimeoutMillis: 60000,
             keepAlive: true,
             keepAliveInitialDelayMillis: 10000,
-            max: 10
+            max: IS_VERCEL ? 3 : 10   // serverless: many instances -> keep each pool small (use the Supabase pooler URL)
         }
         : {
             // Discrete params (agar DATABASE_URL na ho to fallback) — Supabase
@@ -803,7 +882,7 @@ const db = new Pool(
             idleTimeoutMillis: 60000,
             keepAlive: true,
             keepAliveInitialDelayMillis: 10000,
-            max: 10
+            max: IS_VERCEL ? 3 : 10   // serverless: many instances -> keep each pool small (use the Supabase pooler URL)
         }
 );
 
@@ -909,7 +988,7 @@ const JWT_SECRET = (function () {
     // 🔒 A real, random secret is mandatory (Render → Environment → JWT_SECRET, 32+ chars, e.g. `openssl rand -hex 48`).
     const s = process.env.JWT_SECRET;
     if (s && s.length >= 32) return s;
-    if (process.env.NODE_ENV !== 'production' && !process.env.RENDER) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.RENDER && !process.env.VERCEL) {
         console.warn('⚠️ JWT_SECRET missing/short — using a temporary random secret (local development only).');
         return require('crypto').randomBytes(48).toString('hex');
     }
@@ -2412,9 +2491,10 @@ app.post('/api/security/verify-admin', noStore, asyncRoute(async (req, res) => {
     res.json({ success: true });
 }));
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', noStore, (req, res) => {
     const auth = getAuthUser(req); // galat/expired token ho tab bhi null milega, error nahi
-    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null });
+    clearSessionCookies(req, res); // ▲ the HTTP-only session cookie is removed on the server, not only the localStorage token
+    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null, redirect: '/' });
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -8118,11 +8198,14 @@ function selfPing() {
     }
 }
 // Server start hone ke thodi der baad pehla ping, fir har 10 minute mein.
-setTimeout(selfPing, 30 * 1000);
-setInterval(selfPing, SELF_PING_INTERVAL_MS);
+if (!IS_VERCEL) {   // ▲ Vercel functions sleep by themselves — a self-ping timer is useless there
+    setTimeout(selfPing, 30 * 1000);
+    setInterval(selfPing, SELF_PING_INTERVAL_MS);
+}
 
 // Start Server
-const server = app.listen(PORT, () => {
+// ▲ On Vercel the platform calls the exported app per request; app.listen() is only for Render/local.
+const server = IS_VERCEL ? null : app.listen(PORT, () => {
     console.log(`🚀 Server started on port ${PORT}`);
     console.log(`📁 Static: ${PUBLIC_DIR ? 'public/ + safe root files' : 'safe root files (public/ folder not found)'}`);
     // 🆕 Deploy ke waqt turant dikh jaaye ki "/" par kaunsi index.html serve hogi (ya nahi mili).
@@ -8132,8 +8215,10 @@ const server = app.listen(PORT, () => {
         : '⚠️ index.html not found — only the text “Backend is running” will be shown at “/”. Place index.html alongside server.js (same folder) or in the public/ folder.');
 });
 // Render ke proxy ke keep-alive (60s) se bada rakhte hain — warna kabhi-kabhi random 502 aata hai.
-server.keepAliveTimeout = 65 * 1000;
-server.headersTimeout = 66 * 1000;
+if (server) {
+    server.keepAliveTimeout = 65 * 1000;
+    server.headersTimeout = 66 * 1000;
+}
 // 🆕 Graceful shutdown: Render redeploy par SIGTERM aata hai — chalti requests poori hone do, DB pool band karo.
 let _shuttingDown = false;
 function gracefulShutdown(sig) {
@@ -8141,7 +8226,12 @@ function gracefulShutdown(sig) {
     _shuttingDown = true;
     console.log('🛑 ' + sig + ' received. The server is shutting down...');
     setTimeout(() => process.exit(0), 10000).unref();
+    if (!server) return process.exit(0);
     server.close(() => { Promise.resolve(db.end()).catch(() => {}).then(() => process.exit(0)); });
 }
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+if (!IS_VERCEL) {
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+}
+// ▲ Vercel entry point (@vercel/node uses the exported Express app as the request handler)
+module.exports = app;
