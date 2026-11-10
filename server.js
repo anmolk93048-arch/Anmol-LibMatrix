@@ -145,7 +145,6 @@ let app = null, bootError = null, bootInfo = null;
 try {
     app = require('./app-main.js');
     if (typeof app !== 'function') throw new Error('app-main.js did not export the Express app (module.exports = app is missing).');
-    try { if (typeof app.set === 'function') app.set('trust proxy', true); } catch (e) { /* non-fatal */ }   // req.protocol / req.get('host') now follow the real public URL behind Vercel/Render
 } catch (e) {
     bootError = e;
     try { bootInfo = preflight(); } catch (e2) { bootInfo = {}; }

@@ -100,6 +100,9 @@ const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 function isOriginAllowed(origin) {
     if (!origin) return false;
     if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin)) return true;
+    // 🔗 ZERO-CONFIG: a request whose Origin is the very domain it was sent to (same-origin) is always fine. server.js publishes the
+    //    live origin of the request being handled via global.getLiveOrigin(); a cross-site attacker's Origin can never equal it.
+    try { const live = typeof global.getLiveOrigin === 'function' ? global.getLiveOrigin() : null; if (live && origin === live) return true; } catch (e) { /* ignore */ }
     return process.env.NODE_ENV !== 'production' && LOCAL_DEV_RE.test(origin);
 }
 const CORS_OPTIONS = {
@@ -4592,10 +4595,10 @@ const _otpStore = {
 const lc = (v) => String(v == null ? '' : v).trim().toLowerCase();
 // 🔗 LIVE LINK — every WhatsApp / SMS / notification that carries a portal link points to the CURRENT live domain.
 //    Nothing is hardcoded. Detection order:
-//      1) BASE_URL (or PORTAL_URL / FRONTEND_URL / PUBLIC_URL) — only if YOU set it as a manual override
-//      2) the domain of the request being served right now (x-forwarded-host / Host — works automatically on Vercel)
-//      3) the last live domain seen by this server instance
-//      4) Vercel's own env: VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL
+//      1) the domain of the request being served right now (x-forwarded-host / Host — works automatically on Vercel)
+//      2) the last live domain seen by this server instance
+//      3) Vercel's own env: VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL
+//      4) LAST resort only (no request, no history): BASE_URL / PORTAL_URL / FRONTEND_URL / PUBLIC_URL if set
 //    Change the domain tomorrow → nothing to edit (just remove/update BASE_URL if you had set it).
 //    Any old host (onrender.com / netlify.app / *.vercel.app) found inside a stored link or SMS template is rewritten to the live one.
 const STALE_LINK_HOST_RE = /https?:\/\/[^\/\s"'<>]*\.(?:onrender\.com|netlify\.app|vercel\.app)(?=[\/:?#\s"'<>]|$)/gi;
@@ -4605,7 +4608,7 @@ function requestOrigin(req) {   // origin of THIS request (never throws, '' if u
     try {
         if (!req || typeof req.get !== 'function') return '';
         const h = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-        if (!h || _isLocalHost(h)) return '';
+        if (!h || _isLocalHost(h) || !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i.test(h)) return '';   // malformed / spoofed Host → ignore
         return 'https://' + h;
     } catch (e) { return ''; }
 }
@@ -4619,10 +4622,10 @@ app.use(function (req, res, next) {
 function liveBaseUrl(req) {
     const clean = (u) => String(u || '').trim().replace(/\/+$/, '');
     const good = (u) => /^https?:\/\/[^\s]+$/i.test(u);
-    const list = [process.env.BASE_URL, process.env.PORTAL_URL, process.env.FRONTEND_URL, process.env.PUBLIC_URL,
-        requestOrigin(req), _lastLiveOrigin,
+    const list = [requestOrigin(req), _lastLiveOrigin,   // 1) the live domain of THIS request (zero-config)  2) last live domain seen
         process.env.VERCEL_PROJECT_PRODUCTION_URL && 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL,
-        process.env.VERCEL_URL && 'https://' + process.env.VERCEL_URL];
+        process.env.VERCEL_URL && 'https://' + process.env.VERCEL_URL,
+        process.env.BASE_URL, process.env.PORTAL_URL, process.env.FRONTEND_URL, process.env.PUBLIC_URL];   // env = last-resort fallback only (e.g. background jobs with no request)
     for (const c of list) { const u = clean(c); if (u && good(u)) return u; }
     return '';
 }
