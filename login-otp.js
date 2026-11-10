@@ -157,6 +157,7 @@
       if (busy) return Promise.resolve();
       setBusy(true); resend.disabled = true; say(sent ? 'Sending a new OTP…' : '', 'info');
       return api(o.path + '/login-otp/send', o.payload()).then(function (r) {
+        if (r && r.skipped) { sent = true; token = r.otpToken || true; return 'skipped'; }   // OTP switched off / trusted device → no OTP step
         var first = !sent; sent = true; token = null; clearBoxes(); say('');
         sub.textContent = (r && r.message) || '';
         show(); focusEmpty(); startTimer((r && r.resendInSec) || o.seconds);
@@ -185,7 +186,7 @@
     function gate(next) {
       if (busy) return;
       if (token) return next(token === true ? undefined : token);
-      if (!sent) return send();
+      if (!sent) return send().then(function (v) { if (v === 'skipped') next(token === true ? undefined : token); });
       return verify().then(function (t) { next(t === true ? undefined : t); }, function () { /* message already shown */ });
     }
 

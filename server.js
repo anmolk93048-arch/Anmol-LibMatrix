@@ -207,6 +207,17 @@ const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;windo
     "var label=(a.textContent||'')+' '+(a.getAttribute('title')||'')+' '+(a.getAttribute('aria-label')||'');" +
     "if(/login/i.test(label)){a.setAttribute('target','_blank');a.setAttribute('rel','noopener noreferrer');}},true);})();";
 
+// 🖼️ Photos + logo are served BEFORE the route-mask guard so the guard can never 404 them (public/img/* and /anmol_libmatrix_logo.png).
+STATIC_DIRS.forEach(function (d) {
+    const imgDir = path.join(d, 'img');
+    try { if (fs.statSync(imgDir).isDirectory()) app.use('/img', express.static(imgDir, { dotfiles: 'ignore', index: false, redirect: false, maxAge: '7d' })); } catch (e) { /* no img folder here */ }
+});
+app.get('/anmol_libmatrix_logo.png', function (req, res, next) {
+    const f = findStaticFile('anmol_libmatrix_logo.png');
+    if (!f) return next();
+    res.set('Cache-Control', 'public, max-age=86400'); res.sendFile(f);
+});
+
 app.get('/_am/bridge.js', function (req, res) {
     res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
     res.send(AM_BRIDGE_JS);
@@ -2273,14 +2284,21 @@ app.post('/api/material/login', (req, res) => {
                 // hamesha skip ho jaata tha (blocked user bhi login ke baad kaam
                 // karta rehta tha), aur "मोबाइल नंबर बदलें" route bhi हमेशा
                 // "Yeh User ID nahi mila" error deta tha.
-                const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
-                // never send the password hash or the encrypted Aadhaar data to the browser
-                const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
-                userSafe._docId = String(u.id);
-                userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
-                userSafe.invoiceVersion = dvInvoice.normVersion(u.invoice_version);
-                delete userSafe.invoice_version;
-                res.json({ user: userSafe, token, invoiceVersion: userSafe.invoiceVersion, redirectTo: userSafe.invoiceVersion === 'B' ? '/dv-invoice' : null });
+                // 🔐 6-digit WhatsApp OTP on a NEW device (skipped for a trusted device or while the Super Admin switch is OFF)
+                materialOtpGate(req, u.userid).then((gate) => {
+                    if (!gate.ok) return res.status(gate.status).json(gate.body);
+                    const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
+                    // never send the password hash or the encrypted Aadhaar data to the browser
+                    const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
+                    userSafe._docId = String(u.id);
+                    userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
+                    userSafe.invoiceVersion = dvInvoice.normVersion(u.invoice_version);
+                    delete userSafe.invoice_version;
+                    res.json({ user: userSafe, token, invoiceVersion: userSafe.invoiceVersion, redirectTo: userSafe.invoiceVersion === 'B' ? '/dv-invoice' : null, deviceToken: gate.deviceToken });
+                }).catch((gateErr) => {
+                    console.error('❌ /material/login OTP gate error:', gateErr.message);
+                    if (!res.headersSent) res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' });
+                });
             } catch (innerErr) {
                 console.error('❌ /material/login inner error:', innerErr.message);
                 res.status(500).json({ error: 'An error occurred during login: ' + innerErr.message });
@@ -5172,6 +5190,94 @@ app.post('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRou
     console.log('[otp-setting] login OTP turned ' + (v ? 'ON' : 'OFF') + ' by ' + (req.authUser && req.authUser.username));
     res.json({ success: true, enabled: v, forcedOff: String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off', length: OTP_LENGTH });
 }));
+// ══════════════════════════════════════════════════════════════════
+// 🧾 INVOICE / MATERIAL PORTAL LOGIN — 6-digit WhatsApp OTP on a NEW device + "remember this device"
+//   POST /api/material/login-otp/send    {userId, secondFactor, deviceToken?}
+//        wrong User ID / password → normal 401/404 (no OTP is sent) · OTP switched OFF or device already trusted → {skipped:true}
+//        otherwise a 6-digit OTP goes to the mobile number STORED on the account (never one supplied by the browser) via Fast2SMS WhatsApp
+//   POST /api/material/login-otp/verify  {userId, secondFactor, code, trustDevice?}  → {otpToken}  (single-use, 10 min)
+//   POST /api/material/login             {userId, secondFactor, otpToken? | deviceToken?}  → needs a valid otpToken or a trusted deviceToken
+//        (returns a deviceToken when the user kept "remember this device" on).  /api/auth/login-otp/* are aliases of the same handlers.
+// ══════════════════════════════════════════════════════════════════
+async function findMaterialLoginUser(userId, secondFactor) {
+    const rows = await dbq('SELECT * FROM material_users WHERE userid = ?', [String(userId)]);
+    if (!rows || !rows.length) return { status: 404, error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
+    const u = rows[0];
+    const mobileMatches = last10(u.mobile) === last10(secondFactor);
+    const passwordMatches = (u.password_hash && typeof u.password_hash === 'string') ? bcrypt.compareSync(secondFactor, u.password_hash) : false;
+    if (!mobileMatches && !passwordMatches) return { status: 401, error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' };
+    if (u.status === 'blocked') return { status: 403, error: 'This ID has been blocked by the administrator.', code: 'BLOCKED' };
+    return { user: u };
+}
+const _matTd = (userid) => 'mat|' + lc(userid);   // trusted-device namespace for material users
+const materialLoginOtpSend = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const userId = String(b.userId || '').trim(), secondFactor = b.secondFactor != null ? String(b.secondFactor) : '';
+    if (!userId || !secondFactor) return res.status(400).json({ error: 'User ID and Mobile/Password are both required.' });
+    if (hitRateLimit('motp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('motpu:' + lc(userId), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const m = await findMaterialLoginUser(userId, secondFactor);
+    if (m.error) return res.status(m.status).json({ error: m.error, code: m.code });
+    if (!(await loginOtpEnabled())) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDevice(_matTd(m.user.userid), b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    const mobile = last10(m.user.mobile);
+    if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    const key = 'lotp|mat|' + lc(m.user.userid);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
+        return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    }
+    const otp = String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH));
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { return otpSendFailed(res, e, 'material-login-otp'); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'A ' + OTP_LENGTH + '-digit OTP has been sent on WhatsApp to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+});
+const materialLoginOtpVerify = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const userId = String(b.userId || '').trim(), secondFactor = b.secondFactor != null ? String(b.secondFactor) : '';
+    const code = String(b.code || b.otp || '').replace(/\D/g, '');
+    if (!userId || !secondFactor) return res.status(400).json({ error: 'User ID and Mobile/Password are both required.' });
+    if (hitRateLimit('motpv:' + (req.ip || ''), 40, 10 * 60 * 1000) || hitRateLimit('motpvu:' + lc(userId), 15, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const m = await findMaterialLoginUser(userId, secondFactor);
+    if (m.error) return res.status(m.status).json({ error: m.error, code: m.code });
+    const bad = { error: 'Invalid or expired OTP. Please try again.', code: 'INVALID_OTP' };
+    const key = 'lotp|mat|' + lc(m.user.userid);
+    const o = await _otpStore.get(key);
+    if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(401).json(bad); }
+    o.tries++;
+    await _otpStore.set(key, o);
+    if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return res.status(401).json(bad); }
+    if (code.length !== OTP_LENGTH || !security.safeEqual(o.hash, sha(code))) return res.status(401).json(bad);
+    await _otpStore.delete(key);   // one-time use
+    const jti = crypto.randomBytes(16).toString('hex');
+    await _otpStore.set('mjti|' + jti, { exp: Date.now() + 10 * 60 * 1000 });
+    const trust = !(b.trustDevice === false || b.trustDevice === 'false' || b.trustDevice === 0 || b.trustDevice === '0');
+    const otpToken = jwt.sign({ purpose: 'material-login-otp', u: String(m.user.userid), jti: jti, trust: trust }, JWT_SECRET, { expiresIn: '10m' });
+    res.json({ success: true, otpToken: otpToken });
+});
+['/api/material/login-otp', '/api/auth/login-otp'].forEach(base => {
+    app.post(base + '/send', noStore, materialLoginOtpSend);
+    app.post(base + '/verify', noStore, materialLoginOtpVerify);
+});
+// Second factor for POST /api/material/login → {ok:true, deviceToken?} or {status, body}
+async function materialOtpGate(req, userid) {
+    if (!(await loginOtpEnabled())) return { ok: true };
+    const b = req.body || {};
+    if (b.otpToken) {
+        try {
+            const d = jwt.verify(String(b.otpToken), JWT_SECRET);
+            if (d && d.purpose === 'material-login-otp' && lc(d.u) === lc(userid) && d.jti && await _otpStore.get('mjti|' + d.jti)) {
+                await _otpStore.delete('mjti|' + d.jti);   // single use
+                return { ok: true, deviceToken: d.trust ? await issueTrustedDevice(_matTd(userid), req) : undefined };
+            }
+        } catch (e) { /* fall through */ }
+        return { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
+    }
+    if (await isTrustedDevice(_matTd(userid), b.deviceToken)) return { ok: true };
+    return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
+}
 // Called by /api/auth/login (admin role): returns null when the login may continue, otherwise {status, body}.
 async function adminSecondFactor(req, userId) {
     if (!(await loginOtpEnabled())) return { ok: true };
