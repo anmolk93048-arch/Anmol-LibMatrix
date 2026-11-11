@@ -174,11 +174,75 @@ function tryBoot() {
 }
 tryBoot();
 
+// ── Fallback that still opens the REAL login forms ───────────────────────────────────────────────────────────────────
+// While app-main.js is not running (boot failed / retrying), /go/<portal> and /app/<token> serve the portal's static HTML file straight
+// from disk (Admin_Login.html, Agent_Login.html, HRMS_login.html …) instead of bouncing the user to the home page. Tokens are stateless
+// (decrypted with JWT_SECRET, no database), so a slow or unreachable database cannot affect them.
+const FB_BACKEND_FILES = new Set(['app-main.js', 'server.js', 'security.js', 'route-mask.js', 'supabase-portals.js', 'dv-invoice-module.js', 'account-security.js', 'recycle.js', 'package.json', 'package-lock.json', 'vercel.json']);
+const FB_ASSET_RE = /\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot|txt|xml|webmanifest|json|pdf)$/i;
+function fbDirs() { return [__dirname, path.join(__dirname, 'public'), path.join(__dirname, 'frontend'), path.join(__dirname, 'dist'), path.join(__dirname, 'static')]; }
+function fbFind(name) {
+    for (const d of fbDirs()) {
+        try {
+            const exact = path.join(d, name);
+            if (fs.existsSync(exact) && fs.statSync(exact).isFile()) return exact;
+            const hit = fs.readdirSync(d).find((f) => f.toLowerCase() === String(name).toLowerCase());
+            if (hit && fs.statSync(path.join(d, hit)).isFile()) return path.join(d, hit);
+        } catch (e) { /* next dir */ }
+    }
+    return null;
+}
+function fbPortalFile(key) {
+    try { const RM = require('./route-mask.js'); const pg = RM.PORTALS[key]; return pg ? fbFind(pg.file) : null; } catch (e) { return null; }
+}
+function fbKeyFromToken(token) {
+    try {
+        const secret = process.env.JWT_SECRET; if (!secret) return null;
+        const RM = require('./route-mask.js');
+        return RM.create({ getSecret: () => secret }).parse(token); // { key, sid } or null
+    } catch (e) { return null; }
+}
+const FB_BANNER = '<script>(function(){function b(){var d=document.createElement("div");d.textContent="The server is restarting — sign-in may take a moment. Please retry in a few seconds.";d.style.cssText="position:fixed;left:0;right:0;top:0;z-index:2147483000;background:#fff3cd;color:#664d03;font:13px Arial;padding:6px 10px;text-align:center";document.body.appendChild(d);setTimeout(function(){d.remove()},15000)}if(document.body)b();else document.addEventListener("DOMContentLoaded",b)})();</script>';
+function fbSendPortal(req, res, file) {
+    let buf = fs.readFileSync(file);
+    if (req.method !== 'HEAD') { const html = buf.toString('utf8'); buf = Buffer.from(/<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, FB_BANNER + '</body>') : html + FB_BANNER, 'utf8'); }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive'); res.setHeader('X-AM-Fallback', '1');
+    res.end(req.method === 'HEAD' ? '' : buf);
+}
+// returns true when the request was answered
+function fbServe(req, res, url) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+    let m = /^\/go\/([A-Za-z0-9_-]+)\/?$/.exec(url);
+    if (m) {
+        let key = null; try { key = require('./route-mask.js').resolveKey(m[1]); } catch (e) { /* ignore */ }
+        const f = key && fbPortalFile(key);
+        if (f) { fbSendPortal(req, res, f); return true; }
+        return false;
+    }
+    m = /^\/app\/([^/]+)(?:\/(.+))?$/.exec(url);
+    if (!m) return false;
+    if (/^[0-9a-f]{66}$/.test(m[1]) && !m[2]) {
+        const t = fbKeyFromToken(m[1]); const f = t && fbPortalFile(t.key);
+        if (f) { fbSendPortal(req, res, f); return true; }
+        return false;
+    }
+    const name = /^[0-9a-f]{66}$/.test(m[1]) ? m[2] : (m[2] ? m[1] + '/' + m[2] : m[1]);   // /app/<token>/x.js and /app/x.js → asset x.js from the site root
+    if (!name || name.indexOf('..') >= 0 || !FB_ASSET_RE.test(name) || FB_BACKEND_FILES.has(name.toLowerCase())) return false;
+    const f = fbFind(name);
+    if (!f) return false;
+    res.statusCode = 200; res.setHeader('Content-Type', ({ '.css': 'text/css', '.js': 'application/javascript', '.mjs': 'application/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.ico': 'image/x-icon', '.webp': 'image/webp', '.txt': 'text/plain', '.pdf': 'application/pdf' }[path.extname(f).toLowerCase()] || 'application/octet-stream'));
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(req.method === 'HEAD' ? '' : fs.readFileSync(f));
+    return true;
+}
+
 function fallbackHandler(req, res) {
     try {
         // self-heal: the real app may only have failed on a transient problem (cold start, database not ready yet) → retry at most every 15 s
         if (app || (Date.now() - lastBootTry > 15000 && tryBoot())) return app(req, res);   // already recovered → always hand over to the real app
         const url = String(req.url || '/').split('?')[0];
+        if (fbServe(req, res, url)) return;   // login form / its assets straight from disk
         const status = {
             ok: false, boot: 'failed',
             reason: redact(bootError && (bootError.message || bootError)),
