@@ -92,6 +92,15 @@ function patchLocationHeader(res, origin) {
     };
 }
 
+// A browser page navigation (not an API / fetch call): these get a redirect to the home page instead of a raw JSON error.
+function wantsHtml(req) {
+    try {
+        const u = String(req.url || '/').split('?')[0];
+        return (req.method === 'GET' || req.method === 'HEAD') && /text\/html/i.test(String((req.headers || {}).accept || '')) && !/^\/(api|_am)\//.test(u);
+    } catch (e) { return false; }
+}
+function softRedirectHome(res) { res.statusCode = 302; res.setHeader('Location', '/'); res.setHeader('Cache-Control', 'no-store'); res.end(); }
+
 // Wraps any (req,res) handler: detects the origin, exposes it everywhere, answers /api/live-origin, and guarantees that
 // a synchronous crash inside the handler returns a clean 503 instead of killing the serverless function.
 function withLiveOrigin(inner) {
@@ -109,7 +118,11 @@ function withLiveOrigin(inner) {
             return liveCtx.run({ origin }, () => inner(req, res));
         } catch (e) {
             console.error('🚨 REQUEST HANDLER CRASH (contained):', e && e.stack || e);
-            try { if (!res.headersSent) { res.statusCode = 503; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ error: 'The service is temporarily unavailable. Please try again shortly.' })); } else { res.end(); } } catch (e2) { /* nothing more to do */ }
+            try {
+                if (res.headersSent) res.end();
+                else if (wantsHtml(req) && String(req.url || '/').split('?')[0] !== '/') softRedirectHome(res);   // browser navigation → home page, never a raw JSON error
+                else { res.statusCode = 503; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ error: 'The service is temporarily unavailable. Please try again shortly.' })); }
+            } catch (e2) { /* nothing more to do */ }
         }
     };
     handler.__live = true;
@@ -141,25 +154,35 @@ const redact = (t) => String(t == null ? '' : t)
     .split('\n')[0]                                                         // first line only (no require-stack / file paths)
     .slice(0, 300);
 
-let app = null, bootError = null, bootInfo = null;
-try {
-    app = require('./app-main.js');
-    if (typeof app !== 'function') throw new Error('app-main.js did not export the Express app (module.exports = app is missing).');
-} catch (e) {
-    bootError = e;
-    try { bootInfo = preflight(); } catch (e2) { bootInfo = {}; }
-    console.error('🚨 BOOT FAILED — the app could not be loaded. Serving the safe fallback instead of crashing.');
-    console.error('   reason :', e && e.stack || e);
-    console.error('   preflight:', JSON.stringify(bootInfo));
-    if (e && e.code === 'MODULE_NOT_FOUND') console.error('   → a file or npm package is missing from this deployment. Check package.json dependencies and vercel.json includeFiles.');
+let app = null, bootError = null, bootInfo = null, lastBootTry = 0;
+function tryBoot() {
+    lastBootTry = Date.now();
+    try {
+        const a = require('./app-main.js');   // a failed require is NOT cached by Node, so calling this again really retries
+        if (typeof a !== 'function') throw new Error('app-main.js did not export the Express app (module.exports = app is missing).');
+        app = a; bootError = null; bootInfo = null;
+        return true;
+    } catch (e) {
+        bootError = e;
+        try { bootInfo = preflight(); } catch (e2) { bootInfo = {}; }
+        console.error('🚨 BOOT FAILED — the app could not be loaded. Serving the safe fallback instead of crashing.');
+        console.error('   reason :', e && e.stack || e);
+        console.error('   preflight:', JSON.stringify(bootInfo));
+        if (e && e.code === 'MODULE_NOT_FOUND') console.error('   → a file or npm package is missing from this deployment. Check package.json dependencies and vercel.json includeFiles.');
+        return false;
+    }
 }
+tryBoot();
 
 function fallbackHandler(req, res) {
     try {
+        // self-heal: the real app may only have failed on a transient problem (cold start, database not ready yet) → retry at most every 15 s
+        if (app || (Date.now() - lastBootTry > 15000 && tryBoot())) return app(req, res);   // already recovered → always hand over to the real app
         const url = String(req.url || '/').split('?')[0];
         const status = {
             ok: false, boot: 'failed',
             reason: redact(bootError && (bootError.message || bootError)),
+            where: (function () { try { const m = /\n\s+at (?:.*?\()?([^()\n]+?):(\d+):\d+\)?/.exec(String(bootError && bootError.stack || '')); return m ? path.basename(m[1]) + ':' + m[2] : null; } catch (e) { return null; } })(),
             code: bootError && bootError.code || null,
             missingFiles: (bootInfo && bootInfo.missingFiles) || [],
             missingPackages: (bootInfo && bootInfo.missingPackages) || [],
@@ -172,6 +195,7 @@ function fallbackHandler(req, res) {
             if (fs.existsSync(f)) return send(200, 'text/html; charset=utf-8', req.method === 'HEAD' ? '' : fs.readFileSync(f));
             return send(503, 'text/html; charset=utf-8', '<!doctype html><meta charset="utf-8"><title>Temporarily unavailable</title><body style="font-family:Arial;padding:40px"><h2>Service temporarily unavailable</h2><p>Please try again in a few minutes.</p></body>');
         }
+        if (wantsHtml(req)) return softRedirectHome(res);   // /go/…, /app/… and any other page → the home page (which is served above), not a JSON error
         return send(503, 'application/json; charset=utf-8', JSON.stringify({ error: 'The service is temporarily unavailable. Please try again shortly.' }));
     } catch (e) {
         try { res.statusCode = 503; res.end('Service temporarily unavailable'); } catch (e2) { /* nothing more to do */ }
