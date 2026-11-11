@@ -22,20 +22,35 @@
 <script>
 // ══ FIREBASE CONFIG — loaded from firebase-config.js (generated at deploy time from environment variables; never committed) ══
 const firebaseConfig = window.FIREBASE_CONFIG;
-if (!firebaseConfig || !firebaseConfig.apiKey) {
-  console.error('Firebase config missing: run "node scripts/generate-firebase-config.js" (needs the FIREBASE_* environment variables) so firebase-config.js exists.');
-  throw new Error('FIREBASE_CONFIG is not set');
+const FIREBASE_READY = !!(firebaseConfig && firebaseConfig.apiKey && window.firebase);
+// Never block the portal on Firebase: if the config (or the SDK) is unavailable, fall back to an inert stub so the
+// session check and dashboard still open on server data. Firebase-backed sync simply stays idle until it is configured.
+function __fbStub(){
+  var snap = { val: function(){ return null; }, exists: function(){ return false; }, forEach: function(){}, numChildren: function(){ return 0; } };
+  var h = { get: function(t, k){
+    if (k === 'then') return undefined;
+    if (k === 'once') return function(e, cb){ if (typeof cb === 'function') cb(snap); return Promise.resolve(snap); };
+    if (k === 'on') return function(e, cb){ if (typeof cb === 'function') cb(snap); return cb; };
+    if (k === 'set' || k === 'update' || k === 'remove') return function(){ var cb = [].slice.call(arguments).filter(function(x){ return typeof x === 'function'; })[0]; if (cb) cb(null); return Promise.resolve(); };
+    return function(){ return new Proxy({}, h); };
+  } };
+  return new Proxy({}, h);
 }
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const FBDB = firebase.database();
-const FBAUTH = firebase.auth();
-const FBFUNC = firebase.functions();
+let FBDB, FBAUTH, FBFUNC, FSDB;
+if (FIREBASE_READY) {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    FBDB = firebase.database(); FBAUTH = firebase.auth(); FBFUNC = firebase.functions(); FSDB = firebase.firestore();
+  } catch (e) { console.error('Firebase init failed:', e); }
+} else {
+  console.warn('Firebase config missing — run "node scripts/generate-firebase-config.js" with the FIREBASE_* environment variables. Continuing without Firebase sync.');
+}
+if (!FBDB) { FBDB = { ref: __fbStub }; FBAUTH = __fbStub(); FBFUNC = __fbStub(); FSDB = __fbStub(); }
 const FB_ROOT = 'shdl'; // Firebase root path
 
-// ══ FIRESTORE — 'Invoice Material List' module ══
+// ══ FIRESTORE — 'Invoice Material List' module (FSDB is initialised above) ══
 // Anmol LibMatrix Material Entry पोर्टल isi Firestore project ki 'material_users' aur
 // 'material_bills' collections use karta hai — dono jagah se same data दिखेगा।
-const FSDB = firebase.firestore();
 let materialUsersCache = [];
 let materialRequestsCache = [];
 
@@ -15473,22 +15488,40 @@ function enter(user){
   if(user.location){ try{var chip=document.querySelector('.admin-chip'); if(chip) chip.title='Location: '+user.location;}catch(e){} }
   toast('✅ Welcome '+currentAdmin.name+'!');
 }
+var bootTries=0, MAX_BOOT_TRIES=6;
+function bootError(msg){
+  var b=$('sa-boot'); if(!b) return;
+  b.innerHTML='<div style="max-width:420px;text-align:center;padding:0 20px"><div style="font-size:34px">⚠️</div>'+
+    '<p style="font-weight:800;font-size:15px;margin:8px 0 4px">Could not verify your session</p>'+
+    '<p style="font-size:12.5px;margin:0 0 14px;opacity:.8">'+esc(msg)+'</p>'+
+    '<button id="sa-boot-retry" style="padding:10px 18px;border:0;border-radius:10px;background:#0b2a5b;color:#fff;font-weight:800;cursor:pointer;margin-right:8px">Try again</button>'+
+    '<button id="sa-boot-login" style="padding:10px 18px;border:1px solid #0b2a5b;border-radius:10px;background:#fff;color:#0b2a5b;font-weight:800;cursor:pointer">Back to login</button></div>';
+  $('sa-boot-retry').onclick=function(){ location.reload(); };
+  $('sa-boot-login').onclick=toLogin;
+}
 function boot(){
   var gate=null; try{gate=AnmolPortal.consumeGate('admin');}catch(e){}
-  if(gate){ AUTH_TOKEN=gate.token; try{localStorage.setItem('shdl_auth_token',gate.token);}catch(e){} }
+  try{ if(gate){ AUTH_TOKEN=gate.token; try{localStorage.setItem('shdl_auth_token',gate.token);}catch(e){} }
+       if(!AUTH_TOKEN){ try{AUTH_TOKEN=AnmolPortal.getToken();}catch(e){} } }
+  catch(e){ return bootError('The page did not finish loading ('+(e&&e.message||e)+'). Please reload.'); }
   if(!AUTH_TOKEN) return toLogin();
-  AnmolPortal.fetchRetry(API_BASE+'/auth/me',{headers:{'Authorization':'Bearer '+AUTH_TOKEN}},{tries:4,timeout:25000,onRetry:function(){setBoot('Loading your workspace...');}})
+  AnmolPortal.fetchRetry(API_BASE+'/auth/me',{headers:{'Authorization':'Bearer '+AUTH_TOKEN}},{tries:3,timeout:20000,onRetry:function(){setBoot('Waking up the server… please wait');}})
     .then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,status:r.status,d:d};});})
     .then(function(x){
-      if(!x.ok){ if(x.status===401||x.status===403) return toLogin(); throw new Error('HTTP '+x.status); }
+      if(!x.ok){ if(x.status===401||x.status===403) return toLogin(); throw new Error('Server answered HTTP '+x.status); }
       var u=x.d.user||{};
       if(String(u.role||'').toLowerCase()!=='admin') return toLogin();
       if(!x.d.gate||!x.d.location) return toLogin();   // role + location must have been chosen at login — no bypass
       u.location=x.d.location||(function(){try{return sessionStorage.getItem('anmol_location')||'';}catch(e){return '';}})();
-      enter(u);
+      try{ enter(u); }catch(e){ console.error('Dashboard start-up error:',e); bootError('Signed in, but the dashboard failed to start: '+(e&&e.message||e)); }
     })
-    .catch(function(e){ setBoot('Loading your workspace...'); setTimeout(boot,5000); });
+    .catch(function(e){
+      bootTries++;
+      if(bootTries>=MAX_BOOT_TRIES) return bootError('The server did not respond ('+(e&&e.message||'network error')+'). Check your connection or try again.');
+      setBoot('Loading your workspace… (attempt '+(bootTries+1)+' of '+MAX_BOOT_TRIES+')'); setTimeout(boot,4000);
+    });
 }
+setTimeout(function(){ if($('sa-boot')) bootError('Session check is taking too long. Please try again.'); },120000);   // watchdog
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
 
 /* logout → revoke every token, clear, index.html */
