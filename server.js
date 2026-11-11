@@ -217,8 +217,14 @@ function fbServe(req, res, url) {
     if (m) {
         let key = null; try { key = require('./route-mask.js').resolveKey(m[1]); } catch (e) { /* ignore */ }
         const f = key && fbPortalFile(key);
-        if (f) { fbSendPortal(req, res, f); return true; }
-        return false;
+        if (!f) return false;
+        // 🕶️ keep the address bar masked: mint a fresh encrypted /app/<66-hex> link (needs only JWT_SECRET, no database) and redirect to it
+        const secret = process.env.JWT_SECRET;
+        if (secret && secret.length >= 32) {
+            try { const u = require('./route-mask.js').create({ getSecret: () => secret }).urlFor(key); if (u) { res.statusCode = 302; res.setHeader('Location', u); res.setHeader('Cache-Control', 'no-store'); res.end(); return true; } } catch (e) { /* serve in place below */ }
+        }
+        fbSendPortal(req, res, f);   // JWT_SECRET missing → no token can be minted; the form still opens (at /go/<portal>)
+        return true;
     }
     m = /^\/app\/([^/]+)(?:\/(.+))?$/.exec(url);
     if (!m) return false;
@@ -260,7 +266,7 @@ function fallbackHandler(req, res) {
             return send(503, 'text/html; charset=utf-8', '<!doctype html><meta charset="utf-8"><title>Temporarily unavailable</title><body style="font-family:Arial;padding:40px"><h2>Service temporarily unavailable</h2><p>Please try again in a few minutes.</p></body>');
         }
         if (wantsHtml(req)) return softRedirectHome(res);   // /go/…, /app/… and any other page → the home page (which is served above), not a JSON error
-        return send(503, 'application/json; charset=utf-8', JSON.stringify({ error: 'The service is temporarily unavailable. Please try again shortly.' }));
+        return send(503, 'application/json; charset=utf-8', JSON.stringify({ error: 'The service is temporarily unavailable. Please try again shortly.', code: 'BOOT_FAILED', reason: status.reason, where: status.where }));   // reason/where = sanitized boot error (same as /api/boot-status)
     } catch (e) {
         try { res.statusCode = 503; res.end('Service temporarily unavailable'); } catch (e2) { /* nothing more to do */ }
     }
