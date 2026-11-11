@@ -4,8 +4,7 @@
   var CFG = window.ANMOL_CONFIG || {};
   var API = window.SHDL_API_BASE || CFG.API_BASE || '';
   var HOME = window.SHDL_HOME_URL || '/';
-  var BRAND = window.ANMOL_BRAND || {};
-  var LOGO = BRAND.mark || '/assets/brand/anmol-libmatrix-mark.png';   // single global brand asset (see brand.js)
+  var LOGO = '/anmol_libmatrix_logo.png';
   var TOKEN_KEYS = ['shdl_auth_token', 'pfms_auth_token', 'anmol_auth_token', 'anmolPortalUser', 'anmol_session', 'anmol_location', 'anmol_gate'];
 
   var PORTALS = [
@@ -171,7 +170,7 @@
     if (!document.querySelector('link[rel~="icon"]')) { var l = document.createElement('link'); l.rel = 'icon'; l.href = LOGO; document.head.appendChild(l); }
     if (!document.querySelector('.anmol-footer')) {
       var f = document.createElement('div'); f.className = 'anmol-footer';
-      f.innerHTML = '<img data-brand-mark src="' + LOGO + '" alt="" onerror="this.style.display=\'none\'"><span>© ' + new Date().getFullYear() + ' ' + (BRAND.name || 'Anmol LibMatrix') + '. All rights reserved.</span><span class="lm-social-row" data-brand-social></span>';
+      f.innerHTML = '<img src="' + LOGO + '" alt="" onerror="this.style.display=\'none\'"><span>© 2026 Anmol LibMatrix. All rights reserved.</span>';
       document.body.appendChild(f);
     }
   }

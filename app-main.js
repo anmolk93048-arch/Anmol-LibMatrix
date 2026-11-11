@@ -1256,7 +1256,7 @@ function connectWithRetry(attemptsLeft, delayMs) {
 }
 
 // 🔑 MASTER ADMIN SEED — runs once at startup and ONLY when no admin exists.
-//   No default credentials: the first admin is seeded only from MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD (12+ chars).
+//   Default credentials: Anmol / Anmol@2003 (override with MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD).
 //   Change the password from the Admin Panel after the first login.
 function seedMasterAdmin(attempt) {
     attempt = attempt || 1;

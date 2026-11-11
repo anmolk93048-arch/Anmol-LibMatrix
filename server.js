@@ -1106,7 +1106,7 @@ function connectWithRetry(attemptsLeft, delayMs) {
 }
 
 // 🔑 MASTER ADMIN SEED — runs once at startup and ONLY when no admin exists.
-//   No default credentials: the first admin is seeded only from MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD (12+ chars).
+//   Default credentials: Anmol / Anmol@2003 (override with MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD).
 //   Change the password from the Admin Panel after the first login.
 function seedMasterAdmin(attempt) {
     attempt = attempt || 1;
@@ -2745,32 +2745,13 @@ app.get('/api/dashboard/live-stats', (req, res) => {
             const todayEntries = list.filter(e => e && e.ts && new Date(e.ts).toLocaleDateString('en-CA') === todayStr);
             const loginsByRole = {};
             todayEntries.forEach(e => { const r = e.role || 'unknown'; loginsByRole[r] = (loginsByRole[r] || 0) + 1; });
-            // Library books + today's attendance, so the public Live Dashboard and the admin sidebar show real numbers.
-            db.query('SELECT `key`, value FROM kv_blob WHERE `key` IN (?, ?, ?)', ['books', 'library_books', 'att_records'], (bErr, bRows) => {
-                const blobs = {};
-                (bRows || []).forEach(r => { try { blobs[r.key] = JSON.parse(r.value); } catch (e) { blobs[r.key] = null; } });
-                const toList = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).map(k => v[k]) : []);
-                const bookList = toList(blobs.books).concat(toList(blobs.library_books));
-                const totalBooks = bookList.reduce((n, b) => n + (b && Number(b.copies || b.quantity || b.qty) > 0 ? Number(b.copies || b.quantity || b.qty) : 1), 0);
-                const issuedBooks = bookList.filter(b => b && /issued/i.test(String(b.status || ''))).length;
-                // att_records entries look like { date:'YYYY-MM-DD', batch, records:{ studentName: 'present'|'absent'|... } }
-                const todayIst = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
-                let marked = 0, present = 0;
-                toList(blobs.att_records).forEach(e => {
-                    if (!e || String(e.date || '').slice(0, 10) !== todayIst || !e.records) return;
-                    Object.keys(e.records).forEach(n => { marked++; if (/^(p|present|late)$/i.test(String(e.records[n] && e.records[n].status || e.records[n]))) present++; });
-                });
-                res.json({
-                    totalAgents, activeAgents,
-                    totalStudents, activeStudents,
-                    totalBooks, issuedBooks,
-                    todayAttendanceMarked: marked, todayAttendancePresent: present,
-                    attendancePercent: marked ? Math.round((present / marked) * 1000) / 10 : 0,
-                    todayLogins: todayEntries.length,
-                    loginsByRole,
-                    kycVerifiedPercent, activeVerificationPercent, totalSecureRecords,
-                    generatedAt: Date.now()
-                });
+            res.json({
+                totalAgents, activeAgents,
+                totalStudents, activeStudents,
+                todayLogins: todayEntries.length,
+                loginsByRole,
+                kycVerifiedPercent, activeVerificationPercent, totalSecureRecords,
+                generatedAt: Date.now()
             });
         });
     });
