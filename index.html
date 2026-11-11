@@ -748,6 +748,40 @@ function refreshPortalMap(){
       if(typeof rerenderMenus==='function')rerenderMenus();}
   }).catch(()=>{});
 }
+function portalKeyForUrl(u){
+  u=String(u==null?'':u).trim();
+  if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return null;
+  let probe=u;
+  try{ if(/^https?:\/\//i.test(u)){const x=new URL(u); probe=(x.origin===location.origin)?x.pathname:''; } }catch(e){probe='';}
+  if(probe&&!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(probe)){const base=probe.split(/[?#]/)[0].toLowerCase(); if(LEGACY_PAGES[base])probe=LEGACY_PAGES[base];}
+  return probe?portalKeyOf(probe):null;
+}
+// Click handler for every portal link. Uses the injected map at once; if it is missing it fetches /api/nav/map (retry after 1 s,
+// hard stop after 6 s) while a blank tab is already open, so the click is never silently ignored and the page never hangs.
+function fetchPortalMap(ms){
+  const ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+  const t=setTimeout(()=>{try{ctl&&ctl.abort()}catch(e){}},ms);
+  return fetch('/api/nav/map',{cache:'no-store',signal:ctl?ctl.signal:undefined}).then(r=>r.ok?r.json():null).then(d=>{
+    clearTimeout(t);
+    if(d&&d.map){window.__ANMOL_NAV=d.map;window.__ANMOL_NAV_TS=Date.now();return d.map}
+    return null;
+  }).catch(()=>{clearTimeout(t);return null});
+}
+function openPortal(ev,key){
+  if(ev){ if(ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.button>0){ if(maskedPortalUrl(key))return true; } ev.preventDefault(); }
+  try{closeMenus()}catch(e){}
+  let url=maskedPortalUrl(key);
+  if(url){ const w=window.open(url,'_blank','noopener'); if(!w)location.assign(url); return false; }
+  const w=window.open('about:blank','_blank');            // opened inside the click, so the browser does not block it
+  if(w){try{w.opener=null}catch(e){} try{w.document.title='Opening…';w.document.body.innerHTML='<p style="font-family:Arial;padding:24px">Opening secure page…</p>'}catch(e){}}
+  const go=(m)=>{ const u=m&&typeof m[key]==='string'&&/^\/app\/[0-9a-f]{66}$/.test(m[key])?m[key]:null;
+    if(u){ if(w&&!w.closed)w.location.href=location.origin+u; else location.assign(u); return true; } return false; };
+  fetchPortalMap(1000).then(m=>go(m)||fetchPortalMap(5000).then(m2=>go(m2))).then(ok=>{
+    if(!ok){ if(w&&!w.closed)w.close(); alert('The secure link could not be created right now. Please check your connection and try again.'); }
+    else if(typeof rerenderMenus==='function')rerenderMenus();
+  });
+  return false;
+}
 function safeHref(u){
   u=String(u==null?'':u).trim();
   if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return '#';
@@ -764,8 +798,9 @@ function renderFeatureMenu(id, items, label){
   const el=document.getElementById(id); if(!el)return;
   // download:true items (APK/app files) download; every other link opens in a new tab/window.
   el.innerHTML='<div class="panel-label">'+escAttr(label)+'</div>'+items.map(x=>{
-    const href=safeHref(x.href), newTab=!x.download&&href.charAt(0)!=='#';
-    return `<a role="menuitem" href="${escAttr(href)}" ${x.download?('download="'+escAttr(x.fileName||x.name||'download')+'"'):''} ${newTab?'target="_blank" rel="noopener"':''} onclick="closeMenus()"><span class="item-icon">${escAttr(x.icon)}</span><span class="item-copy"><b>${escAttr(x.name)}</b><small>${escAttr(x.desc)}</small></span>${x.download?'<span class="app-download-tag">DOWNLOAD</span>':''}</a>`;
+    const href=safeHref(x.href), pk=x.download?null:portalKeyForUrl(x.href), newTab=!x.download&&href.charAt(0)!=='#';
+    const click=pk?`openPortal(event,'${pk}')`:'closeMenus()';
+    return `<a role="menuitem" href="${escAttr(href)}" ${pk?('data-portal="'+pk+'"'):''} ${x.download?('download="'+escAttr(x.fileName||x.name||'download')+'"'):''} ${newTab?'target="_blank" rel="noopener"':''} onclick="${click}"><span class="item-icon">${escAttr(x.icon)}</span><span class="item-copy"><b>${escAttr(x.name)}</b><small>${escAttr(x.desc)}</small></span>${x.download?'<span class="app-download-tag">DOWNLOAD</span>':''}</a>`;
   }).join('');
 }
 function renderUpdates(){
