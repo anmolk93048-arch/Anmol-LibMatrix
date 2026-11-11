@@ -224,70 +224,125 @@ app.get('/_am/bridge.js', function (req, res) {
     res.send(AM_BRIDGE_JS);
 });
 
-// 🎚️ Super Admin sidebar switch "OTP Verification" (ON/OFF). Injected into masked pages; it only appears when the visitor holds a
-//    real Super Admin session token (the API itself is also protected by requireRole('admin')).
-function __amOtpToggle() {
-    'use strict';
-    if (window.__amOtpToggle) return; window.__amOtpToggle = 1;
-    var tries = 0, done = false;
-    function claims(t) { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { return null; } }
-    function tokens() {
-        var out = [];
-        try { if (typeof AUTH_TOKEN !== 'undefined' && AUTH_TOKEN) out.push(String(AUTH_TOKEN)); } catch (e) {}
-        [window.sessionStorage, window.localStorage].forEach(function (st) {
-            try {
-                for (var i = 0; i < st.length; i++) {
-                    var v = st.getItem(st.key(i));
-                    if (typeof v === 'string' && /^[\w-]+\.[\w-]+\.[\w-]+$/.test(v)) { var c = claims(v); if (c && String(c.role).toLowerCase() === 'admin' && !c.pregate && out.indexOf(v) < 0) out.push(v); }
-                }
-            } catch (e) {}
-        });
-        return out;
-    }
-    function call(method, tok, body) {
-        return fetch('/api/admin/login-otp-setting', { method: method, credentials: 'include', headers: Object.assign({ Authorization: 'Bearer ' + tok }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined })
-            .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var e = new Error(d.error || ('HTTP ' + r.status)); e.status = r.status; throw e; } return d; }); });
-    }
-    function findSidebar() {
-        var sels = ['#sidebar', '.sidebar', 'aside', '[id*="sidebar" i]', '[class*="sidebar" i]', '[id*="sidenav" i]', 'nav'];
-        for (var i = 0; i < sels.length; i++) {
-            var list = document.querySelectorAll(sels[i]);
-            for (var j = 0; j < list.length; j++) { var r = list[j].getBoundingClientRect(); if (r.width > 60 && r.height > 120 && !list[j].querySelector('.am-otp-row')) return list[j]; }
-        }
-        return null;
-    }
-    function build(sb, st, tok) {
-        var row = document.createElement('div'); row.className = 'am-otp-row';
-        row.style.cssText = 'margin:10px 12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(128,128,128,.35);background:rgba(128,128,128,.12);color:inherit;font:600 13px/1.35 system-ui,Segoe UI,Arial,sans-serif';
-        var lab = document.createElement('label'); lab.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer';
-        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!st.enabled; cb.disabled = !!st.forcedOff; cb.style.cssText = 'width:18px;height:18px;flex:none;cursor:pointer';
-        var tx = document.createElement('span'); tx.textContent = 'OTP Verification (6-digit)';
-        var sub = document.createElement('div'); sub.style.cssText = 'margin-top:6px;font-weight:400;font-size:11px;opacity:.8';
-        function paint() { sub.textContent = st.forcedOff ? 'OFF (forced by server setting ADMIN_LOGIN_OTP=off).' : (cb.checked ? 'ON — a new device gets a WhatsApp OTP once; trusted devices skip it.' : 'OFF — login works with User ID + password only (no WhatsApp cost).'); }
-        cb.addEventListener('change', function () {
-            var want = cb.checked;
-            if (!want && !window.confirm('Turn OFF OTP verification?\n\nEveryone will log in with only User ID and password until you turn it ON again.')) { cb.checked = true; return; }
-            cb.disabled = true;
-            call('POST', tok, { enabled: want }).then(function (d) { st = d; cb.checked = !!d.enabled; }).catch(function (e) { cb.checked = !want; window.alert('Could not change the OTP setting: ' + (e.message || e)); }).then(function () { cb.disabled = !!st.forcedOff; paint(); });
-        });
-        lab.appendChild(cb); lab.appendChild(tx); row.appendChild(lab); row.appendChild(sub); paint(); sb.appendChild(row);
-    }
-    function attempt() {
-        if (done || ++tries > 45) { clearInterval(timer); return; }
-        var toks = tokens(); if (!toks.length) return;
-        var sb = findSidebar(); if (!sb) return;
-        done = true; clearInterval(timer);
-        (function next(i) {
-            if (i >= toks.length) return;
-            call('GET', toks[i]).then(function (st) { build(sb, st, toks[i]); }).catch(function () { next(i + 1); });
-        })(0);
-    }
-    var timer = setInterval(attempt, 2000); setTimeout(attempt, 600);
-}
-const AM_OTP_TOGGLE_JS = '(' + __amOtpToggle.toString() + ')();';
+// 🎚️ The OTP switches live ONLY inside the Super Admin dashboard (sidebar → "OTP Settings", per portal). The old script that injected a
+//    single "OTP Verification" box into every page with an admin token is retired: this route stays as an empty no-op so pages cached
+//    by a browser before the update do not 404.
 app.get('/_am/otp-toggle.js', function (req, res) {
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.send('/* retired: OTP switches are managed in Super Admin → OTP Settings */');
+});
+
+// 📲 6-digit OTP prompt for the Invoice / Agent / HRMS login pages (injected only there, see the masked-page middleware).
+//    The page keeps calling its normal login API. When the server answers 401 OTP_REQUIRED (portal switch ON + unknown device) this script
+//    asks for the OTP (WhatsApp, sent only now), then repeats the SAME login with the code. A remembered device never reaches this code:
+//    the server recognises it by its HttpOnly cookie, so the user simply logs in with ID + password.
+function __amOtpFlow() {
+    'use strict';
+    if (window.__amOtpFlow) return; window.__amOtpFlow = 1;
+    var realFetch = window.fetch; if (!realFetch) return;
+    var LOGIN_RE = /\/(material\/login|auth\/login)(?:[?#]|$)/i;
+    function jsonResp(status, obj) { return new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } }); }
+    function post(url, body) {
+        return realFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
+            .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d || {} }; }); });
+    }
+    function dtKey(kind, b) { return 'am_dt:' + (kind === 'material' ? 'mat|' + String(b.userId || '').toLowerCase() : String(b.role || '') + '|' + String(b.username || '').toLowerCase()); }
+    function modal(info) {
+        return new Promise(function (resolve) {
+            var ov = document.createElement('div');
+            ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+            ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,20,40,.62);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Segoe UI,Arial,sans-serif';
+            ov.innerHTML = '<div style="background:#fff;color:#12233f;width:100%;max-width:360px;border-radius:16px;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.35)">' +
+                '<div style="font-size:18px;font-weight:800;margin-bottom:4px">Verify your login</div>' +
+                '<div id="amo-msg" style="font-size:13px;line-height:1.45;color:#35547e;margin-bottom:12px"></div>' +
+                '<input id="amo-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Enter 6-digit OTP" style="width:100%;box-sizing:border-box;font-size:22px;letter-spacing:8px;text-align:center;padding:11px 8px;border:1.5px solid #b8c6dd;border-radius:10px;outline:none">' +
+                '<label style="display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-size:13px;cursor:pointer"><input id="amo-trust" type="checkbox" checked style="width:17px;height:17px"> Remember this device (no OTP next time)</label>' +
+                '<div id="amo-err" style="min-height:18px;margin:6px 0;font-size:12.5px;color:#c0392b"></div>' +
+                '<button id="amo-ok" type="button" style="width:100%;padding:12px;border:0;border-radius:10px;background:#1a3a6b;color:#fff;font-size:15px;font-weight:700;cursor:pointer">Verify &amp; Login</button>' +
+                '<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px"><button id="amo-resend" type="button" style="background:none;border:0;color:#1a3a6b;font-weight:600;cursor:pointer;padding:4px 0" disabled>Resend OTP</button><button id="amo-cancel" type="button" style="background:none;border:0;color:#64748b;cursor:pointer;padding:4px 0">Cancel</button></div></div>';
+            document.body.appendChild(ov);
+            var code = ov.querySelector('#amo-code'), err = ov.querySelector('#amo-err'), ok = ov.querySelector('#amo-ok'), rs = ov.querySelector('#amo-resend'), t = null, left = 0;
+            ov.querySelector('#amo-msg').textContent = info.message || 'Enter the 6-digit OTP sent to your registered WhatsApp number.';
+            function tick() { if (left > 0) { rs.disabled = true; rs.textContent = 'Resend OTP in ' + left + 's'; left--; } else { rs.disabled = false; rs.textContent = 'Resend OTP'; clearInterval(t); } }
+            function startCount(sec) { clearInterval(t); left = sec || 60; tick(); t = setInterval(tick, 1000); }
+            function close(v) { clearInterval(t); ov.remove(); resolve(v); }
+            startCount(info.resendInSec);
+            code.addEventListener('input', function () { code.value = code.value.replace(/\D/g, '').slice(0, 6); err.textContent = ''; });
+            code.addEventListener('keydown', function (e) { if (e.key === 'Enter') ok.click(); });
+            ov.querySelector('#amo-cancel').addEventListener('click', function () { close(null); });
+            rs.addEventListener('click', function () {
+                rs.disabled = true; err.textContent = '';
+                info.resend().then(function (r) { if (r.ok) startCount((r.data && r.data.resendInSec) || 60); else { err.textContent = r.data.error || 'Could not resend the OTP.'; startCount(r.data && r.data.resendInSec); } });
+            });
+            ok.addEventListener('click', function () {
+                if (code.value.length !== 6) { err.textContent = 'Enter the 6-digit OTP.'; code.focus(); return; }
+                ok.disabled = true; ok.textContent = 'Verifying…'; err.textContent = '';
+                info.verify(code.value, ov.querySelector('#amo-trust').checked).then(function (res) {
+                    ok.disabled = false; ok.textContent = 'Verify & Login';
+                    if (res.retry) { err.textContent = res.error || 'Invalid or expired OTP.'; code.select(); } else close(res.response);
+                });
+            });
+            setTimeout(function () { code.focus(); }, 50);
+        });
+    }
+    function run(url, init, original) {
+        var b; try { b = JSON.parse(init.body); } catch (e) { return Promise.resolve(original); }
+        var kind = /\/material\/login/i.test(url) ? 'material' : 'auth';
+        if (kind === 'auth' && ['agent', 'employee'].indexOf(String(b.role).toLowerCase()) < 0) return Promise.resolve(original);
+        var base = url.replace(/\/(material|auth)\/login.*$/i, '');
+        var sendUrl = kind === 'material' ? base + '/material/login-otp/send' : base + '/auth/portal-otp/send';
+        var sendBody = kind === 'material' ? { userId: b.userId, secondFactor: b.secondFactor } : { role: b.role, username: b.username, password: b.password, mobile: b.mobile };
+        function retry(extra) { return realFetch(url, Object.assign({}, init, { body: JSON.stringify(Object.assign({}, b, extra)) })); }
+        return post(sendUrl, sendBody).then(function (s) {
+            if (s.data && s.data.skipped) return retry({});                       // switch turned OFF meanwhile / device trusted
+            if (!s.ok) return jsonResp(s.status, s.data);                          // wrong credentials, service down … → the page shows the server's message
+            return modal({
+                message: s.data.message, resendInSec: s.data.resendInSec,
+                resend: function () { return post(sendUrl, sendBody); },
+                verify: function (code, trust) {
+                    if (kind === 'material') {
+                        return post(base + '/material/login-otp/verify', { userId: b.userId, secondFactor: b.secondFactor, code: code, trustDevice: trust }).then(function (v) {
+                            if (!v.ok) return { retry: true, error: v.data.error };
+                            return retry({ otpToken: v.data.otpToken, trustDevice: trust }).then(function (r) { return { response: r }; });
+                        });
+                    }
+                    return retry({ otp: code, trustDevice: trust }).then(function (r) {
+                        if (r.status === 401) return r.clone().json().catch(function () { return {}; }).then(function (d) { return d && (d.code === 'INVALID_OTP' || d.code === 'OTP_REQUIRED') ? { retry: true, error: d.error } : { response: r }; });
+                        return { response: r };
+                    });
+                }
+            }).then(function (r) {
+                if (!r) return jsonResp(401, { error: 'OTP verification was cancelled.', code: 'OTP_CANCELLED' });
+                if (r.ok) { try { r.clone().json().then(function (d) { if (d && d.deviceToken) localStorage.setItem(dtKey(kind, b), d.deviceToken); }); } catch (e) {} }
+                return r;
+            });
+        }).catch(function () { return original; });
+    }
+    window.fetch = function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        var isLogin = method === 'POST' && LOGIN_RE.test(url) && init && typeof init.body === 'string';
+        if (isLogin) {                                                              // older browsers / cross-origin API: send a stored device token too
+            try { var b0 = JSON.parse(init.body), kind0 = /\/material\/login/i.test(url) ? 'material' : 'auth', tk = localStorage.getItem(dtKey(kind0, b0)); if (tk && !b0.deviceToken) { b0.deviceToken = tk; init = Object.assign({}, init, { body: JSON.stringify(b0) }); } } catch (e) {}
+        }
+        var p = realFetch.call(this, input, init);
+        if (!isLogin) return p;
+        return p.then(function (res) {
+            if (res.ok) {   // remember the device token a successful OTP login returned
+                return res.clone().json().then(function (d) { try { var b1 = JSON.parse(init.body); if (d && d.deviceToken) localStorage.setItem(dtKey(/\/material\/login/i.test(url) ? 'material' : 'auth', b1), d.deviceToken); } catch (e) {} return res; }).catch(function () { return res; });
+            }
+            if (res.status !== 401) return res;
+            return res.clone().json().catch(function () { return null; }).then(function (d) {
+                if (!d || d.code !== 'OTP_REQUIRED') return res;
+                return run(url, init, res);
+            });
+        });
+    };
+}
+const AM_OTP_FLOW_JS = '(' + __amOtpFlow.toString() + ')();';
+app.get('/_am/otp-flow.js', function (req, res) {
     res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
-    res.send(AM_OTP_TOGGLE_JS);
+    res.send(AM_OTP_FLOW_JS);
 });
 
 // 🏠 LIVE HOME URL — the main page of the domain the user is on RIGHT NOW (auto-detected, nothing hardcoded).
@@ -338,7 +393,9 @@ app.use(function (req, res, next) {
         res.setHeader('Cache-Control', 'no-store, max-age=0'); res.setHeader('Pragma', 'no-cache');
         if (!chunks.length) return origEnd.call(res, done);
         let out = Buffer.concat(chunks).toString('utf8');
-        const tag = '<script src="/_am/bridge.js" defer></script><script src="/_am/otp-toggle.js" defer></script>';
+        let tag = '<script src="/_am/bridge.js" defer></script>';
+        // 6-digit OTP prompt for the portals that have no OTP screen of their own (Invoice / Agent / HRMS). Admin keeps its own flow.
+        if (/__ANMOL_PAGE=("|')(invoice_login|agent_login|hrms_login)\.html\1/.test(out)) tag += '<script src="/_am/otp-flow.js" defer></script>';
         out = /<\/body>/i.test(out) ? out.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : out + tag;
         res.removeHeader('Content-Length'); res.removeHeader('ETag');
         return origEnd.call(res, out, 'utf8', done);
@@ -2514,9 +2571,12 @@ app.post('/api/auth/login', (req, res) => {
             if (emp.status && emp.status !== 'active') {
                 return res.status(403).json({ error: 'Your admin verification is still pending. You can log in only after verification.' });
             }
-            const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
-            logLoginEvent('employee', username); // 🆕 real-time login count ke liye
-            res.json({ token });
+            adminSecondFactor(req, String(username).toUpperCase(), 'hrms').then(r => {   // 🔐 HRMS OTP only while its switch is ON
+                if (!r.ok) return res.status(r.status).json(r.body);
+                const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
+                logLoginEvent('employee', username); // 🆕 real-time login count ke liye
+                res.json(r.deviceToken ? { token, deviceToken: r.deviceToken } : { token });
+            }).catch(e => { console.error('hrms second factor error:', e.message); res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' }); });
         });
         return;
     }
@@ -2579,9 +2639,10 @@ app.post('/api/auth/login', (req, res) => {
             logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
             res.json(Object.assign({ token }, extra || {}));
         };
-        if (!_isAdminLogin) return _issue();
-        // 🔐 Super Admin: 6-digit OTP, skipped only for a trusted device (see "SUPER ADMIN LOGIN" block)
-        adminSecondFactor(req, String(user.username || username)).then(r => {
+        const _otpPortal = _isAdminLogin ? 'admin' : (roleKey === 'agent' ? 'agent' : null);
+        if (!_otpPortal) return _issue();
+        // 🔐 Admin / Agent: 6-digit OTP only while that portal's switch is ON, skipped for a trusted device (see "SUPER ADMIN LOGIN" block)
+        adminSecondFactor(req, String(user.username || username), _otpPortal).then(r => {
             if (!r.ok) return res.status(r.status).json(r.body);
             _issue(r.deviceToken ? { deviceToken: r.deviceToken } : null);
         }).catch(e => { console.error('admin second factor error:', e.message); res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' }); });
@@ -5130,36 +5191,91 @@ const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS |
 // 🎚️ OTP ON/OFF switch. Super Admin sidebar toggle → stored in the database (key cfg|login_otp, works on serverless).
 //    ADMIN_LOGIN_OTP=off in the environment is a hard override (OTP stays off whatever the toggle says).
 //    OFF → the login goes straight in with User ID + password: no WhatsApp message is sent (no per-message cost).
+// ── per-portal switches (Super Admin → sidebar → "OTP Settings"): admin · invoice · agent · hrms ──────────────────────
+//    Stored in the database (key cfg|login_otp → { portals:{admin,invoice,agent,hrms}, ... }). A portal whose switch is OFF never sends a
+//    WhatsApp OTP — the user signs in with ID + password only. Defaults (nothing saved yet): admin ON, invoice ON, agent OFF, hrms OFF.
+//    Old single-switch records ({enabled:false}) keep working: they switch admin + invoice OFF.
+const OTP_PORTALS = ['admin', 'invoice', 'agent', 'hrms'];
+const OTP_PORTAL_DEFAULT = { admin: true, invoice: true, agent: false, hrms: false };
+const _otpForcedOff = () => String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off';
 let _otpCfgCache = { v: null, t: 0 };
-async function loginOtpEnabled() {
-    if (String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off') return false;
+async function _otpCfgRecord() {
     if (_otpCfgCache.v !== null && Date.now() - _otpCfgCache.t < 5000) return _otpCfgCache.v;
-    let on = true;
-    try { const r = await _otpStore.get('cfg|login_otp'); if (r && r.enabled === false) on = false; } catch (e) { on = true; }   // unreadable setting → fail SAFE (OTP stays on)
-    _otpCfgCache = { v: on, t: Date.now() };
-    return on;
+    let r = null;
+    try { r = (await _otpStore.get('cfg|login_otp')) || null; } catch (e) { r = null; }   // unreadable setting → defaults (admin + invoice stay ON)
+    _otpCfgCache = { v: r, t: Date.now() };
+    return r;
 }
-async function setLoginOtpEnabled(on, by) {
-    await _otpStore.set('cfg|login_otp', { enabled: !!on, by: String(by || ''), at: Date.now(), exp: Date.now() + 3650 * 24 * 60 * 60 * 1000 });
-    _otpCfgCache = { v: !!on, t: Date.now() };
+function _otpPortalValue(cfg, portal) {
+    if (cfg && cfg.portals && typeof cfg.portals[portal] === 'boolean') return cfg.portals[portal];
+    if (cfg && cfg.enabled === false && (portal === 'admin' || portal === 'invoice')) return false;   // legacy single switch
+    return OTP_PORTAL_DEFAULT[portal];
 }
+async function loginOtpSettings() {
+    const cfg = await _otpCfgRecord(), out = {};
+    OTP_PORTALS.forEach(p => { out[p] = _otpPortalValue(cfg, p); });
+    return out;
+}
+async function loginOtpEnabled(portal) {
+    portal = OTP_PORTALS.indexOf(portal) >= 0 ? portal : 'admin';
+    if (_otpForcedOff()) return false;
+    return _otpPortalValue(await _otpCfgRecord(), portal);
+}
+async function setLoginOtpPortals(patch, by) {
+    const now = await loginOtpSettings(), portals = {};
+    OTP_PORTALS.forEach(p => { portals[p] = typeof patch[p] === 'boolean' ? patch[p] : now[p]; });
+    const rec = { enabled: portals.admin, portals: portals, by: String(by || ''), at: Date.now(), exp: Date.now() + 3650 * 24 * 60 * 60 * 1000 };
+    await _otpStore.set('cfg|login_otp', rec);
+    _otpCfgCache = { v: rec, t: Date.now() };
+    return portals;
+}
+// ── 📱 DEVICE TRUST ──────────────────────────────────────────────────────────────────────────────────────────────
+//    After one successful OTP the device gets a random token. The server stores only its sha256 and ALSO hands it to the browser as a
+//    long-lived HttpOnly cookie (am_dt_<hash of the user key>, TRUSTED_DEVICE_DAYS, default 365). The cookie survives logout,
+//    localStorage.clear() / sessionStorage.clear() and the bridge's token wipe, which is what used to throw the token away and ask for
+//    a fresh (paid) OTP on every login. The body field `deviceToken` is still accepted for older front-ends.
 const _tdKey = (user, token) => 'td|' + lc(user) + '|' + sha(String(token));
+const _tdCookie = (user) => 'am_dt_' + sha('dtc|' + lc(user)).slice(0, 16);
+function _readCookie(req, name) {
+    const h = String((req && req.headers && req.headers.cookie) || '');
+    const parts = h.split(';');
+    for (let i = 0; i < parts.length; i++) {
+        const k = parts[i].indexOf('=');
+        if (k > 0 && parts[i].slice(0, k).trim() === name) { try { return decodeURIComponent(parts[i].slice(k + 1).trim()); } catch (e) { return ''; } }
+    }
+    return '';
+}
+function _setDeviceCookie(req, user, token) {
+    try {
+        const res = req && req.res; if (!res || res.headersSent) return;
+        const secure = IS_VERCEL || req.secure || /https/i.test(String((req.headers && req.headers['x-forwarded-proto']) || ''));
+        res.append('Set-Cookie', _tdCookie(user) + '=' + token + '; Path=/; Max-Age=' + Math.floor(TRUSTED_DEVICE_MS / 1000) + '; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : ''));
+    } catch (e) { /* cookie is a bonus — the body token still works */ }
+}
 async function isTrustedDevice(user, token) {
     token = String(token || '');
     if (!/^[0-9a-f]{64}$/.test(token)) return false;
     const r = await _otpStore.get(_tdKey(user, token));
     return !!(r && r.exp > Date.now());
 }
+// request-aware check: the cookie first, then the token the front-end may still send in the body
+async function isTrustedDeviceReq(req, user, bodyToken) {
+    const c = _readCookie(req, _tdCookie(user));
+    if (c && await isTrustedDevice(user, c)) return true;
+    return isTrustedDevice(user, bodyToken);
+}
 async function issueTrustedDevice(user, req) {
     const token = crypto.randomBytes(32).toString('hex');
     await _otpStore.set(_tdKey(user, token), { createdAt: Date.now(), exp: Date.now() + TRUSTED_DEVICE_MS, ua: String((req.headers && req.headers['user-agent']) || '').slice(0, 160) });
+    _setDeviceCookie(req, user, token);
     return token;
 }
 async function revokeTrustedDevices(user) {
-    try { await ensureOtpTable(); await dbq('DELETE FROM otp_codes WHERE "key" LIKE ?', ['td|' + lc(user).replace(/[%_\\]/g, '') + '|%']); } catch (e) { console.warn('revokeTrustedDevices:', e.message); }
+    const u = lc(user).replace(/[%_\\]/g, '');
+    try { await ensureOtpTable(); for (const ns of [u, 'agent|' + u, 'hrms|' + u, 'mat|' + u]) await dbq('DELETE FROM otp_codes WHERE "key" LIKE ?', ['td|' + ns + '|%']); } catch (e) { console.warn('revokeTrustedDevices:', e.message); }
 }
-async function findAdminByCredentials(username, password) {
-    const list = parseEntityList(await readKv('kv_admin_entities', 'admins'));
+async function findAdminByCredentials(username, password, entity) {
+    const list = parseEntityList(await readKv('kv_admin_entities', entity || 'admins'));
     const want = lc(username);
     const user = list.find(u => u && [u.username, u.email, u.id].some(f => f && lc(f) === want));
     if (!user) return { status: 401, error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
@@ -5176,8 +5292,8 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     if (hitRateLimit('aotp:' + (req.ip || ''), 20, 10 * 60 * 1000) || hitRateLimit('aotpu:' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const a = await findAdminByCredentials(username, password);
     if (a.error) return res.status(a.status).json({ error: a.error, code: a.code });
-    if (!(await loginOtpEnabled())) return res.json({ success: true, skipped: true, otpDisabled: true });
-    if (await isTrustedDevice(a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    if (!(await loginOtpEnabled('admin'))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
     if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
@@ -5210,17 +5326,26 @@ app.post('/api/send-otp', noStore, (req, res, next) => {
     if (purpose === 'recovery' || purpose === 'forgot-password') { req.otpLen = ADMIN_OTP_LEN; return forgotPasswordHandler(req, res); }
     return res.status(400).json({ error: 'Invalid request. purpose must be "login" or "recovery".' });
 });
-// Public status (login pages may ask whether an OTP step will be needed) + Super Admin switch.
-app.get('/api/auth/otp-status', noStore, asyncRoute(async (req, res) => { res.json({ enabled: await loginOtpEnabled(), length: OTP_LENGTH }); }));
-app.get('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    res.json({ enabled: await loginOtpEnabled(), forcedOff: String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off', length: OTP_LENGTH });
+// Public status (a login page may ask whether ITS portal needs an OTP step: /api/auth/otp-status?portal=invoice) + Super Admin switches.
+app.get('/api/auth/otp-status', noStore, asyncRoute(async (req, res) => {
+    const portal = OTP_PORTALS.indexOf(lc(req.query && req.query.portal)) >= 0 ? lc(req.query.portal) : 'admin';
+    res.json({ enabled: await loginOtpEnabled(portal), portal: portal, length: OTP_LENGTH });
 }));
+const _otpSettingsPayload = async () => { const portals = await loginOtpSettings(); return { portals: portals, enabled: portals.admin, forcedOff: _otpForcedOff(), length: OTP_LENGTH }; };
+app.get('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => { res.json(await _otpSettingsPayload()); }));
+// body: { portal:'invoice', enabled:true }  |  { portals:{ admin:true, invoice:false, agent:false, hrms:false } }  |  legacy { enabled:true } (admin + invoice)
 app.post('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const v = (req.body || {}).enabled;
-    if (typeof v !== 'boolean') return res.status(400).json({ error: 'enabled must be true or false.' });
-    await setLoginOtpEnabled(v, req.authUser && (req.authUser.username || req.authUser.via));
-    console.log('[otp-setting] login OTP turned ' + (v ? 'ON' : 'OFF') + ' by ' + (req.authUser && req.authUser.username));
-    res.json({ success: true, enabled: v, forcedOff: String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off', length: OTP_LENGTH });
+    const b = req.body || {}, patch = {};
+    if (b.portals && typeof b.portals === 'object') { OTP_PORTALS.forEach(p => { if (typeof b.portals[p] === 'boolean') patch[p] = b.portals[p]; }); }
+    else if (typeof b.portal === 'string') {
+        const p = lc(b.portal);
+        if (OTP_PORTALS.indexOf(p) < 0 || typeof b.enabled !== 'boolean') return res.status(400).json({ error: 'portal must be admin, invoice, agent or hrms and enabled must be true or false.' });
+        patch[p] = b.enabled;
+    } else if (typeof b.enabled === 'boolean') { patch.admin = b.enabled; patch.invoice = b.enabled; }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change. Send { portal, enabled } or { portals:{…} }.' });
+    await setLoginOtpPortals(patch, req.authUser && (req.authUser.username || req.authUser.via));
+    console.log('[otp-setting] ' + JSON.stringify(patch) + ' by ' + (req.authUser && req.authUser.username));
+    res.json(Object.assign({ success: true }, await _otpSettingsPayload()));
 }));
 // ══════════════════════════════════════════════════════════════════
 // 🧾 INVOICE / MATERIAL PORTAL LOGIN — 6-digit WhatsApp OTP on a NEW device + "remember this device"
@@ -5249,8 +5374,8 @@ const materialLoginOtpSend = asyncRoute(async (req, res) => {
     if (hitRateLimit('motp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('motpu:' + lc(userId), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const m = await findMaterialLoginUser(userId, secondFactor);
     if (m.error) return res.status(m.status).json({ error: m.error, code: m.code });
-    if (!(await loginOtpEnabled())) return res.json({ success: true, skipped: true, otpDisabled: true });
-    if (await isTrustedDevice(_matTd(m.user.userid), b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    if (!(await loginOtpEnabled('invoice'))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, _matTd(m.user.userid), b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(m.user.mobile);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
     if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
@@ -5295,7 +5420,7 @@ const materialLoginOtpVerify = asyncRoute(async (req, res) => {
 });
 // Second factor for POST /api/material/login → {ok:true, deviceToken?} or {status, body}
 async function materialOtpGate(req, userid) {
-    if (!(await loginOtpEnabled())) return { ok: true };
+    if (!(await loginOtpEnabled('invoice'))) return { ok: true };
     const b = req.body || {};
     if (b.otpToken) {
         try {
@@ -5307,20 +5432,22 @@ async function materialOtpGate(req, userid) {
         } catch (e) { /* fall through */ }
         return { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
     }
-    if (await isTrustedDevice(_matTd(userid), b.deviceToken)) return { ok: true };
+    if (await isTrustedDeviceReq(req, _matTd(userid), b.deviceToken)) return { ok: true };
     return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
 }
 // Called by /api/auth/login (admin role): returns null when the login may continue, otherwise {status, body}.
-async function adminSecondFactor(req, userId) {
-    if (!(await loginOtpEnabled())) return { ok: true };
+async function adminSecondFactor(req, userId, portal) {
+    portal = portal || 'admin';
+    if (!(await loginOtpEnabled(portal))) return { ok: true };            // switch OFF for this portal → ID + password only, no WhatsApp message
+    const ns = portal === 'admin' ? userId : portal + '|' + userId;       // trusted-device namespace (admin keeps its original one)
     const b = req.body || {};
     const otp = String(b.otp || '').replace(/\D/g, '');
     if (!otp) {
-        if (await isTrustedDevice(userId, b.deviceToken)) return { ok: true };
+        if (await isTrustedDeviceReq(req, ns, b.deviceToken)) return { ok: true };
         return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
     }
-    if (hitRateLimit('aotpv:' + lc(userId), 15, 10 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Please try again later.' } };
-    const key = 'lotp|' + lc(userId);
+    if (hitRateLimit('aotpv:' + portal + ':' + lc(userId), 15, 10 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Please try again later.' } };
+    const key = portal === 'admin' ? 'lotp|' + lc(userId) : 'lotp|' + portal + '|' + lc(userId);
     const o = await _otpStore.get(key);
     const bad = { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
     if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return bad; }
@@ -5331,8 +5458,49 @@ async function adminSecondFactor(req, userId) {
     await _otpStore.delete(key);   // one-time use
     // 📱 a device that passed the OTP is remembered by default (the 'Remember this device' box can opt out with trustDevice:false)
     const remember = !(b.trustDevice === false || b.trustDevice === 'false' || b.trustDevice === 0 || b.trustDevice === '0');
-    return { ok: true, deviceToken: remember ? await issueTrustedDevice(userId, req) : undefined };
+    return { ok: true, deviceToken: remember ? await issueTrustedDevice(ns, req) : undefined };
 }
+// 📲 Agent / HRMS login OTP — POST /api/auth/portal-otp/send {role:'agent'|'employee', username, password | mobile}
+//    Wrong credentials → normal 401 (no OTP). Switch OFF for that portal, or a trusted device → {skipped:true} (nothing is sent).
+app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const roleKey = lc(b.role);
+    const portal = roleKey === 'agent' ? 'agent' : ((roleKey === 'employee' || roleKey === 'hrms') ? 'hrms' : null);
+    const username = String(b.username || '').trim();
+    if (!portal || !username) return res.status(400).json({ error: 'Role and User ID are required.' });
+    if (hitRateLimit('potp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('potpu:' + portal + ':' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    let id, mobile;
+    if (portal === 'agent') {
+        const password = String(b.password || '');
+        if (!password) return res.status(400).json({ error: 'Password is required.' });
+        const a = await findAdminByCredentials(username, password, 'agents');
+        if (a.error) return res.status(a.status).json({ error: a.error, code: a.code });
+        id = a.id; mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
+    } else {
+        const list = await readKv('kv_blob', 'hrms_employees');
+        const emp = (Array.isArray(list) ? list : []).find(e => e && String(e.empId || '').toUpperCase() === username.toUpperCase());
+        if (!emp) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        const empMobile = last10(emp.phone || emp.mobile);
+        if (!empMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+        if (empMobile !== last10(b.mobile)) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
+        if (emp.status === 'inactive' || emp.status === 'blocked') return res.status(403).json({ error: 'This Employee ID is blocked or inactive. Please contact the administrator.' });
+        if (emp.status && emp.status !== 'active') return res.status(403).json({ error: 'Your admin verification is still pending. You can log in only after verification.' });
+        id = username.toUpperCase(); mobile = empMobile;
+    }
+    if (!(await loginOtpEnabled(portal))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, portal + '|' + id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    const key = 'lotp|' + portal + '|' + lc(id);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    const otp = String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN));
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { return otpSendFailed(res, e, portal + '-login-otp'); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'A ' + ADMIN_OTP_LEN + '-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+}));
 // 🩺 OTP health check — GET /api/auth/otp-diagnostics with header  x-diag-secret: <OTP_DIAG_SECRET>  (route is disabled unless that env var is set).
 //    Shows whether the Fast2SMS key / database are reachable; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
 app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {

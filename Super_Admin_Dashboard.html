@@ -2506,6 +2506,7 @@ html,body,#admin-app{width:100%;min-width:0;}
   <button class="nav-item" data-tooltip="Login & App Access" onclick="GOTO('config-login-apps')"><span class="nav-icon">🔐</span><span class="nav-text">Login &amp; App Access</span></button>
   <button class="nav-item" data-tooltip="Website Notices & Navigation" onclick="GOTO('config-navigation')"><span class="nav-icon">📢</span><span class="nav-text">Website Notices</span></button>
   <button class="nav-item" data-tooltip="Admin Security & System" onclick="GOTO('config-security')"><span class="nav-icon">🛡️</span><span class="nav-text">Admin Security</span></button>
+  <button class="nav-item" data-tooltip="OTP Settings (per portal)" onclick="GOTO('config-otp')"><span class="nav-icon">📲</span><span class="nav-text">OTP Settings</span></button>
   <button class="nav-item" data-tooltip="Recycle Bin" onclick="GOTO('recycle-bin')"><span class="nav-icon">♻️</span><span class="nav-text">Recycle Bin</span></button>
   <button class="nav-item" data-tooltip="Theme & Appearance" onclick="GOTO('theme-appearance')"><span class="nav-icon">🎨</span><span class="nav-text">Theme &amp; Appearance</span></button>
  </div>
@@ -4129,6 +4130,34 @@ html,body,#admin-app{width:100%;min-width:0;}
 </div>
 
 
+<div class="page" id="page-config-otp">
+  <style>
+    #page-config-otp .otp-sw{position:relative;display:inline-block;width:46px;height:26px;flex:none}
+    #page-config-otp .otp-sw input{opacity:0;width:0;height:0;position:absolute}
+    #page-config-otp .otp-sw span{position:absolute;inset:0;background:#b9c0cc;border-radius:26px;transition:.2s;cursor:pointer}
+    #page-config-otp .otp-sw span:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+    #page-config-otp .otp-sw input:checked+span{background:#1a8d4b}
+    #page-config-otp .otp-sw input:checked+span:before{transform:translateX(20px)}
+    #page-config-otp .otp-sw input:disabled+span{opacity:.55;cursor:not-allowed}
+    #page-config-otp .otp-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 4px;border-bottom:1px solid rgba(128,128,128,.22)}
+    #page-config-otp .otp-row:last-child{border-bottom:0}
+    #page-config-otp .otp-row b{display:block;font-size:14px}
+    #page-config-otp .otp-row small{display:block;margin-top:3px;opacity:.75;font-size:12px;line-height:1.4}
+    #page-config-otp .otp-state{font-weight:700;font-size:12px;min-width:34px;text-align:right}
+    #page-config-otp .otp-note{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(128,128,128,.12);font-size:12px;line-height:1.5}
+  </style>
+  <div class="page-header"><div><div class="page-title">📲 OTP Settings</div><div class="page-sub">Choose, portal by portal, where a 6-digit WhatsApp OTP is required. OFF = the user signs in with ID + password only (no WhatsApp message, no cost).</div></div>
+    <div class="actions-row"><button class="btn btn-ghost" onclick="OTPSET.load()">⟳ Refresh</button></div></div>
+  <div class="card" style="padding:8px 16px">
+    <div id="otpset-forced" class="otp-note" style="display:none;margin:10px 0">⚠️ OTP is forced OFF for every portal by the server setting <code>ADMIN_LOGIN_OTP=off</code>. The switches below are locked until that is removed.</div>
+    <div class="otp-row"><div><b>🧾 Invoice portal</b><small>Invoice / material users — OTP on a new device only.</small></div><span class="otp-state" id="otpset-state-invoice">…</span><label class="otp-sw"><input type="checkbox" id="otpset-invoice" onchange="OTPSET.save('invoice',this)" disabled><span></span></label></div>
+    <div class="otp-row"><div><b>♟ Agent portal</b><small>Agent logins. (Staff users are not affected.)</small></div><span class="otp-state" id="otpset-state-agent">…</span><label class="otp-sw"><input type="checkbox" id="otpset-agent" onchange="OTPSET.save('agent',this)" disabled><span></span></label></div>
+    <div class="otp-row"><div><b>👥 HRMS portal</b><small>Employee (HRMS) logins.</small></div><span class="otp-state" id="otpset-state-hrms">…</span><label class="otp-sw"><input type="checkbox" id="otpset-hrms" onchange="OTPSET.save('hrms',this)" disabled><span></span></label></div>
+    <div class="otp-row"><div><b>🛡 Admin portal</b><small>Super Admin login.</small></div><span class="otp-state" id="otpset-state-admin">…</span><label class="otp-sw"><input type="checkbox" id="otpset-admin" onchange="OTPSET.save('admin',this)" disabled><span></span></label></div>
+    <div class="otp-note">• Only a <b>new device</b> is asked for an OTP. After one successful OTP the device is remembered (about 1 year) — logging out and in again on the same laptop/phone does <b>not</b> send another OTP.<br>• Turning a portal ON later asks each device for one OTP the next time; turning it OFF never sends a message.<br>• These switches exist only here — they do not appear on any login or portal page.</div>
+    <div id="otpset-msg" style="min-height:18px;margin:8px 0 4px;font-size:12px"></div>
+  </div>
+</div>
 <div class="page" id="page-recycle-bin">
   <div class="page-header"><div><div class="page-title">♻️ Recycle Bin / Restore Center</div><div class="page-sub">Anything deleted or wiped on any portal (users, agents, students, HRMS, invoices, "Reset Factory") is kept here. Restore puts it back on its portal with all original data. <b>Purge</b> erases it for good — it can never be restored.</div></div>
     <div class="actions-row"><button class="btn btn-ghost" onclick="RB_LOAD()">⟳ Refresh</button></div></div>
@@ -16905,6 +16934,39 @@ img,svg,video,canvas,iframe{max-width:100%}
   function start(){ scan(); new MutationObserver(function(){ if(queued) return; queued=true; requestAnimationFrame(function(){ queued=false; scan(); }); }).observe(document.body,{childList:true,subtree:true}); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
 })();
+</script>
+<script>
+/* ── Super Admin → OTP Settings (per-portal switches) ── */
+window.OTPSET=(function(){
+  var PORTALS=['invoice','agent','hrms','admin'], st=null, loading=false;
+  function $(id){return document.getElementById(id)}
+  function msg(t,bad){var m=$('otpset-msg');if(m){m.textContent=t||'';m.style.color=bad?'#c0392b':'#1a8d4b';}}
+  function paint(){
+    if(!st)return;
+    if($('otpset-forced'))$('otpset-forced').style.display=st.forcedOff?'block':'none';
+    PORTALS.forEach(function(p){
+      var cb=$('otpset-'+p),lab=$('otpset-state-'+p); if(!cb)return;
+      var on=!st.forcedOff&&!!st.portals[p];
+      cb.checked=on; cb.disabled=!!st.forcedOff;
+      if(lab){lab.textContent=on?'ON':'OFF';lab.style.color=on?'#1a8d4b':'#c0392b';}
+    });
+  }
+  function load(){
+    if(loading)return; loading=true; msg('Loading…');
+    return API.get('/admin/login-otp-setting').then(function(d){st=d;paint();msg('');})
+      .catch(function(e){msg('Could not load OTP settings: '+(e.message||e),true);})
+      .then(function(){loading=false;});
+  }
+  function save(portal,cb){
+    var want=cb.checked; cb.disabled=true; msg('Saving…');
+    API.post('/admin/login-otp-setting',{portal:portal,enabled:want}).then(function(d){
+      st=d;paint();msg((portal.charAt(0).toUpperCase()+portal.slice(1))+' OTP turned '+(want?'ON':'OFF')+'.');
+    }).catch(function(e){cb.checked=!want;msg('Could not change the setting: '+(e.message||e),true);})
+      .then(function(){cb.disabled=!!(st&&st.forcedOff);});
+  }
+  return {load:load,save:save};
+})();
+(function(){var g=window.GOTO;window.GOTO=function(page){var r=g.apply(this,arguments);if(page==='config-otp')OTPSET.load();return r;};})();
 </script>
 </body>
 </html>
