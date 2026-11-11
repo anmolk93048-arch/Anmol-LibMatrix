@@ -719,63 +719,10 @@ const COMMAND_UPDATES = [
 const LEGACY_PAGES={'admin_panel_login.html':'/admin-login','admin_login.html':'/admin-login','new_admin_login.html':'/admin-login','super_admin_login.html':'/admin-login',
   'agent_login.html':'/agent-login','hrms_login.html':'/hrms-login','pfms_login.html':'/pfms-login','student_attendance.html':'/student-login',
   'student_attendance_portal.html':'/student-login','invoice_login.html':'/invoice-login','anmol_material_entry.html':'/invoice-login','anmol_material_login.html':'/invoice-login'};
-// 🔐 MASKED PORTAL LINKS: route-mask.js injects window.__ANMOL_NAV = {admin:'/app/<66-hex>', agent:..., hrms:..., student:..., pfms:..., invoice:..., dashboard:...}
-//    into this page for every visit. Any link that points to a portal (old clean path, legacy filename, alias) is swapped for that
-//    session's encrypted /app/<token> URL — the plain /admin-login path is never used (it answers 404 by design).
-const PORTAL_ALIASES={
-  admin:['admin-login','admin_login','admin','super-admin','super-admin-login','super_admin_login','superadmin','admin-panel-login','admin_panel_login','new-admin-login','new_admin_login'],
-  dashboard:['admin-dashboard','dashboard','super-admin-dashboard','super_admin_dashboard'],
-  agent:['agent-login','agent_login','agent'],
-  hrms:['hrms-login','hrms_login','hrms'],
-  student:['student-login','student_login','student','student-attendance','student_attendance','student_attendance_portal'],
-  pfms:['pfms-login','pfms_login','pfms'],
-  invoice:['invoice-login','invoice_login','invoice','anmol_material_entry','anmol_material_login']
-};
-const PORTAL_LOOKUP={};
-Object.keys(PORTAL_ALIASES).forEach(k=>PORTAL_ALIASES[k].forEach(n=>{PORTAL_LOOKUP[n]=k}));
-function portalKeyOf(u){
-  const t=String(u||'').trim().toLowerCase().replace(/^nav:/,'').split(/[?#]/)[0].replace(/^\/+/,'').replace(/\/+$/,'').replace(/\.html?$/,'');
-  return PORTAL_LOOKUP[t]||null;
-}
-function maskedPortalUrl(key){
-  const m=window.__ANMOL_NAV;
-  return (m&&typeof m[key]==='string'&&/^\/app\/[0-9a-f]{66}$/.test(m[key]))?m[key]:null;
-}
-// Fresh link set (tokens expire after NAV_TTL_HOURS) — fetched at start if the injected map is missing and every 30 min afterwards.
-function refreshPortalMap(){
-  return fetch('/api/nav/map',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{
-    if(d&&d.map){window.__ANMOL_NAV=d.map;window.__ANMOL_NAV_TS=Date.now();
-      if(typeof rerenderMenus==='function')rerenderMenus();}
-  }).catch(()=>{});
-}
-function portalKeyForUrl(u){
-  u=String(u==null?'':u).trim();
-  if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return null;
-  let probe=u;
-  try{ if(/^https?:\/\//i.test(u)){const x=new URL(u); probe=(x.origin===location.origin)?x.pathname:''; } }catch(e){probe='';}
-  if(probe&&!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(probe)){const base=probe.split(/[?#]/)[0].toLowerCase(); if(LEGACY_PAGES[base])probe=LEGACY_PAGES[base];}
-  return probe?portalKeyOf(probe):null;
-}
-// Click handler for every portal link: the injected masked URL when present, otherwise /go/<portal> (server-side redirect to a fresh
-// masked link). No fetch, no timeout, no alert — the click always lands on a working page.
-function openPortal(ev,key){
-  if(ev&&(ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.button>0))return true;   // let the browser use the link's own href
-  if(ev)ev.preventDefault();
-  try{closeMenus()}catch(e){}
-  const url=maskedPortalUrl(key)||('/go/'+key);
-  const w=window.open(url,'_blank');                                       // (not 'noopener' in the feature string: that makes open() return null even on success)
-  if(w){try{w.opener=null}catch(e){}} else location.assign(url);            // pop-up blocked → open in this tab instead
-  return false;
-}
 function safeHref(u){
   u=String(u==null?'':u).trim();
   if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return '#';
-  // portal link? (absolute same-origin URL, clean path, or legacy filename) → masked /app/<token> URL
-  let probe=u;
-  try{ if(/^https?:\/\//i.test(u)){const x=new URL(u); if(x.origin===location.origin) probe=x.pathname; else probe=''; } }catch(e){probe='';}
-  const key=probe?portalKeyOf(probe):null;
-  if(key){return maskedPortalUrl(key)||('/go/'+key);}   // no map yet → /go/<portal>: the server mints a fresh masked link and redirects (never a dead '#')
-  if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base]){const k2=portalKeyOf(LEGACY_PAGES[base]);const m2=k2&&maskedPortalUrl(k2);return m2||(k2?'/go/'+k2:'#');}}
+  if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base])return LEGACY_PAGES[base]+u.slice(base.length);}
   return u;
 }
 function escAttr(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -783,9 +730,8 @@ function renderFeatureMenu(id, items, label){
   const el=document.getElementById(id); if(!el)return;
   // download:true items (APK/app files) download; every other link opens in a new tab/window.
   el.innerHTML='<div class="panel-label">'+escAttr(label)+'</div>'+items.map(x=>{
-    const href=safeHref(x.href), pk=x.download?null:portalKeyForUrl(x.href), newTab=!x.download&&href.charAt(0)!=='#';
-    const click=pk?`openPortal(event,'${pk}')`:'closeMenus()';
-    return `<a role="menuitem" href="${escAttr(href)}" ${pk?('data-portal="'+pk+'"'):''} ${x.download?('download="'+escAttr(x.fileName||x.name||'download')+'"'):''} ${newTab?'target="_blank" rel="noopener"':''} onclick="${click}"><span class="item-icon">${escAttr(x.icon)}</span><span class="item-copy"><b>${escAttr(x.name)}</b><small>${escAttr(x.desc)}</small></span>${x.download?'<span class="app-download-tag">DOWNLOAD</span>':''}</a>`;
+    const href=safeHref(x.href), newTab=!x.download&&href.charAt(0)!=='#';
+    return `<a role="menuitem" href="${escAttr(href)}" ${x.download?('download="'+escAttr(x.fileName||x.name||'download')+'"'):''} ${newTab?'target="_blank" rel="noopener"':''} onclick="closeMenus()"><span class="item-icon">${escAttr(x.icon)}</span><span class="item-copy"><b>${escAttr(x.name)}</b><small>${escAttr(x.desc)}</small></span>${x.download?'<span class="app-download-tag">DOWNLOAD</span>':''}</a>`;
   }).join('');
 }
 function renderUpdates(){
@@ -823,14 +769,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenus();closeU
     t.dataset.looped='true';
   }
 })();
-let CURRENT_LOGIN_ITEMS=LOGIN_FEATURES, CURRENT_APP_ITEMS=APP_FEATURES;
-function rerenderMenus(){
-  renderFeatureMenu('loginMenu',CURRENT_LOGIN_ITEMS,'Login Features');
-  renderFeatureMenu('appMenu',CURRENT_APP_ITEMS,'App Features');
-}
-rerenderMenus();
-if(!window.__ANMOL_NAV) refreshPortalMap();
-setInterval(refreshPortalMap, 30*60*1000);
+renderFeatureMenu('loginMenu',LOGIN_FEATURES,'Login Features');
+renderFeatureMenu('appMenu',APP_FEATURES,'App Features');
 renderUpdates();
 
 // ══════════════════════════════════════════════════════════════════
@@ -891,10 +831,10 @@ renderUpdates();
       // first-run placeholder hai jab tak backend se koi jawab na aaye, DB ko kabhi
       // override nahi karta.
       if(Array.isArray(d.login_options)){
-        CURRENT_LOGIN_ITEMS=normalize(d.login_options, false); renderFeatureMenu('loginMenu', CURRENT_LOGIN_ITEMS, 'Login Features');
+        renderFeatureMenu('loginMenu', normalize(d.login_options, false), 'Login Features');
       }
       if(Array.isArray(d.apps)){
-        CURRENT_APP_ITEMS=normalize(d.apps, true); renderFeatureMenu('appMenu', CURRENT_APP_ITEMS, 'App Features');
+        renderFeatureMenu('appMenu', normalize(d.apps, true), 'App Features');
       }
       applyFooter(d.footer);
       applyTheme(d.index_theme);

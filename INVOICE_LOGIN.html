@@ -3298,7 +3298,7 @@ function withTimeout(promise, ms = 15000, label = 'Request'){
   return Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(
-      label + ' did not complete in time — please check your internet connection and try again.'
+      label + ' did not complete within 15 seconds — please check your internet connection or firewall (make sure firestore.googleapis.com is not blocked).'
     )), ms))
   ]);
 }
@@ -3629,11 +3629,9 @@ async function attemptLogin(){
   try{
     // Login now goes through the same Cloud Run backend (MySQL) set in
     // API_BASE above, instead of Firestore — /material/login route.
-    // 6-digit WhatsApp OTP (only when the Super Admin switch for this portal is ON and the device is new): /_am/otp-flow.js shows the
-    // OTP box inside this same request, so the timeout must leave room for typing the code (10 minutes = the OTP's own validity).
     const result = await withTimeout(API.post('/material/login', {
       userId: userId, secondFactor: secondFactor
-    }), 600000, 'Login check');
+    }), 15000, 'Login check');
 
     const userDoc = (result && result.user) ? result.user : result;
     // 🆕 FIX: Backend/DB column ka naam kabhi "userId" (camelCase) aur kabhi
