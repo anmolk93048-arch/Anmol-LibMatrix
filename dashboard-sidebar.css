@@ -1,0 +1,120 @@
+/* Anmol LibMatrix — Super Admin sidebar (single, collapsible, role-aware).
+   Scoped under #admin-app #sidebar.lm-sb so it wins over the legacy sidebar rules still shipped in the page. */
+#admin-app #sidebar.lm-sb{
+  --lm-bg:#0b1f44;--lm-bg2:#081735;--lm-line:rgba(255,255,255,.08);--lm-text:#c9d6ee;--lm-dim:#8ea3c7;--lm-hi:#fff;
+  --lm-accent:#f28c28;--lm-ok:#22c55e;--lm-bad:#ef4444;--lm-w:256px;--lm-rail:68px;
+  width:var(--lm-w)!important;flex:0 0 var(--lm-w);background:linear-gradient(180deg,var(--lm-bg),var(--lm-bg2))!important;
+  border-right:1px solid var(--lm-line)!important;display:flex!important;flex-direction:column;overflow:hidden!important;padding:0!important;
+  color:var(--lm-text);transition:width .22s ease,transform .22s ease;font-family:'Nunito','Segoe UI',system-ui,sans-serif}
+#admin-app #sidebar.lm-sb.collapsed{width:var(--lm-rail)!important;flex-basis:var(--lm-rail)}
+#admin-app #sidebar.lm-sb *{box-sizing:border-box}
+#admin-app #sidebar.lm-sb .lm-ic{width:18px;height:18px;flex:0 0 18px}
+
+/* profile header */
+#admin-app #sidebar.lm-sb .sidebar-brand-profile{padding:14px 12px 10px!important;margin:0!important;border:0!important;background:none!important}
+#admin-app #sidebar.lm-sb .sidebar-profile-card{display:flex;align-items:center;gap:10px;padding:10px;border-radius:14px!important;background:rgba(255,255,255,.06)!important;border:1px solid var(--lm-line)!important;box-shadow:none!important}
+#admin-app #sidebar.lm-sb .sidebar-profile-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:rgba(255,255,255,.12)!important;font-size:18px;color:#fff}
+#admin-app #sidebar.lm-sb .sidebar-profile-avatar img{width:100%;height:100%;object-fit:cover}
+#admin-app #sidebar.lm-sb .sidebar-profile-copy{min-width:0;display:flex;flex-direction:column;gap:3px}
+#admin-app #sidebar.lm-sb .sidebar-profile-copy strong{font-size:13px;font-weight:800;color:var(--lm-hi)!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#admin-app #sidebar.lm-sb .sidebar-role-pill{align-self:flex-start;font-size:10px;font-weight:800;letter-spacing:.3px;padding:2px 8px;border-radius:99px;background:rgba(242,140,40,.16)!important;color:#ffc27a!important;border:1px solid rgba(242,140,40,.35)!important}
+#admin-app #sidebar.lm-sb.collapsed .sidebar-profile-copy{display:none}
+#admin-app #sidebar.lm-sb.collapsed .sidebar-profile-card{padding:6px;justify-content:center;background:none!important;border:0!important}
+
+/* scrollable nav */
+#admin-app #sidebar.lm-sb .lm-nav{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:2px 10px 10px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+#admin-app #sidebar.lm-sb .lm-nav::-webkit-scrollbar{width:6px}
+#admin-app #sidebar.lm-sb .lm-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:6px}
+
+/* groups */
+#admin-app #sidebar.lm-sb .lm-group{margin:4px 0 0!important;padding:0!important;border:0!important}
+#admin-app #sidebar.lm-sb .lm-group-head{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;
+  padding:10px 8px 6px;font-size:10.5px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;color:var(--lm-dim)!important;opacity:1!important}
+#admin-app #sidebar.lm-sb .lm-group-head:hover{color:var(--lm-hi)!important}
+#admin-app #sidebar.lm-sb .lm-group-head:focus-visible,#admin-app #sidebar.lm-sb .lm-item:focus-visible,#admin-app #sidebar.lm-sb .lm-logout:focus-visible{outline:2px solid var(--lm-accent);outline-offset:1px}
+#admin-app #sidebar.lm-sb .lm-group-head .lm-ic{width:14px;height:14px;flex-basis:14px;transition:transform .2s}
+#admin-app #sidebar.lm-sb .lm-group:not(.open) .lm-group-head .lm-ic{transform:rotate(-90deg)}
+#admin-app #sidebar.lm-sb .lm-group-body{display:grid;gap:2px}
+#admin-app #sidebar.lm-sb .lm-group:not(.open):not(.lm-group-flat) .lm-group-body{display:none}
+
+/* items */
+#admin-app #sidebar.lm-sb .lm-item{all:unset;box-sizing:border-box;position:relative;display:flex;align-items:center;gap:11px;width:100%;min-height:36px;padding:7px 10px;border-radius:10px;cursor:pointer;
+  font-size:13px;font-weight:700;color:var(--lm-text)!important;background:transparent!important;border:0!important;transition:background .15s,color .15s}
+#admin-app #sidebar.lm-sb .lm-item:hover{background:rgba(255,255,255,.08)!important;color:var(--lm-hi)!important}
+#admin-app #sidebar.lm-sb .lm-item.active{background:linear-gradient(90deg,rgba(242,140,40,.22),rgba(242,140,40,.06))!important;color:var(--lm-hi)!important}
+#admin-app #sidebar.lm-sb .lm-item.active::before{content:"";position:absolute;left:-10px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--lm-accent)!important}
+#admin-app #sidebar.lm-sb .lm-item.active .lm-ic{color:var(--lm-accent)}
+#admin-app #sidebar.lm-sb .lm-item .nav-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:1!important}
+#admin-app #sidebar.lm-sb .lm-badge{margin-left:auto;min-width:22px;padding:1px 7px;border-radius:99px;text-align:center;font-size:10.5px;font-weight:800;line-height:18px;background:rgba(255,255,255,.12)!important;color:#dbe6ff!important}
+#admin-app #sidebar.lm-sb .lm-badge-alert{background:rgba(239,68,68,.2)!important;color:#fca5a5!important}
+
+/* live overview */
+#admin-app #sidebar.lm-sb .lm-live{margin:6px 0 4px;padding:12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--lm-line)}
+#admin-app #sidebar.lm-sb .lm-live-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--lm-hi)}
+#admin-app #sidebar.lm-sb .lm-live-head b{font-weight:800;letter-spacing:.2px}
+#admin-app #sidebar.lm-sb .lm-live-head time{margin-left:auto;font-size:10.5px;color:var(--lm-dim);font-variant-numeric:tabular-nums}
+#admin-app #sidebar.lm-sb .lm-live-dot{width:8px;height:8px;border-radius:50%;background:var(--lm-dim);flex:0 0 8px}
+#admin-app #sidebar.lm-sb .lm-live.on .lm-live-dot{background:var(--lm-ok);animation:lmPulse 1.8s infinite}
+#admin-app #sidebar.lm-sb .lm-live.off .lm-live-dot{background:var(--lm-bad)}
+@keyframes lmPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+#admin-app #sidebar.lm-sb .lm-live-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#admin-app #sidebar.lm-sb .lm-metric{padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06);display:flex;flex-direction:column;gap:2px;min-width:0}
+#admin-app #sidebar.lm-sb .lm-metric-k{font-size:10px;font-weight:700;color:var(--lm-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#admin-app #sidebar.lm-sb .lm-metric b{font-size:17px;font-weight:900;color:var(--lm-hi);font-variant-numeric:tabular-nums;line-height:1.15}
+#admin-app #sidebar.lm-sb .lm-perf{margin-top:10px}
+#admin-app #sidebar.lm-sb .lm-perf-row{display:flex;justify-content:space-between;font-size:11px;color:var(--lm-dim);margin-bottom:4px}
+#admin-app #sidebar.lm-sb .lm-perf-row b{color:var(--lm-hi);font-variant-numeric:tabular-nums}
+#admin-app #sidebar.lm-sb .lm-bar{height:5px;border-radius:5px;background:rgba(255,255,255,.1);overflow:hidden}
+#admin-app #sidebar.lm-sb .lm-bar i{display:block;height:100%;width:0;border-radius:5px;background:linear-gradient(90deg,#38bdf8,#22c55e);transition:width .6s ease}
+
+/* footer: social + logout */
+#admin-app #sidebar.lm-sb .lm-foot{flex:0 0 auto;margin:0!important;padding:10px 12px 12px!important;border-top:1px solid var(--lm-line)!important;background:rgba(0,0,0,.14)!important;display:flex;flex-direction:column;gap:10px}
+.lm-social-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lm-social{width:34px;height:34px;border-radius:10px;display:inline-grid;place-items:center;color:#dbe6ff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);transition:transform .15s,background .15s,color .15s}
+.lm-social:hover,.lm-social:focus-visible{transform:translateY(-2px);color:#fff;outline:none}
+.lm-social-facebook:hover,.lm-social-facebook:focus-visible{background:#1877f2}
+.lm-social-youtube:hover,.lm-social-youtube:focus-visible{background:#e11d1d}
+.lm-social-twitter:hover,.lm-social-twitter:focus-visible{background:#000}
+#admin-app #sidebar.lm-sb .lm-logout{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:800;color:#fff!important;background:linear-gradient(90deg,#e62f48,#c91f3b)!important}
+#admin-app #sidebar.lm-sb .lm-logout:hover{filter:brightness(1.08)}
+#admin-app #sidebar.lm-sb .lm-cloud{display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;color:var(--lm-dim)}
+#admin-app #sidebar.lm-sb .lm-cloud-dot{width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block}
+
+#admin-app .sidebar-overlay{z-index:550!important}
+#admin-app #topbar-logo-icon{background:#fff!important;border-radius:10px;padding:3px;box-shadow:0 1px 4px rgba(0,0,0,.25)!important}
+#admin-app #topbar-logo-img{width:34px!important;height:34px!important}
+
+/* collapsed rail */
+#admin-app #sidebar.lm-sb.collapsed .lm-live-grid,#admin-app #sidebar.lm-sb.collapsed .lm-perf,#admin-app #sidebar.lm-sb.collapsed .lm-live-head b,#admin-app #sidebar.lm-sb.collapsed .lm-live-head time{display:none}
+#admin-app #sidebar.lm-sb.collapsed .lm-live{padding:8px 0;background:none;border:0;display:flex;justify-content:center;margin:2px 0}
+#admin-app #sidebar.lm-sb.collapsed .lm-live-head{margin:0}
+#admin-app #sidebar.lm-sb.collapsed .lm-nav{padding:2px 8px 10px}
+#admin-app #sidebar.lm-sb.collapsed .lm-group-head{display:none}
+#admin-app #sidebar.lm-sb.collapsed .lm-group+.lm-group,#admin-app #sidebar.lm-sb.collapsed .lm-live+.lm-group{border-top:1px solid var(--lm-line)!important;margin-top:6px!important;padding-top:6px!important}
+#admin-app #sidebar.lm-sb.collapsed .lm-group:not(.lm-group-flat) .lm-group-body{display:grid!important}
+#admin-app #sidebar.lm-sb.collapsed .lm-item{justify-content:center;padding:8px 0}
+#admin-app #sidebar.lm-sb.collapsed .lm-item .nav-text{display:none}
+#admin-app #sidebar.lm-sb.collapsed .lm-badge{position:absolute;top:2px;right:4px;min-width:16px;padding:0 4px;font-size:9px;line-height:15px}
+#admin-app #sidebar.lm-sb.collapsed .lm-item.active::before{left:-8px}
+#admin-app #sidebar.lm-sb.collapsed .lm-item:hover::after{content:attr(data-tooltip);position:fixed;left:calc(var(--lm-rail) + 6px);margin-top:0;white-space:nowrap;padding:6px 10px;border-radius:8px;background:#0b1f44;color:#fff;font-size:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:2000;pointer-events:none}
+#admin-app #sidebar.lm-sb.collapsed .lm-social-row{flex-direction:column}
+#admin-app #sidebar.lm-sb.collapsed .lm-logout span,#admin-app #sidebar.lm-sb.collapsed .lm-cloud{font-size:0}
+#admin-app #sidebar.lm-sb.collapsed .lm-cloud-dot{font-size:0}
+#admin-app #sidebar.lm-sb.collapsed .lm-foot{padding:10px 8px!important;align-items:center}
+#admin-app #sidebar.lm-sb.collapsed .lm-logout{width:42px}
+
+/* tablet/mobile: off-canvas drawer, always full width labels */
+@media (max-width:768px){
+  #admin-app #sidebar.lm-sb,#admin-app #sidebar.lm-sb.collapsed{position:fixed!important;left:0;top:var(--lm-top,56px);bottom:0;width:min(300px,86vw)!important;transform:translateX(-100%)!important;z-index:600!important;box-shadow:none}
+  #admin-app #sidebar.lm-sb.mobile-open{transform:none!important;box-shadow:12px 0 40px rgba(0,0,0,.45)}
+  #admin-app #sidebar.lm-sb.collapsed .sidebar-profile-copy,#admin-app #sidebar.lm-sb.collapsed .lm-item .nav-text,#admin-app #sidebar.lm-sb.collapsed .lm-live-head b,#admin-app #sidebar.lm-sb.collapsed .lm-live-head time{display:revert}
+  #admin-app #sidebar.lm-sb.collapsed .lm-live-grid{display:grid}#admin-app #sidebar.lm-sb.collapsed .lm-perf{display:block}
+  #admin-app #sidebar.lm-sb.collapsed .lm-item{justify-content:flex-start;padding:8px 10px}
+  #admin-app #sidebar.lm-sb.collapsed .lm-group-head{display:flex}
+  #admin-app #sidebar.lm-sb.collapsed .lm-logout span,#admin-app #sidebar.lm-sb.collapsed .lm-cloud{font-size:inherit}
+  #admin-app #sidebar.lm-sb.collapsed .lm-badge{position:static}
+  #admin-app #sidebar.lm-sb.collapsed .lm-item:hover::after{display:none}
+  #admin-app #sidebar.lm-sb.collapsed .lm-logout{width:auto}
+  #admin-app #sidebar.lm-sb.collapsed .lm-social-row{flex-direction:row}
+}
+@media (prefers-reduced-motion:reduce){#admin-app #sidebar.lm-sb,#admin-app #sidebar.lm-sb *{transition:none!important;animation:none!important}}

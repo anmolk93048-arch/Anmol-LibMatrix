@@ -1,0 +1,5 @@
+.env
+.env.*
+!.env.example
+firebase-config.js
+node_modules/

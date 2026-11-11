@@ -1,1087 +1,684 @@
 <!DOCTYPE html>
-
 <html data-dark-invert lang="en">
 <head>
-<meta charset="utf-8"/>
-<link rel="icon" href="anmol_libmatrix_logo.png"/>
-<script src="config.js"></script>
-<link rel="stylesheet" href="theme.css">
-<script src="theme.js"></script><!-- sets window.SHDL_API_BASE (Render URL) in one place -->
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="#062d68" name="theme-color"/>
-<meta content="Anmol LibMatrix — Smart Digital Library" name="description"/>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#062d68">
+<meta name="description" content="Anmol LibMatrix — Smart Digital Library: books, students, attendance, eKYC and performance reports in one portal.">
 <title>Anmol LibMatrix | Smart Digital Library</title>
+<script src="config.js"></script>
+<script src="brand.js"></script>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script><!-- sets window.SHDL_API_BASE (backend URL) in one place -->
+<script src="live-stats.js"></script>
 <style>
-:root{--navy:#06306f;--blue:#0b75df;--green:#08aa67;--purple:#6d2fe0;--orange:#ff8a00;--red:#ef2d5e;--gold:#ffbd12;--ink:#17345f;--muted:#647694;--bg:#f3f8fd;--line:#dbe8f6;--shadow:0 8px 25px rgba(6,48,111,.10)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--ink);background:var(--bg)}a{text-decoration:none;color:inherit}.container{width:min(1500px,96%);margin:auto}
-.topbar{height:38px;background:linear-gradient(90deg,#062454,#073c80);color:#fff;font-size:12px}.topbar .row{height:38px;display:flex;align-items:center;justify-content:space-between;gap:16px}.ticker{display:flex;gap:18px;align-items:center;white-space:nowrap;overflow:hidden}.ticker b{color:#ffd21c}.ticker span{padding-left:18px;border-left:1px solid rgba(255,255,255,.35)}.live{white-space:nowrap}.live i{display:inline-block;width:9px;height:9px;border-radius:50%;background:#16d978;margin-right:5px;box-shadow:0 0 0 0 rgba(22,217,120,.65);animation:livePulse 1.5s infinite}@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(22,217,120,.65)}70%{box-shadow:0 0 0 7px rgba(22,217,120,0)}100%{box-shadow:0 0 0 0 rgba(22,217,120,0)}}
-header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.97);border-bottom:1px solid var(--line);box-shadow:0 2px 12px rgba(6,48,111,.05)}.nav{min-height:84px;display:flex;align-items:center;gap:18px}.brand{display:flex;align-items:center;gap:10px;min-width:285px}.brand img{width:82px;height:70px;object-fit:contain}.brand strong{font-size:25px;line-height:.9;color:var(--navy);display:block}.brand strong span{color:var(--orange)}.brand small{display:block;color:var(--navy);font-weight:700;font-size:10px;margin-top:6px}
-.menu{display:flex;align-items:center;justify-content:center;gap:4px;flex:1}.menu a{font-size:13px;font-weight:800;color:#0a3b82;padding:13px 12px;border-radius:9px}.menu a:hover,.menu a.active{background:#eef5ff;color:#075dc2}.menu .home{border-bottom:4px solid var(--gold);border-radius:0}.nav-actions{display:flex;align-items:center;gap:8px}.login-btn,.app-btn{border:0;color:#fff;border-radius:10px;padding:13px 17px;font-weight:900;font-size:12px;cursor:pointer}.login-btn{background:var(--navy)}.app-btn{background:var(--orange)}.mobile{display:none;border:0;background:#edf4ff;color:var(--navy);border-radius:10px;padding:10px 12px;font-size:20px;cursor:pointer}.mobile-menu{display:none}
-.hero{padding:0}.hero-slider{position:relative;overflow:hidden;background:#052b64}.slide{display:none;min-height:360px;position:relative;background-size:cover;background-position:center}.slide.active{display:flex;animation:fade .5s ease}@keyframes fade{from{opacity:.45}to{opacity:1}}.slide:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,32,75,.95) 0%,rgba(2,45,95,.78) 37%,rgba(2,45,95,.10) 72%)}.slide-content{position:relative;z-index:2;color:#fff;width:min(620px,50%);padding:55px 0 60px 6%}.eyebrow{display:inline-block;border:1px solid #ffc400;color:#fff;border-radius:20px;padding:5px 12px;font-size:13px;font-weight:900}.slide h1{font-size:44px;line-height:1.03;margin:13px 0 8px}.slide h1 span{color:#ffbf00}.slide h2{font-size:20px;margin:0 0 12px}.slide p{font-size:14px;line-height:1.55;max-width:500px;margin:0}.explore{display:inline-flex;margin-top:18px;background:#ffbe00;color:#07326e;padding:12px 22px;border-radius:24px;font-weight:900}.arrow{position:absolute;z-index:4;top:50%;transform:translateY(-50%);width:40px;height:40px;border:1px solid #fff;background:rgba(0,0,0,.12);color:#fff;border-radius:50%;font-size:25px;cursor:pointer}.prev{left:18px}.next{right:18px}.dots{position:absolute;z-index:4;bottom:17px;left:50%;transform:translateX(-50%);display:flex;gap:9px}.dot{width:10px;height:10px;background:#fff;border-radius:50%;opacity:.7;cursor:pointer}.dot.active{opacity:1}
-.quick{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:12px auto 0}.quick-card{color:#fff;border-radius:10px;padding:14px 16px;min-height:82px;display:flex;align-items:center;gap:13px;box-shadow:var(--shadow)}.quick-card .ico{width:45px;height:45px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.17);font-size:23px;flex:none}.quick-card b{display:block;font-size:14px;margin-bottom:5px}.quick-card small{font-size:11px;line-height:1.4;opacity:.95}.q1{background:linear-gradient(135deg,#096ed7,#0753a7)}.q2{background:linear-gradient(135deg,#0ab46c,#078d57)}.q3{background:linear-gradient(135deg,#7c38e7,#5920c2)}.q4{background:linear-gradient(135deg,#ff9c11,#ef6d00)}.q5{background:linear-gradient(135deg,#13b4bd,#078f9a)}
-.content-grid{display:grid;grid-template-columns:1.85fr 1.15fr;gap:14px;margin-top:14px}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 9px}.panel-head h2{margin:0;font-size:17px;color:var(--navy)}.panel-head p{margin:3px 0 0;font-size:10px;color:var(--muted)}.view{border:1px solid #3990ef;color:#0871dd;border-radius:16px;padding:6px 12px;font-size:11px;font-weight:900}
-.gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:0 16px 16px}.gallery-card{border:1px solid #dce9f7;border-radius:9px;overflow:hidden;background:#fff}.gallery-card img{width:100%;height:128px;object-fit:cover;display:block;image-rendering:auto}.gallery-card div{padding:9px}.gallery-card b{font-size:12px}.gallery-card small{display:block;color:#1264c4;font-size:10px;margin-top:5px}
-.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:10px 12px}.stat{padding:13px;border-radius:10px;color:#fff;min-height:92px}.stat span{font-size:10px}.stat strong{display:block;font-size:22px;margin:5px 0}.stat small{font-size:9px}.s1{background:linear-gradient(135deg,#0877df,#0b58b7)}.s2{background:linear-gradient(135deg,#11ba70,#07965b)}.s3{background:linear-gradient(135deg,#7b3de0,#5d28c2)}.s4{background:linear-gradient(135deg,#ff9a12,#ec6d00)}
-.notices{padding:0 12px 10px}.notice{display:flex;gap:9px;padding:9px 3px;border-top:1px solid #e8eff8;font-size:10px}.notice i{width:11px;height:11px;border-radius:50%;background:var(--red);flex:none;margin-top:2px}.notice b{font-size:10px}.notice small{display:block;color:var(--muted);margin-top:2px}
-.section{padding-top:14px}.features{display:grid;grid-template-columns:repeat(8,1fr);gap:9px;padding:0 12px 12px}.mini{border:1px solid #dce9f7;border-radius:9px;padding:12px 7px;text-align:center;min-height:88px;background:#fff}.mini .circle{width:37px;height:37px;margin:0 auto 7px;border-radius:50%;display:grid;place-items:center;background:#edf6ff;color:#0873df;font-size:18px}.mini b{font-size:9px;line-height:1.3;display:block}
-.banner-row{display:grid;grid-template-columns:1fr 1fr 1.7fr;gap:10px}.banner{min-height:74px;border-radius:10px;color:#fff;padding:13px 18px;background:linear-gradient(100deg,#062f6f,#0b4b9b);display:flex;align-items:center}.banner h3{margin:0 0 3px;font-size:15px}.banner p{margin:0;font-size:9px}.banner.photo{background-size:cover;background-position:center}.app-section{margin-top:14px}.app-card{background:linear-gradient(110deg,#062f6f,#0a62bf);border-radius:13px;color:#fff;padding:20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.app-card h2{margin:0 0 6px;font-size:22px}.app-card p{margin:0;color:#dbeaff;font-size:12px}.app-card .app-cta{background:#ffbd12;color:#082e69;padding:12px 18px;border-radius:10px;font-weight:900;white-space:nowrap}
-footer{margin-top:14px;background:#03275c;color:#dbe8fb;padding:24px 0 13px}.footer-grid{display:grid;grid-template-columns:1.35fr 1fr 1fr 1.05fr;gap:18px;align-items:start}.footer-brand{display:flex;align-items:center;gap:10px}.footer-brand img{width:60px;height:50px;object-fit:contain}.footer h3{color:#fff;margin:0 0 7px;font-size:14px}.footer p,.footer a{font-size:10px;color:#bcd0ed;line-height:1.6}.copyright{border-top:1px solid rgba(255,255,255,.14);margin-top:15px;padding-top:10px;display:flex;justify-content:space-between;font-size:9px;color:#9eb4d5}
-@media(max-width:1250px){.menu{display:none}.mobile{display:block}.mobile-menu.open{display:flex;position:absolute;top:84px;left:2%;right:2%;background:#fff;padding:12px;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);flex-direction:column;z-index:60}.mobile-menu.open a{padding:10px;font-weight:800;color:var(--navy)}.quick{grid-template-columns:repeat(3,1fr)}.features{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.topbar{display:none}.brand{min-width:0}.brand img{width:65px}.brand strong{font-size:20px}.brand small{display:none}.nav{min-height:72px}.nav-actions .login-btn{display:none}.hero-slider,.slide{min-height:470px}.slide-content{width:80%;padding:45px 0 55px 10%}.slide h1{font-size:39px}.quick{grid-template-columns:repeat(2,1fr)}.content-grid{grid-template-columns:1fr}.gallery-grid{grid-template-columns:repeat(2,1fr)}.features{grid-template-columns:repeat(4,1fr)}.banner-row{grid-template-columns:1fr}.footer-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:560px){.quick{grid-template-columns:1fr}.gallery-grid{grid-template-columns:1fr}.features{grid-template-columns:repeat(2,1fr)}.slide h1{font-size:32px}.slide-content{width:88%;padding-left:9%}.slide p{font-size:12px}.footer-grid{grid-template-columns:1fr}.copyright{flex-direction:column;gap:5px}}
+/* Theme tokens — the Admin "Theme" editor overrides these seven variables live. */
+:root{--navy:#06306f;--blue:#0b75df;--green:#08aa67;--purple:#6d2fe0;--orange:#ff8a00;--gold:#ffbd12;--bg:#f3f8fd;
+  --ink:#17345f;--muted:#647694;--line:#dbe8f6;--card:#fff;--red:#ef2d5e;--shadow:0 8px 25px rgba(6,48,111,.10);--radius:14px}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:128px}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+img{max-width:100%}
+button{font:inherit}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.container{width:min(1360px,94%);margin-inline:auto}
+.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-999px;top:8px;background:#fff;color:var(--navy);padding:8px 14px;border-radius:8px;z-index:200;font-weight:800}
+.skip:focus{left:8px}
 
-.quality-note{font-size:9px;color:#6b7d98;margin-left:6px}
-.kyc-performance{margin-top:14px}
-.kyc-layout{display:grid;grid-template-columns:1fr;gap:14px;padding:0 16px 16px}
-.kyc-photo{position:relative;min-height:250px;border-radius:12px;overflow:hidden;background:#dcecff}
-.kyc-photo img{width:100%;height:100%;min-height:250px;object-fit:cover;display:block}
-.kyc-photo:after{content:"4K • KYC & BIOMETRIC";position:absolute;left:12px;bottom:12px;background:rgba(4,43,94,.88);color:#fff;padding:7px 10px;border-radius:16px;font-size:9px;font-weight:900}
-.performance{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.perf-card{border:1px solid #dbe9f7;border-radius:11px;padding:15px;background:linear-gradient(145deg,#fff,#f5faff)}
-.perf-card .perf-icon{font-size:20px;margin-bottom:6px}
-.perf-card b{display:block;color:var(--navy);font-size:12px}
-.perf-card strong{display:block;color:#0873df;font-size:22px;margin:4px 0}
-.perf-card small{font-size:9px;color:var(--muted)}
-.progress{height:7px;border-radius:10px;background:#e8f0fa;margin-top:7px;overflow:hidden}
-.progress span{display:block;height:100%;border-radius:10px;background:linear-gradient(90deg,#0873df,#10b96e)}
-.footer-social{display:flex;gap:8px;margin-top:8px}
-.footer-social a{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.10);color:#fff;font-weight:900;font-size:14px}
-.footer-social a:hover{background:#fff;color:#06306f}
-.footer-meta{display:flex;align-items:flex-end;justify-content:flex-end;gap:22px}
-.footer-developer{text-align:right}
-.footer-developer b{display:block;color:#fff;font-size:11px}
-.footer-developer small{font-size:9px;color:#9eb4d5}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.footer-meta{justify-content:flex-start;align-items:flex-start}.footer-developer{text-align:left}}
+/* ── Top bar: latest updates ticker + live clock ── */
+.topbar{background:linear-gradient(90deg,#062454,#073c80);color:#fff;font-size:12px;position:relative;z-index:100}
+.topbar .row{height:38px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.ticker{display:flex;align-items:center;gap:12px;min-width:0;flex:1;overflow:hidden;cursor:pointer}
+.ticker>b{flex:none;color:var(--gold);white-space:nowrap}
+.ticker-window{position:relative;flex:1;min-width:0;height:22px;overflow:hidden;display:flex;align-items:center}
+.ticker-track{display:flex;width:max-content;white-space:nowrap;animation:marquee 32s linear infinite;will-change:transform}
+.ticker:hover .ticker-track{animation-play-state:paused}
+.ticker-track span{padding:0 22px;border-left:1px solid rgba(255,255,255,.3)}
+.ticker-next{flex:none;border:0;background:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;padding:0 4px}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.live{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.live i,.dot-live{display:inline-block;width:9px;height:9px;border-radius:50%;background:#16d978;animation:livePulse 1.6s infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(22,217,120,.6)}70%{box-shadow:0 0 0 7px rgba(22,217,120,0)}100%{box-shadow:0 0 0 0 rgba(22,217,120,0)}}
 
-.kyc-slider{position:relative;overflow:hidden}
-.kyc-slider .kyc-slide{position:absolute;inset:0;opacity:0;transition:opacity .55s ease}
-.kyc-slider .kyc-slide.active{opacity:1;z-index:1}
-.kyc-slider .kyc-slide img{width:100%;height:100%;min-height:250px;object-fit:cover;display:block}
-.kyc-slider .kyc-prev,.kyc-slider .kyc-next{position:absolute;top:50%;transform:translateY(-50%);z-index:4;width:38px;height:38px;border:1px solid rgba(255,255,255,.8);border-radius:50%;background:rgba(4,43,94,.72);color:#fff;font-size:27px;line-height:1;cursor:pointer}
-.kyc-slider .kyc-prev{left:12px}.kyc-slider .kyc-next{right:12px}
-.kyc-slider .kyc-dots{position:absolute;left:50%;bottom:13px;transform:translateX(-50%);z-index:5;display:flex;gap:6px}
-.kyc-slider .kyc-dot{width:9px;height:9px;border:1px solid #fff;border-radius:50%;background:rgba(255,255,255,.55);padding:0;cursor:pointer}
-.kyc-slider .kyc-dot.active{background:#fff}
-.kyc-slider .kyc-badge{position:absolute;left:12px;bottom:12px;z-index:5;background:rgba(4,43,94,.88);color:#fff;padding:7px 10px;border-radius:16px;font-size:9px;font-weight:900}
+/* ── Header ── */
+header{position:sticky;top:0;z-index:90;background:rgba(255,255,255,.97);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);box-shadow:0 2px 12px rgba(6,48,111,.05)}
+.nav{min-height:76px;display:flex;align-items:center;gap:18px}
+.brand{display:flex;align-items:center;gap:12px;flex:none}
+.brand img{width:62px;height:50px;object-fit:contain}
+.brand strong{display:block;font-size:22px;line-height:1;color:var(--navy);font-weight:900;letter-spacing:-.3px}
+.brand strong span{color:var(--orange)}
+.brand small{display:block;margin-top:5px;font-size:11px;font-weight:700;color:var(--muted)}
+.menu{display:flex;align-items:center;justify-content:center;gap:4px;flex:1}
+.menu a{font-size:13.5px;font-weight:800;color:#0a3b82;padding:10px 14px;border-radius:9px;position:relative}
+.menu a:hover{background:#eef5ff;color:var(--blue)}
+.menu a.active{color:var(--blue)}
+.menu a.active::after{content:"";position:absolute;left:14px;right:14px;bottom:3px;height:3px;border-radius:3px;background:var(--gold)}
+.nav-actions{display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:10px;padding:11px 16px;font-weight:800;font-size:13px;cursor:pointer;color:#fff;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(6,48,111,.2)}
+.btn-primary{background:var(--navy)}
+.btn-accent{background:var(--orange)}
+.menu-toggle{display:none;border:0;background:#edf4ff;color:var(--navy);border-radius:10px;padding:9px 12px;font-size:20px;cursor:pointer}
+.mobile-menu{display:none;border-top:1px solid var(--line);padding:8px 0 12px}
+.mobile-menu.open{display:grid}
+.mobile-menu a{padding:12px 6px;font-weight:800;color:#0a3b82;border-bottom:1px solid #eef3fa}
+.nav-dropdown{position:relative}
+.dropdown-panel{position:absolute;right:0;top:calc(100% + 10px);width:320px;background:#fff;border:1px solid #d7e6f7;border-radius:14px;box-shadow:0 18px 45px rgba(4,42,92,.18);padding:8px;display:none;max-height:440px;overflow:auto;z-index:120}
+.dropdown-panel.open{display:block;animation:dropIn .18s ease}
+@keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.panel-label{padding:8px 10px 6px;font-size:10.5px;font-weight:900;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.dropdown-panel a{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;color:#083b82;font-weight:800;font-size:13px}
+.dropdown-panel a:hover{background:#eef6ff;color:var(--blue)}
+.item-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:#edf5ff;font-size:17px;flex:none}
+.item-copy b{display:block;font-size:13px}
+.item-copy small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
 
-.future-section{margin-top:14px}
-.future-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;padding:0 16px 16px}
-.future-card{border:1px solid #dbe8f6;border-radius:11px;padding:16px;background:linear-gradient(145deg,#fff,#f3f8ff);min-height:120px}
-.future-card span{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#edf5ff;color:#0873df;font-size:20px;margin-bottom:9px}
-.future-card b{display:block;color:var(--navy);font-size:12px;margin-bottom:5px}
-.future-card small{display:block;color:var(--muted);font-size:10px;line-height:1.45}
-.hero .slide:after{content:"DIGITAL LIBRARY • SMART FUTURE";position:absolute;right:5%;top:24px;z-index:2;color:#fff;border:1px solid rgba(255,255,255,.55);background:rgba(3,39,92,.45);backdrop-filter:blur(4px);padding:7px 12px;border-radius:20px;font-size:10px;font-weight:900;letter-spacing:.4px}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.future-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.future-grid{grid-template-columns:1fr}.hero .slide:after{display:none}}
+/* ── Hero ── */
+.hero-slider{position:relative;isolation:isolate;overflow:hidden;height:clamp(280px,26vw,400px);background:#052b64}
+.slide{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transition:opacity .6s ease;pointer-events:none}
+.slide.active{opacity:1}
+.slide img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero-slider::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,rgba(2,32,75,.55),rgba(2,45,95,.05) 55%,rgba(2,45,95,.25))}
+.hero-left{position:absolute;left:0;top:0;bottom:0;width:min(46%,640px);z-index:3;display:flex;align-items:center;padding:24px 28px 24px max(3%,68px);color:#fff;background:linear-gradient(90deg,rgba(2,34,78,.97) 0%,rgba(2,45,96,.9) 62%,rgba(2,45,96,0) 100%)}
+.hero-left-inner{max-width:520px}
+.eyebrow{display:inline-block;border:1px solid var(--gold);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.3px}
+.hero-left h1{margin:12px 0 6px;font-size:clamp(28px,3vw,46px);line-height:1.05;letter-spacing:-.8px}
+.hero-left h1 span{color:var(--gold)}
+.hero-left h2{margin:0 0 10px;font-size:clamp(15px,1.4vw,21px);line-height:1.25;font-weight:700}
+.hero-left p{margin:0;font-size:clamp(12px,.9vw,14px);color:#e6efff}
+.explore{display:inline-flex;margin-top:16px;padding:10px 22px;border-radius:99px;background:var(--gold);color:#07336e;font-size:13px;font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.18)}
+.hero-right{position:absolute;right:0;top:0;bottom:0;width:min(24%,320px);z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 28px;color:#fff;text-align:center;background:linear-gradient(90deg,rgba(2,45,96,0),rgba(2,40,91,.9) 70%,rgba(2,34,78,.97))}
+.hero-right-title{font-size:clamp(18px,1.9vw,30px);line-height:1.18;font-weight:900;font-style:italic;text-shadow:0 3px 13px rgba(0,0,0,.6)}
+.hero-right-line{width:120px;height:6px;margin-top:14px;background:var(--gold);border-radius:50%;transform:skewX(-28deg) rotate(-5deg)}
+.hero-right-brand{margin-top:12px;font-weight:900;font-size:clamp(11px,1vw,16px)}
+.hero-right-brand small{display:block;font-size:.6em;font-weight:700;opacity:.9}
+.arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.75);background:rgba(3,44,96,.35);color:#fff;font-size:26px;line-height:1;cursor:pointer;backdrop-filter:blur(2px)}
+.arrow:hover{background:rgba(3,44,96,.7)}
+.prev{left:14px}.next{right:14px}
+.dots{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:5;display:flex;gap:7px}
+.dot{width:9px;height:9px;border-radius:50%;border:1px solid #fff;background:rgba(255,255,255,.45);padding:0;cursor:pointer}
+.dot.active{background:#fff}
 
-/* V9: unified Login/App dropdown hubs + working latest updates */
-.nav-dropdown{position:relative;z-index:80}.dropdown-toggle{cursor:pointer;font:inherit;display:flex;align-items:center;gap:7px}.dropdown-toggle span{font-size:12px;opacity:.9}.dropdown-panel{position:absolute;right:0;top:calc(100% + 9px);width:310px;background:#fff;border:1px solid #d7e6f7;border-radius:14px;box-shadow:0 18px 45px rgba(4,42,92,.18);padding:8px;display:none;max-height:430px;overflow:auto}.dropdown-panel.open{display:block;animation:dropIn .18s ease}.dropdown-panel a{display:flex;align-items:center;gap:11px;padding:12px 12px;border-radius:10px;color:#083b82;text-decoration:none;font-weight:800;font-size:12px}.dropdown-panel a:hover{background:#eef6ff;color:#0067d8}.dropdown-panel .item-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:#edf5ff;font-size:17px;flex:none}.dropdown-panel .item-copy{display:block}.dropdown-panel .item-copy b{display:block}.dropdown-panel .item-copy small{display:block;color:#7890ad;font-size:9px;font-weight:600;margin-top:3px}.dropdown-panel .panel-label{padding:8px 10px 6px;color:#7890ad;font-size:9px;font-weight:900;letter-spacing:.8px;text-transform:uppercase}.app-panel a:hover{background:#f1fff9}.app-panel a .item-icon{background:#eafbf4}.feature-hub{display:none}.smart-strip{margin-top:10px;background:linear-gradient(90deg,#eaf5ff,#f5fbff);border:1px solid #cfe3f7;border-radius:13px;padding:11px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 5px 16px rgba(4,55,110,.05)}.smart-strip-icon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:#0a62c8;color:#fff;font-weight:900}.smart-strip b{display:block;color:#073e85;font-size:14px}.smart-strip span{display:block;color:#6882a0;font-size:10px;margin-top:2px}.smart-strip a{margin-left:auto;color:#075fc1;font-size:10px;font-weight:900;text-decoration:none}.ticker{min-width:0;flex:1}.ticker-window{flex:1;min-width:0;overflow:hidden;height:18px;display:flex;align-items:center}.ticker-track{display:flex;gap:0;will-change:transform}.ticker-item{display:inline-flex;align-items:center;white-space:nowrap;padding:0 20px;border-left:1px solid rgba(255,255,255,.35);font-size:10px}.ticker-next{border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer;padding:0 4px}.updates-modal{position:fixed;inset:0;background:rgba(3,25,56,.58);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}.updates-modal.open{display:flex}.updates-box{width:min(560px,94vw);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.28);overflow:hidden}.updates-head{background:linear-gradient(135deg,#063e86,#0877df);color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between}.updates-head h3{margin:0;font-size:18px}.updates-close{background:rgba(255,255,255,.15);border:0;color:#fff;border-radius:8px;width:34px;height:34px;font-size:20px;cursor:pointer}.updates-list{padding:10px 18px 18px}.update-row{padding:13px 4px;border-bottom:1px solid #e6eef7;display:flex;gap:10px}.update-row:last-child{border-bottom:0}.update-dot{width:10px;height:10px;border-radius:50%;background:#0a72da;margin-top:5px;flex:none}.update-row b{display:block;color:#164f91;font-size:12px}.update-row small{display:block;color:#7a8fa8;margin-top:3px;font-size:9px}@keyframes dropIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.smart-strip{margin-left:10px;margin-right:10px}.dropdown-panel{right:-70px;width:290px}}
+/* ── Command strip ── */
+.command-strip{margin-top:14px;min-height:50px;display:flex;align-items:center;gap:14px;padding:8px 14px;border-radius:12px;color:#fff;background:linear-gradient(90deg,var(--navy),#0a5db5);box-shadow:var(--shadow)}
+.command-label{display:flex;align-items:center;gap:8px;flex:none;padding-right:14px;border-right:1px solid rgba(255,255,255,.25);font-size:12px;font-weight:800}
+.command-window{flex:1;min-width:0;font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.command-next{flex:none;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.08);color:#fff;font-size:20px;cursor:pointer}
 
-/* V11 visual polish */
-.hero .slide:after{content:none}
-.hero .slide:before{background:linear-gradient(90deg,rgba(2,32,75,.96) 0%,rgba(2,45,95,.76) 36%,rgba(2,45,95,.08) 73%,rgba(2,45,95,.32) 100%)}
-.kyc-slider-wrap{position:relative;margin-top:4px;border-radius:14px;overflow:hidden;background:#062d68;box-shadow:0 12px 28px rgba(4,44,92,.16)}
-.kyc-slider{position:relative;aspect-ratio:16/7;min-height:220px}.kyc-slide{position:absolute;inset:0;opacity:0;transition:opacity .55s ease;pointer-events:none}.kyc-slide.active{opacity:1;pointer-events:auto}.kyc-slide img{width:100%;height:100%;display:block;object-fit:cover;object-position:center}.kyc-slide::after{content:"eKYC • Aadhaar-assisted verification • Face Match";position:absolute;left:14px;bottom:12px;background:rgba(3,39,92,.88);color:#fff;padding:7px 11px;border-radius:18px;font-size:10px;font-weight:900}
-.kyc-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;pointer-events:none}.kyc-nav button{pointer-events:auto;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.8);background:rgba(3,39,92,.55);color:#fff;font-size:22px;cursor:pointer;backdrop-filter:blur(4px)}.kyc-dots{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:7px;z-index:3}.kyc-dot{width:9px;height:9px;border:0;border-radius:50%;background:#fff;opacity:.55;cursor:pointer;padding:0}.kyc-dot.active{opacity:1;transform:scale(1.15)}
-.metric-card{position:relative;overflow:hidden}.metric-card::after{content:"";position:absolute;right:-28px;bottom:-70px;width:145px;height:145px;border-radius:50%;background:rgba(255,255,255,.10);animation:floatGlow 3.6s ease-in-out infinite}.metric-number{font-variant-numeric:tabular-nums;letter-spacing:.4px}.metric-trend{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:900;opacity:.95}.metric-pulse{animation:metricPulse 1.8s ease-in-out infinite}.dashboard-refresh{font-size:9px;color:#6d86a5;font-weight:800}.live-ring{display:inline-block;width:8px;height:8px;border-radius:50%;background:#16d978;box-shadow:0 0 0 0 rgba(22,217,120,.45);animation:ring 1.6s infinite}.app-download-tag{margin-left:auto;border-radius:16px;padding:5px 8px;background:#eaf7f0;color:#078b57;font-size:8px;font-weight:900;white-space:nowrap}
-@keyframes metricPulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}@keyframes ring{70%{box-shadow:0 0 0 7px rgba(22,217,120,0)}100%{box-shadow:0 0 0 0 rgba(22,217,120,0)}}@keyframes floatGlow{0%,100%{transform:translate(0,0)}50%{transform:translate(-12px,-8px)}}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.hero .slide:after{right:2.5%;font-size:13px;padding:10px 12px}.kyc-slider{min-height:190px}}@media(max-width:560px){.hero .slide:after{right:5%;top:18px;font-size:11px;padding:8px 10px;max-width:135px}.kyc-slider{min-height:180px}}
+/* ── Access cards (Login Center / Mobile App Center) ── */
+.hub-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.feature-hub{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);border-left:5px solid var(--blue)}
+.feature-hub.app-hub{border-left-color:var(--orange)}
+.hub-kicker{font-size:10.5px;font-weight:900;letter-spacing:1.2px;color:var(--blue)}
+.app-hub .hub-kicker{color:var(--orange)}
+.hub-head h2{margin:2px 0 4px;font-size:19px;color:var(--navy)}
+.hub-head p{margin:0;font-size:13px;color:var(--muted)}
+.hub-head{min-width:0}
 
-/* Final photo-overwrite fix: keep hero photo behind all foreground content. */
-.hero-slider{position:relative;isolation:isolate;overflow:hidden;}
-.hero-slider .slide{position:relative;z-index:0;overflow:hidden;}
-.hero-slider .slide:before{z-index:1;pointer-events:none;}
-.hero-slider .slide-content{position:relative;z-index:10;}
-.hero-fixed-side{z-index:20;position:absolute;}
-.hero-fixed-side *{position:relative;z-index:21;}
-.hero-fixed-side{pointer-events:none;}
-@media(max-width:560px){.hero-slider .slide-content{z-index:10;}}
+/* ── Panels ── */
+.section{margin-top:14px}
+.content-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;margin-top:14px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 10px}
+.panel-head h2,.panel-head h3{margin:0;font-size:17px;color:var(--navy)}
+.panel-head p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+.view{font-size:12.5px;font-weight:800;color:var(--blue);white-space:nowrap}
+.view:hover{text-decoration:underline}
 
-/* Final requested-only fix: remove duplicate hero side overlay and make Latest Updates slide continuously. */
-.hero-fixed-side{display:none !important;}
-.ticker-static{display:flex;align-items:center;gap:0;min-width:max-content;width:max-content;flex:none;overflow:visible;white-space:nowrap;animation:latestUpdatesMarquee 28s linear infinite;}
-.ticker-static:hover{animation-play-state:paused;}
-@keyframes latestUpdatesMarquee{from{transform:translateX(0)}to{transform:translateX(-50%);}}
+/* eKYC slider */
+.kyc-slider-wrap{position:relative;margin:4px 16px 12px;border-radius:12px;overflow:hidden;background:#062d68}
+.kyc-slider{position:relative;aspect-ratio:16/7;min-height:200px}
+.kyc-slide{position:absolute;inset:0;opacity:0;transition:opacity .55s ease;pointer-events:none}
+.kyc-slide.active{opacity:1;pointer-events:auto}
+.kyc-slide img{width:100%;height:100%;object-fit:cover;display:block}
+.kyc-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;pointer-events:none}
+.kyc-nav button{pointer-events:auto;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.8);background:rgba(4,43,94,.65);color:#fff;font-size:24px;line-height:1;cursor:pointer}
+.kyc-dots{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:6px}
+.kyc-dot{width:9px;height:9px;border-radius:50%;border:1px solid #fff;background:rgba(255,255,255,.5);padding:0;cursor:pointer}
+.kyc-dot.active{background:#fff}
+.panel-foot{display:block;padding:0 18px 16px;font-size:13px;font-weight:800;color:var(--blue)}
 
-/* Final requested fix: hero-side Digital Library banner removed completely. */
-.hero-fixed-side,.hero .slide:after{display:none !important;content:none !important;}
-.hero-fixed-side{visibility:hidden !important;width:0 !important;padding:0 !important;background:none !important;}
-</style>
+/* Live dashboard */
+.live-dashboard{display:flex;flex-direction:column}
+.dashboard-refresh{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;color:#0b7a4b;white-space:nowrap}
+.dashboard-refresh.off{color:#b45309}
+.dashboard-refresh.off .dot-live{background:#f59e0b;animation:none}
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px 16px 4px}
+.metric-card{display:flex;align-items:center;gap:11px;min-width:0;padding:13px 12px;border-radius:12px;color:#fff}
+.metric-card:nth-child(1){background:linear-gradient(135deg,#0b75df,#0a4fb0)}
+.metric-card:nth-child(2){background:linear-gradient(135deg,#08aa67,#067a4a)}
+.metric-card:nth-child(3){background:linear-gradient(135deg,#6d2fe0,#4c1fa8)}
+.metric-card:nth-child(4){background:linear-gradient(135deg,#ff8a00,#d96a00)}
+.metric-card .icon{flex:0 0 38px;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:19px;background:rgba(255,255,255,.18)}
+.metric-card>div{min-width:0}
+.metric-card small{display:block;font-size:11px;font-weight:700;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric-number{display:block;font-size:22px;line-height:1.15;font-weight:900;font-variant-numeric:tabular-nums}
+.metric-trend{display:block;font-size:10.5px;font-weight:700;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notice-head{border-top:1px solid #eaf1fa;margin-top:12px}
+.notices{padding:0 18px 14px;flex:1}
+.notice{display:flex;gap:10px;padding:10px 0;border-top:1px solid #eaf1fa;font-size:12.5px}
+.notice:first-child{border-top:0}
+.notice i{width:9px;height:9px;border-radius:50%;background:var(--red);flex:none;margin-top:6px}
+.notice b{display:block;font-size:13px}
+.notice span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.notice small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.notice-empty{padding:14px 0;color:var(--muted);font-size:13px}
 
-<style id="v12-reference-fix">
-/* V12: keep the reference hero treatment — no boxed right panel */
-.hero .slide:after{
-  content:"Digital Library\A For A\A Smarter Future";
-  white-space:pre-line;
-  position:absolute;
-  right:3.2%;
-  top:50%;
-  transform:translateY(-50%);
-  z-index:3;
-  color:#fff;
-  text-align:center;
-  background:none;
-  border:0;
-  backdrop-filter:none;
-  padding:0;
-  border-radius:0;
-  font-size:26px;
-  line-height:1.18;
-  font-weight:900;
-  font-style:italic;
-  letter-spacing:.2px;
-  text-shadow:0 3px 14px rgba(0,0,0,.65),0 1px 2px rgba(0,0,0,.9);
-  box-shadow:none;
-  width:270px;
+/* KYC performance */
+.performance{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:6px 18px 18px}
+.perf-card{border:1px solid #dbe9f7;border-radius:12px;padding:16px;background:linear-gradient(145deg,#fff,#f5faff)}
+.perf-icon{font-size:22px;margin-bottom:6px}
+.perf-card b{display:block;color:var(--navy);font-size:13px}
+.perf-card strong{display:block;color:#0873df;font-size:26px;margin:4px 0;font-variant-numeric:tabular-nums}
+.perf-card small{font-size:11.5px;color:var(--muted)}
+.progress{height:7px;border-radius:7px;background:#e8f0fa;margin-top:9px;overflow:hidden}
+.progress span{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,#0873df,#10b96e);transition:width .6s ease}
+
+/* Features / about / app / future */
+.features{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:6px 18px 18px}
+.mini{display:flex;align-items:center;gap:12px;border:1px solid #dce9f7;border-radius:12px;padding:14px;background:#fff}
+.mini .circle{flex:0 0 42px;width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:#edf5ff;font-size:20px}
+.mini b{font-size:13px;color:var(--navy);line-height:1.3}
+.banner-row{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:12px}
+.banner{min-height:96px;border-radius:var(--radius);color:#fff;padding:18px 20px;background:linear-gradient(100deg,#062f6f,#0b4b9b);background-size:cover;background-position:center;display:flex;align-items:center}
+.banner h3{margin:0 0 4px;font-size:17px}
+.banner p{margin:0;font-size:12.5px;opacity:.92}
+.app-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 24px;border-radius:var(--radius);color:#fff;background:linear-gradient(100deg,#06306f,#0a5db5);box-shadow:var(--shadow)}
+.app-card h2{margin:0 0 4px;font-size:20px}
+.app-card p{margin:0;font-size:13.5px;opacity:.92}
+.app-cta{flex:none;padding:12px 22px;border-radius:99px;background:var(--gold);color:#07336e;font-weight:900;font-size:13px}
+.future-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:6px 18px 18px}
+.future-card{border:1px solid #dbe8f6;border-radius:12px;padding:16px;background:linear-gradient(145deg,#fff,#f3f8ff)}
+.future-card span{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#edf5ff;font-size:20px;margin-bottom:10px}
+.future-card b{display:block;color:var(--navy);font-size:14px;margin-bottom:4px}
+.future-card small{display:block;color:var(--muted);font-size:12px}
+
+/* Footer */
+footer{margin-top:22px;background:#03275c;color:#dbe8fb;padding:30px 0 14px}
+.footer-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1.1fr;gap:24px}
+.footer-brand{display:flex;align-items:center;gap:12px}
+.footer-brand img{width:56px;height:46px;object-fit:contain;background:#fff;border-radius:10px;padding:4px}
+footer h3{margin:0 0 10px;font-size:13px;letter-spacing:.8px;text-transform:uppercase;color:#fff}
+.footer-brand h3{font-size:19px;letter-spacing:0;text-transform:none;margin:0}
+.footer-brand h3 span{color:#ff9b00}
+footer p{margin:0 0 6px;font-size:13px}
+footer a:hover{color:#fff;text-decoration:underline}
+.footer-links{display:grid;gap:6px;font-size:13px}
+.footer-social{margin-top:16px}
+.footer-social .lm-social{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.15)}
+.footer-social .lm-social:hover{background:#fff;color:var(--navy)}
+.footer-social .lm-social-facebook:hover{background:#1877f2;color:#fff}
+.footer-social .lm-social-youtube:hover{background:#e11d1d;color:#fff}
+.footer-social .lm-social-twitter:hover{background:#000;color:#fff}
+.lm-social-row{display:flex;gap:8px;flex-wrap:wrap}
+.lm-social{display:inline-grid;place-items:center;transition:transform .15s}
+.lm-social:hover{transform:translateY(-2px)}
+.copyright{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:22px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#9eb4d5}
+.copyright b{color:#fff}
+
+/* Latest updates modal */
+.updates-modal{position:fixed;inset:0;z-index:300;background:rgba(3,20,50,.6);display:none;align-items:center;justify-content:center;padding:16px}
+.updates-modal.open{display:flex}
+.updates-box{background:#fff;border-radius:16px;width:min(560px,100%);max-height:80vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.updates-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+.updates-head h3{margin:0;color:var(--navy);font-size:18px}
+.updates-close{border:0;background:none;font-size:26px;line-height:1;cursor:pointer;color:var(--muted)}
+.updates-list{padding:8px 20px 18px}
+.update-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #eef3fa;font-size:13.5px}
+.update-row:last-child{border-bottom:0}
+.update-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--orange);margin-top:7px}
+.update-row small{display:block;color:var(--muted);font-size:11.5px}
+
+/* ── Responsive ── */
+@media(max-width:1180px){
+  .menu{display:none}.menu-toggle{display:block}.nav{min-height:68px}
+  .content-grid{grid-template-columns:1fr}
+  .performance,.features,.future-grid{grid-template-columns:repeat(2,1fr)}
+  .banner-row{grid-template-columns:1fr 1fr}.banner-row .banner:first-child{grid-column:1/-1}
 }
-.hero .slide:before{
-  background:linear-gradient(90deg,rgba(2,32,75,.96) 0%,rgba(2,45,95,.76) 36%,rgba(2,45,95,.10) 69%,rgba(2,45,95,.62) 100%);
-}
-/* Yellow reference-style swoosh under the right-side heading */
-.hero .slide-content:after{
-  content:"";
-  display:none;
-}
-/* Top Updates board: the board stays fixed; only the message inside it slides */
-.topbar{position:sticky;top:0;z-index:100;height:38px;}
-.topbar .row{height:38px;}
-.ticker{height:100%;overflow:hidden;min-width:0;}
-.ticker-window{height:20px;min-width:0;overflow:hidden;display:flex;align-items:center;position:relative;}
-.ticker-track{display:block;width:100%;height:20px;position:relative;overflow:hidden;}
-.ticker-item{display:none;width:100%;height:20px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 18px;border-left:1px solid rgba(255,255,255,.35);font-size:10px;}
-.ticker-item.active{display:flex;animation:tickerSlideIn .45s ease both;}
-@keyframes tickerSlideIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
-header{position:sticky;top:38px;z-index:90;}
-.ticker-next{flex:none;}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}
-  
-  header{top:0;}
-}
-@media(max-width:560px){
-  
-}
-
-/* V13: reference-matched hero side treatment — no box, fixed while hero images rotate */
-.hero-slider{position:relative}
-.hero-fixed-side{display:none !important;}
-.hero-fixed-title{font-size:clamp(24px,2.15vw,42px);line-height:1.18;font-weight:900;font-style:italic;letter-spacing:.2px;text-shadow:0 3px 14px rgba(0,20,60,.65);}
-.hero-fixed-title span{font-size:.92em}
-.hero-fixed-arrow{position:absolute;right:22px;top:50%;transform:translateY(-50%);width:44px;height:44px;border:1px solid rgba(255,255,255,.82);border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:300;color:#fff;background:rgba(3,44,96,.18)}
-.hero-fixed-line{width:150px;height:7px;margin-top:18px;background:#ffbd12;transform:skewX(-28deg) rotate(-5deg);border-radius:50%;box-shadow:0 3px 8px rgba(0,0,0,.18)}
-.hero-fixed-brand{margin-top:14px;font-size:clamp(14px,1.2vw,21px);font-weight:900;letter-spacing:.5px;text-shadow:0 2px 9px rgba(0,20,60,.65)}
-/* The top Latest Updates area is the rotating command/update strip. */
-.ticker-window{min-width:0;flex:1;overflow:hidden}
-.ticker-track{will-change:transform}
-.ticker-next{border:0;background:transparent;color:#fff;font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.hero-fixed-side{display:none !important;width:38%;padding:20px 28px 20px 34px}.hero-fixed-title{font-size:22px}.hero-fixed-arrow{right:10px;width:36px;height:36px;font-size:28px}.hero-fixed-line{width:105px;height:5px}}
-@media(max-width:560px){.hero-fixed-side{display:none !important;width:46%;padding:16px 18px 16px 28px;background:linear-gradient(90deg,rgba(3,54,116,0) 0%,rgba(3,57,119,.55) 45%,rgba(2,40,91,.9) 100%)}.hero-fixed-title{font-size:16px}.hero-fixed-arrow{right:7px;width:30px;height:30px;font-size:23px}.hero-fixed-line{width:72px;height:4px;margin-top:10px}.hero-fixed-brand{font-size:11px;margin-top:8px}}
-
-/* V14: fixed Latest Updates + separate rotating Live Command area. */
-.topbar{position:sticky;top:0;z-index:100}
-.ticker-fixed{display:flex;align-items:center;gap:12px;min-width:0;flex:1;overflow:hidden;cursor:pointer}
-.ticker-fixed>b{flex:none}
-.ticker-static{display:flex;align-items:center;gap:0;min-width:0;overflow:hidden;white-space:nowrap;flex:1}
-.ticker-static span{flex:none;padding:0 18px;border-left:1px solid rgba(255,255,255,.35);font-size:10px}
-.ticker-static span:first-child{padding-left:14px}
-.ticker-fixed .ticker-next{flex:none}
-.command-strip{margin-top:12px;min-height:52px;background:linear-gradient(90deg,#06306f,#0a5db5);border-radius:12px;box-shadow:0 8px 22px rgba(6,48,111,.12);display:flex;align-items:center;gap:14px;padding:8px 14px;color:#fff;overflow:hidden}
-.command-label{display:flex;align-items:center;gap:7px;flex:none;padding-right:12px;border-right:1px solid rgba(255,255,255,.22)}
-.command-label b{font-size:12px}.command-label small{font-size:9px;opacity:.72;text-transform:uppercase;letter-spacing:.7px}.command-dot{width:9px;height:9px;border-radius:50%;background:#16d978;box-shadow:0 0 0 0 rgba(22,217,120,.55);animation:ring 1.6s infinite}
-.command-window{flex:1;min-width:0;overflow:hidden;height:28px;display:flex;align-items:center}
-.command-track{width:100%;position:relative;height:28px;overflow:hidden}
-.command-item{position:absolute;inset:0;display:flex;align-items:center;white-space:nowrap;font-size:11px;font-weight:800;opacity:0;transform:translateX(28px)}
-.command-item.active{opacity:1;transform:translateX(0);animation:commandIn .45s ease both}
-@keyframes commandIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
-.command-next{flex:none;border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.08);color:#fff;width:31px;height:31px;border-radius:50%;font-size:22px;line-height:1;cursor:pointer}
-.hero-fixed-brand{display:flex;flex-direction:column;align-items:center;gap:3px}.hero-fixed-brand small{font-size:.52em;font-weight:700;letter-spacing:.35px;opacity:.92}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.ticker-static span{padding:0 12px;font-size:9px}.command-strip{margin-left:10px;margin-right:10px}.command-label{padding-right:8px}.command-label small{display:none}}
-@media(max-width:560px){.ticker-static span{padding:0 9px;font-size:8px}.command-strip{min-height:48px;padding:7px 9px;gap:8px}.command-label b{font-size:10px}.command-item{font-size:9px}.hero-fixed-brand{font-size:10px}.hero-fixed-brand small{font-size:6px}}
-</style>
-
-<style id="final-user-fix">
-/* Keep the original upper/fixed hero-side treatment; remove the duplicate lower slide overlay. */
-.hero-fixed-side{display:block !important;position:absolute;right:0;top:0;bottom:0;width:38%;padding:34px 5% 28px 34px;background:linear-gradient(90deg,rgba(3,54,116,0) 0%,rgba(3,57,119,.55) 45%,rgba(2,40,91,.90) 100%);z-index:20;pointer-events:none;}
-.hero .slide:after{content:none !important;display:none !important;}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.hero-fixed-side{display:block !important;width:38%;padding:20px 28px 20px 34px;}}
-@media(max-width:560px){.hero-fixed-side{display:block !important;width:46%;padding:16px 18px 16px 28px;}}
-/* Keep Latest Updates as a continuous moving ticker. */
-.ticker-static{display:flex !important;align-items:center;gap:0;min-width:max-content;width:max-content;flex:none;overflow:visible;white-space:nowrap;animation:latestUpdatesMarquee 28s linear infinite !important;}
-.ticker-static:hover{animation-play-state:paused !important;}
-</style>
-
-<style id="final-request-fix-2">
-/* Keep Latest Updates text strictly inside its own moving window. */
-.ticker-fixed{display:flex;align-items:center;gap:12px;min-width:0;overflow:hidden;position:relative;}
-.ticker-fixed>b{position:relative;z-index:5;flex:none;white-space:nowrap;background:inherit;}
-.ticker-window-fixed{position:relative;flex:1;min-width:0;height:22px;overflow:hidden;display:flex;align-items:center;}
-.ticker-static{display:flex !important;align-items:center;gap:0;min-width:max-content;width:max-content;flex:none;overflow:visible;white-space:nowrap;animation:latestUpdatesMarquee 28s linear infinite !important;will-change:transform;}
-.ticker-static span{flex:none;}
-.ticker-fixed .ticker-next{position:relative;z-index:5;flex:none;background:inherit;}
-/* Ensure Live Dashboard metric labels/numbers always remain readable above decorative glow. */
-.live-dashboard .metric-card > div{position:relative;z-index:3;min-width:0;color:#fff;display:block;}
-.live-dashboard .metric-card > div small,.live-dashboard .metric-card > div b,.live-dashboard .metric-card > div .metric-trend{position:relative;z-index:4;color:#fff;}
-.live-dashboard .metric-card > div small{display:block;opacity:1;}
-.live-dashboard .metric-card > div b{display:block;opacity:1;}
-.live-dashboard .metric-card > div .metric-trend{display:inline-flex;opacity:1;}
-.live-dashboard .metric-card::after{z-index:1;pointer-events:none;}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.ticker-window-fixed{height:20px}.ticker-static{animation-duration:24s !important;}}
-</style>
-
-<style id="final-clean-fix">
-/* 1) Hero: permanently remove the right-side Digital Library/Smart Future overlay. */
-.hero-fixed-side,
-.hero .slide:after{display:none !important;content:none !important;visibility:hidden !important;}
-
-/* 2) Live Command: keep the current message permanently visible; no disappearing/fading rotation. */
-.command-track{overflow:hidden !important;}
-.command-item{display:none !important;opacity:1 !important;transform:none !important;animation:none !important;}
-.command-item.active{display:flex !important;opacity:1 !important;transform:none !important;animation:none !important;}
-
-/* 3) KYC/notification-side image caption: make the tiny text slightly larger and clearer. */
-.kyc-slide::after{
-  font-size:12px !important;
-  line-height:1.25 !important;
-  padding:8px 12px !important;
-  left:14px !important;
-  bottom:14px !important;
-  border-radius:16px !important;
-  max-width:78% !important;
-  z-index:4 !important;
-  text-shadow:0 1px 2px rgba(0,0,0,.35) !important;
-}
-</style>
-
-<style id="live-dashboard-column-fix">
-.live-dashboard{min-width:0;}
-.live-dashboard .quick{grid-template-columns:1fr 1fr;gap:10px;}
-.live-dashboard .metric-card{min-width:0;padding:12px 11px;gap:9px;}
-.live-dashboard .metric-card .icon{flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;font-size:18px;}
-.live-dashboard .metric-card > div{min-width:0;flex:1;overflow:visible;}
-.live-dashboard .metric-card > div small{font-size:10px;white-space:nowrap;}
-.live-dashboard .metric-card > div b{font-size:17px;line-height:1.15;white-space:nowrap;}
-.live-dashboard .metric-card > div .metric-trend{font-size:8.5px;white-space:nowrap;}
-.live-dashboard .metric-card>span:last-child{flex:0 0 auto;font-size:18px;opacity:.9;}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}.content-grid{grid-template-columns:1fr}.live-dashboard .quick{grid-template-columns:1fr 1fr;}}
-@media(max-width:560px){.live-dashboard .quick{grid-template-columns:1fr;}}
-/* LIVE DASHBOARD VISIBILITY FIX — white dashboard ke andar text pure black */
-#live-dashboard-column-fix, #live-dashboard-column-fix *{box-sizing:border-box;}
-.live-dashboard .panel-head h2,.live-dashboard .panel-head h3,.live-dashboard .dashboard-refresh{color:#111827 !important;}
-.live-dashboard .metric-card,.live-dashboard .metric-card *{color:#4b5563 !important;text-shadow:none !important;}
-.live-dashboard .metric-card small,.live-dashboard .metric-card .metric-number,.live-dashboard .metric-card .metric-trend{color:#4b5563 !important;opacity:1 !important;visibility:visible !important;}
-.live-dashboard .metric-card .metric-number{font-weight:900 !important;}
-.live-dashboard .metric-card .metric-trend{font-weight:800 !important;}
-</style>
-<style id="reference-side-hero-final">
-
-/* ===== Reference-matched split hero: fixed left + fixed right, rotating center images ===== */
-.hero-slider{
-  position:relative !important;
-  isolation:isolate;
-  overflow:hidden;
-  height:clamp(270px,22vw,360px);
-  min-height:0 !important;
-  background:#052b64;
-}
-.hero-slider .slide{
-  position:absolute !important;
-  inset:0;
-  width:100%;
-  height:100%;
-  min-height:0 !important;
-  background-size:cover !important;
-  background-position:center center !important;
-}
-.hero-slider .slide.active{display:block !important;}
-.hero-slider .slide-content{display:none !important;}
-
-.hero-side-left{
-  position:absolute;
-  left:0; top:0; bottom:0;
-  width:38%;
-  z-index:12;
-  display:flex;
-  align-items:center;
-  padding:28px 28px 28px 5.3%;
-  color:#fff;
-  pointer-events:none;
-  background:linear-gradient(90deg,rgba(2,34,78,.98) 0%,rgba(2,45,96,.93) 58%,rgba(2,45,96,.56) 86%,rgba(2,45,96,0) 100%);
-}
-.hero-side-left-inner{max-width:600px;}
-.hero-side-left .eyebrow{
-  border-color:#ffca08;
-  background:rgba(3,44,96,.16);
-  padding:4px 11px;
-  font-size:12px;
-  line-height:1.1;
-}
-.hero-side-left h1{
-  margin:10px 0 6px;
-  font-size:clamp(32px,3vw,46px);
-  line-height:1;
-  letter-spacing:-.8px;
-  white-space:nowrap;
-}
-.hero-side-left h1 span{color:#ffbd00;}
-.hero-side-left h2{
-  margin:0 0 9px;
-  font-size:clamp(15px,1.35vw,21px);
-  line-height:1.15;
-}
-.hero-side-left p{
-  margin:0;
-  max-width:470px;
-  font-size:clamp(10px,.82vw,13px);
-  line-height:1.45;
-  color:#f1f6ff;
-}
-.hero-side-left .explore{
-  display:inline-flex;
-  margin-top:13px;
-  padding:9px 20px;
-  border-radius:24px;
-  background:#ffbd12;
-  color:#07336e;
-  font-size:12px;
-  font-weight:900;
-  pointer-events:auto;
-  box-shadow:0 5px 14px rgba(0,0,0,.12);
-}
-
-.hero-side-right{
-  position:absolute;
-  right:0; top:0; bottom:0;
-  width:20%;
-  z-index:12;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  padding:25px 34px 25px 28px;
-  color:#fff;
-  text-align:center;
-  pointer-events:none;
-  background:linear-gradient(90deg,rgba(2,45,96,0) 0%,rgba(2,45,96,.48) 28%,rgba(2,40,91,.90) 72%,rgba(2,34,78,.98) 100%);
-}
-.hero-side-right-title{
-  font-size:clamp(19px,2vw,31px);
-  line-height:1.16;
-  font-weight:900;
-  font-style:italic;
-  letter-spacing:.1px;
-  text-shadow:0 3px 13px rgba(0,0,0,.65);
-}
-.hero-side-right-line{
-  width:125px;
-  height:7px;
-  margin-top:14px;
-  background:#ffbd12;
-  border-radius:50%;
-  transform:skewX(-28deg) rotate(-5deg);
-  box-shadow:0 3px 8px rgba(0,0,0,.2);
-}
-.hero-side-right-brand{
-  margin-top:11px;
-  font-size:clamp(11px,1vw,17px);
-  font-weight:900;
-  letter-spacing:.35px;
-  text-shadow:0 2px 8px rgba(0,0,0,.65);
-}
-.hero-side-right-brand small{
-  display:block;
-  margin-top:2px;
-  font-size:.55em;
-  font-weight:700;
-  opacity:.9;
-}
-
-.hero-slider > .arrow{
-  z-index:25 !important;
-  width:40px;
-  height:40px;
-  background:rgba(3,44,96,.18);
-  backdrop-filter:blur(2px);
-}
-.hero-slider > .prev{left:16px;}
-.hero-slider > .next{right:16px;}
-.hero-slider > .dots{z-index:25 !important;bottom:13px;}
-
-.hero-slider .slide::before{
-  z-index:1 !important;
-  background:linear-gradient(90deg,rgba(2,32,75,.15) 0%,rgba(2,45,95,.05) 35%,rgba(2,45,95,.04) 65%,rgba(2,45,95,.12) 100%) !important;
-}
-
-@media(max-width:1050px){
-  .hero-side-left{width:42%;padding-left:5%;}
-  .hero-side-right{width:23%;padding-right:28px;padding-left:20px;}
-  .hero-side-left h1{font-size:34px;}
-  .hero-side-left h2{font-size:16px;}
-}
-@media(max-width:850px){.footer-grid{grid-template-columns:1fr 1fr;gap:16px}
-  .hero-slider{height:390px;}
-  .hero-side-left{
-    width:58%;
-    padding:24px 22px 35px 7%;
-    align-items:center;
-    background:linear-gradient(90deg,rgba(2,34,78,.98),rgba(2,45,96,.86) 72%,rgba(2,45,96,.18));
-  }
-  .hero-side-right{
-    width:34%;
-    padding:20px 25px 28px 10px;
-    background:linear-gradient(90deg,rgba(2,45,96,0),rgba(2,40,91,.65) 42%,rgba(2,34,78,.96));
-  }
-  .hero-side-left h1{font-size:31px;white-space:normal;}
-  .hero-side-left p{font-size:11px;max-width:360px;}
-  .hero-side-right-title{font-size:21px;}
+@media(max-width:850px){
+  .topbar .live{display:none}
+  .brand img{width:52px;height:42px}.brand strong{font-size:19px}.brand small{display:none}
+  .nav-actions .btn-label{display:none}
+  .hero-right{display:none}.hero-left{width:100%;background:linear-gradient(90deg,rgba(2,34,78,.96),rgba(2,45,96,.7) 70%,rgba(2,45,96,.25))}
+  .hub-row{grid-template-columns:1fr}
+  .footer-grid{grid-template-columns:1fr 1fr}
+  .dropdown-panel{position:fixed;left:12px;right:12px;top:auto;width:auto;margin-top:12px}
 }
 @media(max-width:560px){
-  .hero-slider{height:430px;}
-  .hero-side-left{width:68%;padding:20px 12px 35px 7%;}
-  .hero-side-right{width:32%;padding:18px 15px 28px 5px;}
-  .hero-side-left .eyebrow{font-size:9px;padding:4px 8px;}
-  .hero-side-left h1{font-size:27px;line-height:1.02;}
-  .hero-side-left h2{font-size:13px;}
-  .hero-side-left p{font-size:10px;line-height:1.35;}
-  .hero-side-left .explore{font-size:10px;padding:8px 14px;}
-  .hero-side-right-title{font-size:15px;}
-  .hero-side-right-line{width:70px;height:4px;margin-top:10px;}
-  .hero-side-right-brand{font-size:9px;}
-  .hero-slider > .arrow{width:32px;height:32px;font-size:22px;}
-  .hero-slider > .prev{left:8px;}
-  .hero-slider > .next{right:8px;}
+  .hero-slider{height:320px}.hero-left h1{font-size:28px}.hero-left p{display:none}.arrow{display:none}
+  .quick,.performance,.features,.future-grid,.banner-row,.footer-grid{grid-template-columns:1fr}
+  .command-label small{display:none}.feature-hub,.app-card{flex-direction:column;align-items:flex-start}
+  .btn{padding:10px 12px}
 }
-
-
-</style>
-
-<style id="professional-dashboard-fix">
-/* Integrated Live Dashboard statistic cards — clean, permanent and polished */
-.live-dashboard .quick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px;}
-.live-dashboard .metric-card{position:relative;min-width:0;min-height:92px;padding:14px 13px;border:1px solid #e5eaf1;border-radius:14px;background:linear-gradient(145deg,#ffffff,#f7f9fc);box-shadow:0 5px 16px rgba(31,55,86,.07);display:flex;align-items:center;gap:10px;overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
-.live-dashboard .metric-card:hover{transform:translateY(-2px);box-shadow:0 9px 22px rgba(31,55,86,.11);border-color:#d7e0ec;}
-.live-dashboard .metric-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:14px 0 0 14px;background:linear-gradient(180deg,#1477d4,#48a4f5);}
-.live-dashboard .metric-card::after{display:none !important;}
-.live-dashboard .metric-card .icon{position:relative;z-index:2;flex:0 0 40px;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:#eef5fc;border:1px solid #dce9f6;font-size:20px;box-shadow:none;}
-.live-dashboard .metric-card:nth-child(2)::before{background:linear-gradient(180deg,#11a86a,#48c98f);}
-.live-dashboard .metric-card:nth-child(2) .icon{background:#edf9f3;border-color:#d8eee2;}
-.live-dashboard .metric-card:nth-child(3)::before{background:linear-gradient(180deg,#7b43d8,#a77ae8);}
-.live-dashboard .metric-card:nth-child(3) .icon{background:#f5f0fc;border-color:#e7ddf6;}
-.live-dashboard .metric-card:nth-child(4)::before{background:linear-gradient(180deg,#ed8a12,#f4b34e);}
-.live-dashboard .metric-card:nth-child(4) .icon{background:#fff6e8;border-color:#f6e5c7;}
-.live-dashboard .metric-card > div{position:relative;z-index:2;min-width:0;flex:1;}
-.live-dashboard .metric-card > div small{display:block;font-size:10px;line-height:1.3;font-weight:800;letter-spacing:.15px;color:#64748b !important;margin-bottom:4px;white-space:nowrap;}
-.live-dashboard .metric-card > div b{display:block;font-size:21px;line-height:1.05;font-weight:900;color:#172033 !important;letter-spacing:.2px;white-space:nowrap;}
-.live-dashboard .metric-card > div .metric-trend{display:inline-flex;margin-top:5px;font-size:8px;line-height:1.2;font-weight:800;color:#718096 !important;white-space:nowrap;}
-.live-dashboard .metric-card>span:last-child{position:relative;z-index:2;flex:0 0 auto;font-size:17px;color:#94a3b8 !important;opacity:1;}
-@media(max-width:560px){.live-dashboard .quick{grid-template-columns:1fr;gap:10px}.live-dashboard .metric-card{min-height:86px;}}
-
-/* FINAL FIX: keep Live Dashboard numbers perfectly stationary while live values update. */
-.live-dashboard .metric-number{display:inline-block;min-width:5ch;height:1.15em;line-height:1.15em;vertical-align:middle;text-align:left;transform:none !important;animation:none !important;transition:none !important;will-change:auto !important;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;}
-.live-dashboard .metric-card .metric-pulse{animation:none !important;transform:none !important;}
-.live-dashboard .metric-card > div{transform:none !important;}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.ticker-track{overflow-x:auto}}
 </style>
 </head>
 <body>
-<div class="topbar"><div class="container row"><div class="ticker ticker-fixed" id="latestUpdates" onclick="openUpdates()" title="Click to view all latest updates"><b>📢 Latest Updates:</b><div class="ticker-window-fixed"><div class="ticker-static" aria-label="Latest updates"><span>Library will remain closed on 1st May 2025 (Labour Day).</span><span>New e-Books added in Digital Library.</span><span>Students can now pay fees online through PFMS.</span><span>KYC verification is mandatory for all students.</span><span>Digital Library resources are available through the Smart Future portal.</span><span>For any help, contact Admin.</span></div></div><button aria-label="View all updates" class="ticker-next" onclick="openUpdates();event.stopPropagation()" type="button">›</button></div><div class="live">▣ <span id="liveDate">-- --- ----</span> &nbsp; | &nbsp; <span id="liveTime">--:--:--</span> &nbsp; <i id="liveDot"></i><span id="liveStatus">Live</span></div></div></div>
-<header><div class="container nav">
-<a class="brand" href="#home"><img alt="Anmol LibMatrix logo" src="/img/2e7f7a75c4.png"/><div><strong>Anmol<br/><span>LibMatrix</span></strong><small>अनमोल लाइब्रेरी मैट्रिक्स</small></div></a>
-<nav class="menu"><a class="home active" href="#home">⌂   Home</a><a href="#about">♧   About</a><a href="#features">✣   Features</a><a href="#gallery">▣   Gallery</a><a href="#contact">◉   Contact</a></nav>
-<div class="nav-actions">
-<div class="nav-dropdown">
-<button aria-expanded="false" class="login-btn dropdown-toggle" onclick="toggleMenu('loginMenu',this)" type="button">🔐 Login <span>▾</span></button>
-<div class="dropdown-panel" id="loginMenu" role="menu"></div>
-</div>
-<div class="nav-dropdown">
-<button aria-expanded="false" class="app-btn dropdown-toggle" onclick="toggleMenu('appMenu',this)" type="button">📱 App <span>▾</span></button>
-<div class="dropdown-panel app-panel" id="appMenu" role="menu"></div>
-</div>
-<button aria-label="Menu" class="mobile" onclick="document.querySelector('.mobile-menu').classList.toggle('open')">☰</button>
-</div>
-</div><nav class="mobile-menu"><a href="#home">⌂ Home</a><a href="#about">♧ About</a><a href="#features">✣ Features</a><a href="#gallery">▣ Gallery</a><a href="#contact">◉ Contact</a></nav></header>
-<main id="home"><section class="container feature-hub" id="login">
-<div class="hub-head"><div><span class="hub-kicker">SECURE ACCESS</span><h2>Login Center</h2><p>All Admin, Agent, HRMS, Student and PFMS features are grouped inside Login.</p></div><span class="hub-status">● Ready</span></div>
-</section>
-<section class="container feature-hub app-hub" id="mobile-app">
-<div class="hub-head"><div><span class="hub-kicker">MOBILE SERVICES</span><h2>Mobile App Center</h2><p>Every mobile feature is organized inside App so new services can be added here without changing the layout.</p></div><span class="hub-status">● Ready</span></div>
-</section>
-<section class="hero"><div class="hero-slider">
+<a class="skip" href="#home">Skip to content</a>
 
-<div class="hero-side-left" aria-hidden="true">
-  <div class="hero-side-left-inner">
-    <span class="eyebrow">Smart Digital Library</span>
-    <h1>Learn <span>|</span> Read <span>|</span> Grow</h1>
-    <h2>Your Knowledge Partner for a Better Tomorrow</h2>
-    <p>Access thousands of books, manage your library,<br>track students and make learning smarter<br>with Anmol LibMatrix.</p>
-    <a class="explore" href="#gallery">Explore Library &nbsp; →</a>
+<div class="topbar"><div class="container row">
+  <div class="ticker" id="latestUpdates" onclick="openUpdates()" title="Click to view all latest updates">
+    <b>📢 Latest Updates:</b>
+    <div class="ticker-window"><div class="ticker-track" id="tickerTrack" aria-label="Latest updates"></div></div>
+    <button class="ticker-next" type="button" aria-label="View all updates" onclick="openUpdates();event.stopPropagation()">›</button>
   </div>
-</div>
-<div class="hero-side-right" aria-hidden="true">
-  <div class="hero-side-right-title">Digital Library<br>For A<br>Smarter Future</div>
-  <div class="hero-side-right-line"></div>
-  <div class="hero-side-right-brand">Anmol LibMatrix<small>Smart Digital Library</small></div>
-</div>
+  <div class="live"><span id="liveDate">-- --- ----</span><span>|</span><span id="liveTime">--:--:--</span><i id="liveDot"></i><span id="liveStatus">Live</span></div>
+</div></div>
 
-<article class="slide active" style="background-image:url('/img/e6e934b6ac.jpg')"><div class="slide-content"><span class="eyebrow">Smart Digital Library</span><h1>Learn <span>|</span> Read <span>|</span> Grow</h1><h2>Your Knowledge Partner for a Better Tomorrow</h2><p>Access thousands of books, manage your library, track students and make learning smarter with Anmol LibMatrix.</p><a class="explore" href="#gallery">Explore Library   →</a></div></article>
-<article class="slide" style="background-image:url('/img/e6e934b6ac.jpg')"><div class="slide-content"><span class="eyebrow">Digital Learning</span><h1>Study <span>|</span> Search <span>|</span> Succeed</h1><h2>A smarter library experience</h2><p>Bring digital resources, student services and modern library workflows together in one place.</p><a class="explore" href="#features">View Features   →</a></div></article>
-<article class="slide" style="background-image:url('/img/17f5b4483c.jpg')"><div class="slide-content"><span class="eyebrow">Modern Library System</span><h1>Manage <span>|</span> Track <span>|</span> Grow</h1><h2>Everything your library needs</h2><p>Organize books, attendance, fees, reports and digital learning with a clean, responsive portal.</p><a class="explore" href="#login">Open Login   →</a></div></article>
-<article class="slide" style="background-image:url('/img/b65a1b24c6.jpg')"><div class="slide-content"><span class="eyebrow">Secure eKYC &amp; Biometric</span><h1>Verify <span>|</span> Match <span>|</span> Protect</h1><h2>Digital Identity for a Smarter Library</h2><p>Fast, secure eKYC and face-match verification for students and library access.</p><a class="explore" href="#kyc-report">View KYC Report   →</a></div></article>
-<article class="slide" style="background-image:url('/img/bf17bb4e92.jpg')"><div class="slide-content"><span class="eyebrow">Student Verification</span><h1>Smart <span>|</span> Safe <span>|</span> Digital</h1><h2>eKYC Verification &amp; Attendance</h2><p>Identity confirmation, biometric attendance and secure student services in one smart platform.</p><a class="explore" href="#kyc-report">Explore Verification   →</a></div></article>
-<button class="arrow prev" onclick="changeSlide(-1)">‹</button><button class="arrow next" onclick="changeSlide(1)">›</button><div class="dots"><span class="dot active" onclick="goSlide(0)"></span><span class="dot" onclick="goSlide(1)"></span><span class="dot" onclick="goSlide(2)"></span><span class="dot" onclick="goSlide(3)"></span><span class="dot" onclick="goSlide(4)"></span><span class="dot" onclick="goSlide(5)"></span><span class="dot" onclick="goSlide(6)"></span></div>
+<header>
+  <div class="container nav">
+    <a class="brand" href="#home" aria-label="Anmol LibMatrix — home">
+      <img data-brand-mark alt="Anmol LibMatrix logo">
+      <div><strong>Anmol <span>LibMatrix</span></strong><small>अनमोल लाइब्रेरी मैट्रिक्स</small></div>
+    </a>
+    <nav class="menu" aria-label="Main">
+      <a class="active" href="#home">Home</a><a href="#about">About</a><a href="#features">Features</a><a href="#gallery">eKYC</a><a href="#contact">Contact</a>
+    </nav>
+    <div class="nav-actions">
+      <div class="nav-dropdown">
+        <button class="btn btn-primary dropdown-toggle" aria-expanded="false" aria-haspopup="true" onclick="toggleMenu('loginMenu',this)" type="button">🔐 <span class="btn-label">Login</span> ▾</button>
+        <div class="dropdown-panel" id="loginMenu" role="menu"></div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="btn btn-accent dropdown-toggle" aria-expanded="false" aria-haspopup="true" onclick="toggleMenu('appMenu',this)" type="button">📱 <span class="btn-label">App</span> ▾</button>
+        <div class="dropdown-panel" id="appMenu" role="menu"></div>
+      </div>
+      <button class="menu-toggle" aria-label="Menu" aria-expanded="false" aria-controls="mobileMenu" onclick="toggleMobileMenu(this)" type="button">☰</button>
+    </div>
+  </div>
+  <nav class="container mobile-menu" id="mobileMenu" aria-label="Mobile">
+    <a href="#home">Home</a><a href="#about">About</a><a href="#features">Features</a><a href="#gallery">eKYC</a><a href="#contact">Contact</a>
+  </nav>
+</header>
 
-<article class="slide" style="background-image:url('/img/f00c135c05.jpg')"><div class="slide-content"></div></article><article class="slide" style="background-image:url('/img/d686944c89.jpg')"><div class="slide-content"></div></article></div></section>
-<section class="command-strip container" aria-label="Live command updates">
-  <div class="command-label"><span class="command-dot"></span><b>Live Command</b><small>Updates</small></div>
-  <div class="command-window"><div class="command-track" id="commandTrack"></div></div>
-  <button class="command-next" type="button" aria-label="Next command update" onclick="nextCommandUpdate()">›</button>
-</section>
-<section class="container content-grid section" id="gallery"><div class="panel">
-<div class="panel-head"><div><h2>🔷 eKYC &amp; Biometric Attendance</h2><p>Secure  |  Fast  |  Paperless - Digital Attendance for a Smarter Tomorrow <span class="quality-note">• 4K visual slider</span></p></div><a class="view" href="#kyc-report">View All →</a></div>
-<div aria-label="eKYC verification image slider" class="kyc-slider-wrap"><div class="kyc-slider" id="kycSlider">
-<div class="kyc-slide active"><img alt="eKYC verification and biometric identity check" loading="eager" src="/img/b65a1b24c6.jpg"/></div>
-<div class="kyc-slide"><img alt="Face match and Aadhaar-assisted eKYC verification" loading="lazy" src="/img/bf17bb4e92.jpg"/></div>
-</div><div class="kyc-nav"><button aria-label="Previous KYC image" onclick="changeKycSlide(-1)" type="button">‹</button><button aria-label="Next KYC image" onclick="changeKycSlide(1)" type="button">›</button></div><div class="kyc-dots"><button aria-label="KYC image 1" class="kyc-dot active" onclick="goKycSlide(0)"></button><button aria-label="KYC image 2" class="kyc-dot" onclick="goKycSlide(1)"></button></div></div>
-<a href="#kyc-report">Performance Report →</a></div>
-</div>
-<aside class="panel live-dashboard"><div class="panel-head"><h2>🔔 Live Dashboard</h2><span class="dashboard-refresh"><span class="live-ring"></span> Live updating</span></div>
-<div class="quick">
-<div class="quick-card metric-card"><span class="icon">📚</span><div><small>Total Books</small><b class="metric-number" data-target="220">0</b><span class="metric-trend">↑ 12% this month</span></div><span>→</span></div>
-<div class="quick-card metric-card"><span class="icon">👥</span><div><small>Students</small><b class="metric-number" data-target="50">0</b><span class="metric-trend">↑ 8% this month</span></div><span>→</span></div>
-<div class="quick-card metric-card"><span class="icon">📖</span><div><small>Issued Books</small><b class="metric-number" data-target="60">0</b><span class="metric-trend">↑ 6% today</span></div><span>→</span></div>
-<div class="quick-card metric-card"><span class="icon">💰</span><div><small>Pending / Fines</small><b class="metric-number" data-prefix="₹ " data-target="56">0</b><span class="metric-trend">↓ 3% today</span></div><span>→</span></div>
-</div>
-<div class="panel-head" style="margin-top:14px"><h3 style="margin:0;font-size:14px">🔔 Latest Notices</h3><a class="view" href="#latestUpdates" onclick="openUpdates();return false;">View All →</a></div>
-<div class="notices"><div class="notice"><i></i><div><b>Library will remain closed on 1st May 2025 (Labour Day).</b><small>28 Apr 2025</small></div></div><div class="notice"><i></i><div><b>New e-Books added in Digital Library.</b><small>27 Apr 2025</small></div></div><div class="notice"><i></i><div><b>Online fee payment is now available via PFMS.</b><small>26 Apr 2025</small></div></div><div class="notice"><i></i><div><b>KYC verification is mandatory for all students.</b><small>25 Apr 2025</small></div></div></div></aside></section>
-<section class="container panel kyc-performance" id="kyc-report">
-<div class="panel-head">
-<div>
-<h2>🔷 KYC Verification &amp; Performance Report</h2>
-<p>Secure  |  Fast  |  Paperless  |  High-resolution visuals</p>
-</div>
-<a class="view" href="#kyc-report">View Report →</a>
-</div>
-<div class="kyc-layout">
-<div class="performance">
-<div class="perf-card"><div class="perf-icon">🪪</div><b>KYC Verified</b><strong id="kyc-stat-verified">98.6%</strong><small>Agent identity verification</small><div class="progress"><span id="kyc-bar-verified" style="width:98.6%"></span></div></div>
-<div class="perf-card"><div class="perf-icon">👤</div><b>Active Verification</b><strong id="kyc-stat-active">97.9%</strong><small>Agents + Students currently active</small><div class="progress"><span id="kyc-bar-active" style="width:97.9%"></span></div></div>
-<div class="perf-card"><div class="perf-icon">⚡</div><b id="kyc-label-logins">Live Logins Today</b><strong id="kyc-stat-logins">0</strong><small>Real-time login activity</small><div class="progress"><span id="kyc-bar-logins" style="width:10%"></span></div></div>
-<div class="perf-card"><div class="perf-icon">🛡</div><b>Secure Records</b><strong>100%</strong><small id="kyc-stat-records">Protected attendance records</small><div class="progress"><span style="width:100%"></span></div></div>
-</div>
-</div>
-</section>
-<section class="container panel section" id="features"><div class="panel-head"><h2>⚙ Our Key Features</h2></div><div class="features"><div class="mini"><div class="circle">📖</div><b>Digital Library Management</b></div><div class="mini"><div class="circle">📗</div><b>Online Book Issue &amp; Return</b></div><div class="mini"><div class="circle">🎓</div><b>Student &amp; Attendance</b></div><div class="mini"><div class="circle">🔎</div><b>KYC Verification</b></div><div class="mini"><div class="circle">₹</div><b>Fees &amp; PFMS Integration</b></div><div class="mini"><div class="circle">📄</div><b>Invoice &amp; Material Management</b></div><div class="mini"><div class="circle">📈</div><b>Reports &amp; Analytics</b></div><div class="mini"><div class="circle">👥</div><b>Staff Management</b></div></div></section>
-<section class="container section banner-row" id="about"><div class="banner"><div><h3>🎓 Smart Library System</h3><p>Manage Books  |  Track Users  |  Generate Reports</p></div></div><div class="banner photo" style="background-image:linear-gradient(90deg,rgba(3,36,85,.86),rgba(3,36,85,.2)),url('/img/0295822d42.jpg')"><div><h3>Knowledge Builds Future</h3><p>Better learning through a connected library.</p></div></div><div class="banner photo" style="background-image:linear-gradient(90deg,rgba(3,36,85,.86),rgba(3,36,85,.2)),url('/img/cb69fc4381.jpg')"><div><h3>Digital Learning Anytime, Anywhere</h3><p>Explore resources from any device.</p></div></div></section>
-<section class="container app-section" id="mobile-app"><div class="app-card"><div><h2>📱 Anmol LibMatrix Mobile App</h2><p>Access your digital library, books, attendance, fees and student services from mobile.</p></div><a class="app-cta" href="#mobile-app">Get the App →</a></div></section>
+<main id="home">
+  <section class="hero" aria-label="Featured">
+    <div class="hero-slider" id="heroSlider">
+      <div class="hero-left">
+        <div class="hero-left-inner hero-side-left-inner">
+          <span class="eyebrow">Smart Digital Library</span>
+          <h1>Learn <span>|</span> Read <span>|</span> Grow</h1>
+          <h2>Your Knowledge Partner for a Better Tomorrow</h2>
+          <p>Access thousands of books, manage your library, track students and make learning smarter with Anmol LibMatrix.</p>
+          <a class="explore" href="#gallery">Explore Library →</a>
+        </div>
+      </div>
+      <div class="hero-right" aria-hidden="true">
+        <div class="hero-right-title hero-side-right-title">Digital Library<br>For A<br>Smarter Future</div>
+        <div class="hero-right-line"></div>
+        <div class="hero-right-brand">Anmol LibMatrix<small>Smart Digital Library</small></div>
+      </div>
+
+      <article class="slide active" style="background-image:url('/img/e6e934b6ac.jpg')"><div class="sr-only"><span class="eyebrow">Smart Digital Library</span><h2>Your Knowledge Partner for a Better Tomorrow</h2><p>Access thousands of books and manage your library.</p></div></article>
+      <article class="slide" style="background-image:url('/img/e6e934b6ac.jpg')"><div class="sr-only"><span class="eyebrow">Digital Learning</span><h2>A smarter library experience</h2><p>Digital resources, student services and modern library workflows in one place.</p></div></article>
+      <article class="slide" style="background-image:url('/img/17f5b4483c.jpg')"><div class="sr-only"><span class="eyebrow">Modern Library System</span><h2>Everything your library needs</h2><p>Books, attendance, fees, reports and digital learning in a clean, responsive portal.</p></div></article>
+      <article class="slide" style="background-image:url('/img/b65a1b24c6.jpg')"><div class="sr-only"><span class="eyebrow">Secure eKYC &amp; Biometric</span><h2>Digital Identity for a Smarter Library</h2><p>Fast, secure eKYC and face-match verification for students and library access.</p></div></article>
+      <article class="slide" style="background-image:url('/img/bf17bb4e92.jpg')"><div class="sr-only"><span class="eyebrow">Student Verification</span><h2>eKYC Verification &amp; Attendance</h2><p>Identity confirmation, biometric attendance and secure student services.</p></div></article>
+      <article class="slide" style="background-image:url('/img/f00c135c05.jpg')"></article>
+      <article class="slide" style="background-image:url('/img/d686944c89.jpg')"></article>
+
+      <button class="arrow prev" onclick="changeSlide(-1)" aria-label="Previous slide" type="button">‹</button>
+      <button class="arrow next" onclick="changeSlide(1)" aria-label="Next slide" type="button">›</button>
+      <div class="dots" id="heroDots"></div>
+    </div>
+  </section>
+
+  <section class="command-strip container" aria-label="Live command updates">
+    <div class="command-label"><span class="dot-live"></span><b>Live Command</b></div>
+    <div class="command-window" id="commandTrack" aria-live="polite"></div>
+    <button class="command-next" type="button" aria-label="Next command update" onclick="nextCommandUpdate()">›</button>
+  </section>
+
+  <div class="container hub-row">
+    <section class="feature-hub" id="login">
+      <div class="hub-head"><span class="hub-kicker">SECURE ACCESS</span><h2>Login Center</h2><p>Admin, Agent, HRMS, Student and Invoice access in one place.</p></div>
+      <button class="btn btn-primary" type="button" onclick="document.querySelector('#loginMenu').classList.add('open');window.scrollTo({top:0,behavior:'smooth'})">Open Login 🔐</button>
+    </section>
+    <section class="feature-hub app-hub" id="mobile-app">
+      <div class="hub-head"><span class="hub-kicker">MOBILE SERVICES</span><h2>Mobile App Center</h2><p>Download the attendance and HRMS apps for your phone.</p></div>
+      <button class="btn btn-accent" type="button" onclick="document.querySelector('#appMenu').classList.add('open');window.scrollTo({top:0,behavior:'smooth'})">Get the App 📱</button>
+    </section>
+  </div>
+
+  <section class="container content-grid" id="gallery">
+    <div class="panel">
+      <div class="panel-head"><div><h2>🔷 eKYC &amp; Biometric Attendance</h2><p>Secure | Fast | Paperless — digital attendance for a smarter tomorrow</p></div><a class="view" href="#kyc-report">View report →</a></div>
+      <div class="kyc-slider-wrap" aria-label="eKYC verification image slider">
+        <div class="kyc-slider" id="kycSlider">
+          <div class="kyc-slide active"><img alt="eKYC verification and biometric identity check" loading="eager" src="/img/b65a1b24c6.jpg"></div>
+          <div class="kyc-slide"><img alt="Face match and Aadhaar-assisted eKYC verification" loading="lazy" src="/img/bf17bb4e92.jpg"></div>
+        </div>
+        <div class="kyc-nav"><button aria-label="Previous image" onclick="changeKycSlide(-1)" type="button">‹</button><button aria-label="Next image" onclick="changeKycSlide(1)" type="button">›</button></div>
+        <div class="kyc-dots"><button aria-label="Image 1" class="kyc-dot active" onclick="goKycSlide(0)" type="button"></button><button aria-label="Image 2" class="kyc-dot" onclick="goKycSlide(1)" type="button"></button></div>
+      </div>
+      <a class="panel-foot" href="#kyc-report">Performance report →</a>
+    </div>
+
+    <aside class="panel live-dashboard" aria-label="Live dashboard">
+      <div class="panel-head"><h2>📊 Live Dashboard</h2><span class="dashboard-refresh" id="liveBadge"><span class="dot-live"></span><span id="liveBadgeText">Live updating</span></span></div>
+      <div class="quick" id="liveCards">
+        <div class="metric-card"><span class="icon" aria-hidden="true">📚</span><div><small>Total Books</small><b class="metric-number" data-key="books">–</b><span class="metric-trend">&nbsp;</span></div></div>
+        <div class="metric-card"><span class="icon" aria-hidden="true">🎓</span><div><small>Students</small><b class="metric-number" data-key="students">–</b><span class="metric-trend">&nbsp;</span></div></div>
+        <div class="metric-card"><span class="icon" aria-hidden="true">🗓️</span><div><small>Attendance Today</small><b class="metric-number" data-key="attendance">–</b><span class="metric-trend">&nbsp;</span></div></div>
+        <div class="metric-card"><span class="icon" aria-hidden="true">📈</span><div><small>Performance</small><b class="metric-number" data-key="performance">–</b><span class="metric-trend">&nbsp;</span></div></div>
+      </div>
+      <div class="panel-head notice-head"><h3>🔔 Latest Notices</h3><a class="view" href="#latestUpdates" onclick="openUpdates();return false;">View all →</a></div>
+      <div class="notices" id="noticeList"><div class="notice-empty">No notices have been published yet.</div></div>
+    </aside>
+  </section>
+
+  <section class="container panel section" id="kyc-report">
+    <div class="panel-head"><div><h2>🔷 KYC Verification &amp; Performance Report</h2><p>Secure | Fast | Paperless — live figures from the library database</p></div></div>
+    <div class="performance">
+      <div class="perf-card"><div class="perf-icon">🪪</div><b>KYC Verified</b><strong id="kyc-stat-verified">–</strong><small>Agent identity verification</small><div class="progress"><span id="kyc-bar-verified" style="width:0"></span></div></div>
+      <div class="perf-card"><div class="perf-icon">👤</div><b>Active Verification</b><strong id="kyc-stat-active">–</strong><small>Agents and students currently active</small><div class="progress"><span id="kyc-bar-active" style="width:0"></span></div></div>
+      <div class="perf-card"><div class="perf-icon">⚡</div><b>Logins Today</b><strong id="kyc-stat-logins">–</strong><small>Real-time login activity</small><div class="progress"><span id="kyc-bar-logins" style="width:0"></span></div></div>
+      <div class="perf-card"><div class="perf-icon">🛡</div><b>Secure Records</b><strong id="kyc-stat-secure">–</strong><small id="kyc-stat-records">Protected records in the database</small><div class="progress"><span id="kyc-bar-secure" style="width:0"></span></div></div>
+    </div>
+  </section>
+
+  <section class="container panel section" id="features">
+    <div class="panel-head"><h2>⚙ Our Key Features</h2></div>
+    <div class="features">
+      <div class="mini"><div class="circle">📖</div><b>Digital Library Management</b></div>
+      <div class="mini"><div class="circle">📗</div><b>Online Book Issue &amp; Return</b></div>
+      <div class="mini"><div class="circle">🎓</div><b>Student &amp; Attendance</b></div>
+      <div class="mini"><div class="circle">🔎</div><b>KYC Verification</b></div>
+      <div class="mini"><div class="circle">₹</div><b>Fees &amp; PFMS Integration</b></div>
+      <div class="mini"><div class="circle">📄</div><b>Invoice &amp; Material Management</b></div>
+      <div class="mini"><div class="circle">📈</div><b>Reports &amp; Analytics</b></div>
+      <div class="mini"><div class="circle">👥</div><b>Staff Management</b></div>
+    </div>
+  </section>
+
+  <section class="container section banner-row" id="about">
+    <div class="banner"><div><h3>🎓 Smart Library System</h3><p>Manage Books | Track Users | Generate Reports</p></div></div>
+    <div class="banner photo" style="background-image:linear-gradient(90deg,rgba(3,36,85,.86),rgba(3,36,85,.2)),url('/img/0295822d42.jpg')"><div><h3>Knowledge Builds Future</h3><p>Better learning through a connected library.</p></div></div>
+    <div class="banner photo" style="background-image:linear-gradient(90deg,rgba(3,36,85,.86),rgba(3,36,85,.2)),url('/img/cb69fc4381.jpg')"><div><h3>Digital Learning Anytime, Anywhere</h3><p>Explore resources from any device.</p></div></div>
+  </section>
+
+  <section class="container section" id="get-app">
+    <div class="app-card"><div><h2>📱 Anmol LibMatrix Mobile App</h2><p>Access your digital library, books, attendance, fees and student services from mobile.</p></div><a class="app-cta" href="#mobile-app" onclick="document.querySelector('#appMenu').classList.add('open');window.scrollTo({top:0,behavior:'smooth'});return false">Get the App →</a></div>
+  </section>
+
+  <section class="container panel section" id="future">
+    <div class="panel-head"><div><h2>🚀 Digital Library for a Smart Future</h2><p>Connected resources, intelligent services and performance-led library management.</p></div></div>
+    <div class="future-grid">
+      <div class="future-card"><span>📚</span><b>Smart Digital Library</b><small>e-Books, e-resources and instant discovery in one place.</small></div>
+      <div class="future-card"><span>⚡</span><b>Fast Access</b><small>Responsive search, digital circulation and seamless student access.</small></div>
+      <div class="future-card"><span>📊</span><b>Performance Reports</b><small>Track KYC, attendance, books, users and service performance.</small></div>
+      <div class="future-card"><span>🔐</span><b>Secure Identity</b><small>Biometric and eKYC workflows designed for safer access.</small></div>
+    </div>
+  </section>
 </main>
-<section class="container panel future-section" id="future">
-<div class="panel-head">
-<div>
-<h2>🚀 Digital Library for a Smart Future</h2>
-<p>Connected resources, intelligent services and performance-led library management.</p>
-</div>
-<a class="view" href="#future">Explore Future →</a>
-</div>
-<div class="future-grid">
-<div class="future-card"><span>📚</span><b>Smart Digital Library</b><small>e-Books, e-resources and instant discovery in one place.</small></div>
-<div class="future-card"><span>⚡</span><b>Fast Access</b><small>Responsive search, digital circulation and seamless student access.</small></div>
-<div class="future-card"><span>📊</span><b>Performance Reports</b><small>Track KYC, attendance, books, users and service performance.</small></div>
-<div class="future-card"><span>🔐</span><b>Secure Identity</b><small>Biometric and eKYC workflows designed for safer access.</small></div>
-</div>
-</section>
+
 <footer id="contact">
-<div class="container footer-grid">
-<div>
-<div class="footer-brand">
-<img alt="Anmol LibMatrix logo" src="/img/2e7f7a75c4.png"/>
-<div>
-<h3>Anmol <span style="color:#ff9b00">LibMatrix</span></h3>
-<p>Digital Library for a Smart Future</p>
-<p>अनमोल लाइब्रेरी मैट्रिक्स</p>
-</div>
-</div>
-<div class="footer-social">
-<a aria-label="Facebook" href="#contact" id="socialFacebook">f</a>
-<a aria-label="Twitter" href="#contact" id="socialTwitter">𝕏</a>
-<a aria-label="YouTube" href="#contact" id="socialYoutube">▶</a>
-<a aria-label="LinkedIn" href="#contact" id="socialLinkedin">in</a>
-</div>
-</div>
-<div>
-<h3>SMART DIGITAL LIBRARY</h3>
-<p>Better Books   |   Brighter Future</p>
-<p>Manage Books   |   Track Users   |   Generate Reports</p>
-</div>
-<div>
-<h3>Quick Links</h3>
-<p><a href="#home">Home</a>   <a href="#about">About</a>   <a href="#future">Future</a>   <a href="#gallery">Gallery</a>   <a href="#contact">Contact</a></p>
-<p><a href="#login">Login</a>   |   <a href="#mobile-app">Mobile App</a>   |   <a href="#kyc-report">KYC Report</a></p>
-</div>
-<div class="footer-contact" id="contact">
-<h3>Contact Us</h3>
-<p><b>Village:</b> Pansalla<br><b>Post Office:</b> Pansalla<br><b>District:</b> Begusarai<br><b>PIN Code:</b> 848202</p>
-<p style="margin-top:8px"><b style="color:#fff">Email:</b> <a href="mailto:anmolkumar201817@gmail.com">anmolkumar201817@gmail.com</a></p>
-</div>
-</div>
-</div>
-</div>
-<div class="container copyright">
-<span id="footerCopyright">© 2026 Anmol LibMatrix. All rights reserved.</span>
-<div class="footer-meta"><div class="footer-developer"><b>Developed by Anmol Team</b><small>Digital Library Technology Platform</small></div></div>
-</div>
+  <div class="container footer-grid">
+    <div>
+      <div class="footer-brand">
+        <img data-brand-mark alt="Anmol LibMatrix logo">
+        <div><h3>Anmol <span>LibMatrix</span></h3><p>Digital Library for a Smart Future</p><p>अनमोल लाइब्रेरी मैट्रिक्स</p></div>
+      </div>
+      <div class="footer-social lm-social-row" data-brand-social aria-label="Follow Anmol LibMatrix on social media"></div>
+    </div>
+    <div>
+      <h3>Smart Digital Library</h3>
+      <p>Better Books | Brighter Future</p>
+      <p>Manage Books | Track Users | Generate Reports</p>
+    </div>
+    <div>
+      <h3>Quick Links</h3>
+      <div class="footer-links"><a href="#home">Home</a><a href="#about">About</a><a href="#features">Features</a><a href="#kyc-report">KYC Report</a><a href="#future">Future</a></div>
+    </div>
+    <div>
+      <h3>Contact Us</h3>
+      <p><b>Village:</b> Pansalla<br><b>Post Office:</b> Pansalla<br><b>District:</b> Begusarai<br><b>PIN Code:</b> 848202</p>
+      <p><b>Email:</b> <a href="mailto:anmolkumar201817@gmail.com">anmolkumar201817@gmail.com</a></p>
+    </div>
+  </div>
+  <div class="container copyright">
+    <span id="footerCopyright">© 2026 Anmol LibMatrix. All rights reserved.</span>
+    <span><b>Developed by Anmol Team</b> · Digital Library Technology Platform</span>
+  </div>
 </footer>
-<script>
-(function(){
-  const dateEl = document.getElementById('liveDate');
-  const timeEl = document.getElementById('liveTime');
-  const statusEl = document.getElementById('liveStatus');
-  const dotEl = document.getElementById('liveDot');
 
-  function updateLiveClock(){
-    const now = new Date();
-    const date = now.toLocaleDateString('en-GB', {
-      day:'2-digit', month:'short', year:'numeric'
-    });
-    const time = now.toLocaleTimeString('en-GB', {
-      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
-    });
-
-    if(dateEl) dateEl.textContent = date;
-    if(timeEl) timeEl.textContent = time;
-
-    // Keep the indicator visibly working.
-    if(statusEl) statusEl.textContent = 'Live';
-    if(dotEl) dotEl.style.background = '#16d978';
-  }
-
-  updateLiveClock();
-  setInterval(updateLiveClock, 1000);
-})();
-</script>
-<script>
-let current=0,timer;
-const slides=[...document.querySelectorAll('.slide')],dots=[...document.querySelectorAll('.dot')];
-function showSlide(n){current=(n+slides.length)%slides.length;slides.forEach((s,i)=>s.classList.toggle('active',i===current));dots.forEach((d,i)=>d.classList.toggle('active',i===current))}
-function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){showSlide(n);restart()} function restart(){clearInterval(timer);timer=setInterval(()=>showSlide(current+1),5000)} restart();
-</script>
-<script>
-/* Central feature registries: add future Login/App features here and they appear in their dropdown automatically.
-   🔗 V15: purane dead anchors (#admin, #agent, ...) hata kar asli login page
-   files se jod diya gaya hai — yeh EXACTLY wahi filenames hain jo
-   Admin_panel_Login.html ki apni DEFAULT_LOGIN_OPTIONS list mein hain, taaki
-   dono jagah ek hi "source of truth" rahe. Neeche syncLoginAndAppMenus()
-   in defaults ko Admin Panel ke live-saved /api/site-data/login_options
-   (aur /api/site-data/apps) se automatically override kar deta hai, jaise
-   hi Admin panel se koi save karta hai — koi manual index.html edit kabhi
-   nahi karna padega. */
-// 🆕 FIX (Netlify 404s): in hrefs ko un EXACT filenames se match kiya gaya hai
-// jo actually deploy folder mein upload hote hain (Netlify case-sensitive
-// Linux hosting hai, isliye 'PFMS_Login.html' !== '/pfms-login' — ek
-// case-mismatch bhi 404 de deta hai). Yehi list Admin_panel_Login.html ki
-// DEFAULT_LOGIN_OPTIONS mein bhi match honi chahiye (source of truth).
-// 🆕 CRITICAL FIX (Admin Panel sync never worked on Netlify): every live-sync
-// fetch() below used to call a RELATIVE path like '/api/site-data'. On
-// Netlify that resolves to https://digitallibraryanmollive.netlify.app/api/...
-// — Netlify is static hosting, it has NO /api routes, so every one of these
-// requests silently 404'd and the page only ever showed the hardcoded
-// defaults, no matter what was saved in the Admin Panel. The real backend
-// lives on Render (same one Admin_panel_Login.html already calls via its
-// own API_BASE constant) and it already whitelists this Netlify domain in
-// CORS. Pointing every fetch at the SAME absolute backend URL fixes the
-// sync. If the backend URL ever changes, update it in ONE place here.
-const SHDL_API_BASE = window.SHDL_API_BASE || '/api';
-const LOGIN_FEATURES = [
-  {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'/admin-login'},
-  {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'/agent-login'},
-  {icon:'👥', name:'HRMS Login', desc:'Staff, attendance & HR management', href:'/hrms-login'},
-  {icon:'🎓', name:'Student Login', desc:'Books, fees, attendance & services', href:'/student-login'},
-  {icon:'📦', name:'Invoice Generator', desc:'Materials, invoices & stock management', href:'/invoice-login'}
-];
-const APP_FEATURES = [
-  {icon:'🟢', name:'NMS Attendance Login', desc:'Download attendance app', href:'#mobile-app', download:true},
-  {icon:'👥', name:'HRMS Login', desc:'Download HRMS app', href:'#mobile-app', download:true}
-];
-const LATEST_UPDATES = [
-  ['Library will remain closed on 1st May 2025 (Labour Day).','28 Apr 2025'],
-  ['New e-Books added in Digital Library.','27 Apr 2025'],
-  ['Students can now pay fees online through PFMS.','26 Apr 2025'],
-  ['KYC verification is mandatory for all students.','25 Apr 2025'],
-  ['Digital Library resources are available through the Smart Future portal.','24 Apr 2025'],
-  ['For any help, contact Admin.','Help Desk']
-];
-/* Add or edit command messages here. These rotate in the dedicated Live Command area. */
-const COMMAND_UPDATES = [
-  'Welcome to Anmol LibMatrix Smart Digital Library — Learn • Read • Grow',
-  'Live command channel ready — new commands can be added here anytime.',
-  'Digital Library resources, attendance and performance services are available.',
-  'Smart Future: faster access to books, digital resources and library insights.'
-];
-// 🆕 Portal links: legacy filenames (older Admin-saved login_options) are mapped to the deployed files,
-//    unsafe schemes are dropped, and every portal opens in a NEW TAB so index.html stays open.
-const LEGACY_PAGES={'admin_panel_login.html':'/admin-login','admin_login.html':'/admin-login','new_admin_login.html':'/admin-login','super_admin_login.html':'/admin-login',
-  'agent_login.html':'/agent-login','hrms_login.html':'/hrms-login','pfms_login.html':'/pfms-login','student_attendance.html':'/student-login',
-  'student_attendance_portal.html':'/student-login','invoice_login.html':'/invoice-login','anmol_material_entry.html':'/invoice-login','anmol_material_login.html':'/invoice-login'};
-function safeHref(u){
-  u=String(u==null?'':u).trim();
-  if(!u||/^\s*(javascript|vbscript|data):/i.test(u))return '#';
-  if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base])return LEGACY_PAGES[base]+u.slice(base.length);}
-  return u;
-}
-function escAttr(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function renderFeatureMenu(id, items, label){
-  const el=document.getElementById(id); if(!el)return;
-  // download:true items (APK/app files) download; every other link opens in a new tab/window.
-  el.innerHTML='<div class="panel-label">'+escAttr(label)+'</div>'+items.map(x=>{
-    const href=safeHref(x.href), newTab=!x.download&&href.charAt(0)!=='#';
-    return `<a role="menuitem" href="${escAttr(href)}" ${x.download?('download="'+escAttr(x.fileName||x.name||'download')+'"'):''} ${newTab?'target="_blank" rel="noopener"':''} onclick="closeMenus()"><span class="item-icon">${escAttr(x.icon)}</span><span class="item-copy"><b>${escAttr(x.name)}</b><small>${escAttr(x.desc)}</small></span>${x.download?'<span class="app-download-tag">DOWNLOAD</span>':''}</a>`;
-  }).join('');
-}
-function renderUpdates(){
-  const track=document.getElementById('commandTrack'); if(!track)return;
-  track.innerHTML=COMMAND_UPDATES.map((x,i)=>`<span class="command-item${i===0?' active':''}" data-i="${i}">${x}</span>`).join('');
-}
-let commandIndex=0;
-function updateCommand(){
-  const items=[...document.querySelectorAll('#commandTrack .command-item')];
-  items.forEach((item,i)=>item.classList.toggle('active',i===commandIndex));
-}
-function nextCommandUpdate(){commandIndex=(commandIndex+1)%COMMAND_UPDATES.length;updateCommand()}
-
-function openUpdates(){
-  const modal=document.getElementById('updatesModal'); if(!modal)return;
-  document.getElementById('updatesList').innerHTML=LATEST_UPDATES.map(x=>`<div class="update-row"><span class="update-dot"></span><div><b>${x[0]}</b><small>${x[1]}</small></div></div>`).join('');
-  modal.classList.add('open');
-}
-function closeUpdates(){const m=document.getElementById('updatesModal');if(m)m.classList.remove('open')}
-function toggleMenu(id,btn){
-  const target=document.getElementById(id); if(!target)return;
-  const was=target.classList.contains('open');
-  closeMenus();
-  if(!was){target.classList.add('open');btn.setAttribute('aria-expanded','true')}
-}
-function closeMenus(){document.querySelectorAll('.dropdown-panel.open').forEach(x=>x.classList.remove('open'));document.querySelectorAll('.dropdown-toggle[aria-expanded="true"]').forEach(x=>x.setAttribute('aria-expanded','false'))}
-document.addEventListener('click',e=>{if(!e.target.closest('.nav-dropdown'))closeMenus();if(e.target.id==='updatesModal')closeUpdates()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenus();closeUpdates()}});
-
-// Continuous Latest Updates ticker (keeps the existing top bar and content unchanged).
-(function(){
-  const t=document.querySelector('.ticker-static');
-  if(t && !t.dataset.looped){
-    [...t.children].forEach(el=>t.appendChild(el.cloneNode(true)));
-    t.dataset.looped='true';
-  }
-})();
-renderFeatureMenu('loginMenu',LOGIN_FEATURES,'Login Features');
-renderFeatureMenu('appMenu',APP_FEATURES,'App Features');
-renderUpdates();
-
-// ══════════════════════════════════════════════════════════════════
-// 🔗 LIVE LOGIN/APP/FOOTER SYNC — Admin Panel ke "Login Dropdown
-//   Manager", "App Download Manager" aur "Footer & Branding Manager"
-//   (SAVE_LOGIN_LIST / SAVE_APPS_LIST / SAVE_FOOTER) jo data backend
-//   ke /api/site-data (login_options, apps, footer keys) mein save
-//   karte hain, usi ko yahan ek hi call se padh kar Login/App menu aur
-//   footer (copyright, powered-by, social icons) turant update kar
-//   deta hai — bina is file ko dobara chhue. Backend abhi khaali ho
-//   (kuch save na hua ho) to upar wali defaults hi dikhte rehte hain,
-//   kuch nahi tootta.
-// ══════════════════════════════════════════════════════════════════
-(function(){
-  // Admin Panel ka format {icon,title,sub,url} hai; menu render {icon,name,desc,href} maangta hai.
-  function normalize(list, forceDownload){
-    return (Array.isArray(list) ? list : [])
-      .filter(function(x){ return x && x.url && !/pfms/i.test(String(x.url)+' '+String(x.title||x.name||'')); }) /* PFMS is reachable only through the secure Admin gate */
-      .map(function(x){ return {icon:x.icon||'🔐', name:x.title||x.name||'', desc:x.sub||x.desc||'', href:x.url||x.href, fileName:x.fileName||x.title, download: forceDownload || !!x.download}; });
-  }
-  function applySocialLink(id, url){
-    var a=document.getElementById(id); if(!a) return;
-    if(url){ a.href=url; a.target='_blank'; a.rel='noopener'; }
-  }
-  function applyFooter(f){
-    if(!f) return;
-    if(f.copyright){ var c=document.getElementById('footerCopyright'); if(c) c.textContent=f.copyright; }
-    var s=f.social||{};
-    applySocialLink('socialFacebook', s.facebook);
-    applySocialLink('socialTwitter', s.twitter);
-    applySocialLink('socialYoutube', s.youtube);
-    applySocialLink('socialLinkedin', s.linkedin);
-  }
-  // 🎨 Live theme from Admin → Live Index Manager → Theme (key: index_theme)
-  var THEME_OK=/^#[0-9a-fA-F]{3,8}$|^rgba?\([\d\s.,%]+\)$/;
-  function applyTheme(t){
-    try{
-      var root=document.documentElement;
-      if(!t||typeof t!=='object') return;
-      var v=t.vars||{};
-      Object.keys(v).forEach(function(k){ if(/^--[a-z0-9-]{1,30}$/.test(k) && THEME_OK.test(String(v[k]))) root.style.setProperty(k,String(v[k])); });
-      if(t.font && /^[A-Za-z0-9 ,'"-]{1,80}$/.test(t.font)) document.body.style.fontFamily=t.font;
-    }catch(e){}
-  }
-  function syncLoginAppFooter(){
-    fetch(SHDL_API_BASE+'/site-data',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(d){
-      if(!d) return; // backend abhi unreachable/empty response — jo screen par hai wahi rahega
-      // 🆕 CRITICAL SYNC FIX: pehle yahan '&& d.login_options.length' bhi check hota tha —
-      // matlab agar Admin Panel se saare login options delete karke ek EXPLICITLY khaali
-      // list save ki jaaye, backend se woh khaali list sahi aati thi lekin yahan IGNORE ho
-      // jaati thi, aur purane HARDCODED defaults hi hamesha dikhte rehte the, jaise koi
-      // sync hua hi na ho. Ab jaise hi backend se login_options/apps ek ARRAY ke roop mein
-      // aata hai (khaali ho ya bhara hua), DATABASE hi hamesha jeetta hai — Admin Panel jo
-      // bhi save kare (poora Render/absolute URL ho ya sirf ek relative filename jaise
-      // '/hrms-login'), index.html turant EXACT wahi dikhayega. LOGIN_FEATURES/
-      // APP_FEATURES wale local defaults sirf tab tak dikhte hain jab tak Admin Panel ne
-      // us key ko KABHI save hi nahi kiya (d.login_options === undefined) — yeh sirf ek
-      // first-run placeholder hai jab tak backend se koi jawab na aaye, DB ko kabhi
-      // override nahi karta.
-      if(Array.isArray(d.login_options)){
-        renderFeatureMenu('loginMenu', normalize(d.login_options, false), 'Login Features');
-      }
-      if(Array.isArray(d.apps)){
-        renderFeatureMenu('appMenu', normalize(d.apps, true), 'App Features');
-      }
-      applyFooter(d.footer);
-      applyTheme(d.index_theme);
-    }).catch(function(){ /* backend abhi unreachable hai (cold start / network) — agla poll 5s mein khud retry karega */ });
-  }
-  syncLoginAppFooter();
-  setInterval(syncLoginAppFooter, 15000);
-  document.addEventListener('visibilitychange',function(){ if(!document.hidden) syncLoginAppFooter(); });
-})();
-/* Live Command rotation disabled: keep first message stable. */
-window.addEventListener('resize',()=>{});
-// KYC slider
-let kycIndex=0, kycTimer;
-function showKycSlide(n){const a=[...document.querySelectorAll('.kyc-slide')],d=[...document.querySelectorAll('.kyc-dot')];if(!a.length)return;kycIndex=(n+a.length)%a.length;a.forEach((x,i)=>x.classList.toggle('active',i===kycIndex));d.forEach((x,i)=>x.classList.toggle('active',i===kycIndex));}
-function restartKyc(){clearInterval(kycTimer);kycTimer=setInterval(()=>showKycSlide(kycIndex+1),4500)}
-function changeKycSlide(n){showKycSlide(kycIndex+n);restartKyc()} function goKycSlide(n){showKycSlide(n);restartKyc()} restartKyc();
-// Animated live metrics
-function animateMetric(el,target){
-  /* Live value update without count-up animation, translation, or visual shaking. */
-  const v=Math.max(0,Math.round(Number(target)||0));
-  el.textContent=(el.dataset.prefix||'')+v.toLocaleString('en-IN');
-  el.dataset.current=String(v);
-}
-function refreshMetrics(){document.querySelectorAll('.metric-number').forEach(el=>{const base=Number(el.dataset.target||0),v=Math.max(0,Math.round(base*(.97+Math.random()*.06)));animateMetric(el,v);el.classList.remove('metric-pulse');})}
-refreshMetrics();setInterval(refreshMetrics,5000);
-
-</script>
 <div aria-label="Latest Updates" aria-modal="true" class="updates-modal" id="updatesModal" role="dialog">
-<div class="updates-box"><div class="updates-head"><h3>📢 Latest Updates</h3><button aria-label="Close" class="updates-close" onclick="closeUpdates()">×</button></div><div class="updates-list" id="updatesList"></div></div>
+  <div class="updates-box"><div class="updates-head"><h3>📢 Latest Updates</h3><button aria-label="Close" class="updates-close" onclick="closeUpdates()" type="button">×</button></div><div class="updates-list" id="updatesList"></div></div>
 </div>
-<script>
-/* Live Index Control: Admin commands saved by server are reflected here automatically. */
-(function(){
-  async function syncIndexOverrides(){
-    try{
-      const r=await fetch(SHDL_API_BASE+'/site-data/index_overrides',{cache:'no-store'});
-      if(!r.ok)return;
-      const d=await r.json();
-      const o=d&&d.value;
-      if(!o||typeof o!=='object')return;
-      Object.entries(o).forEach(([selector,text])=>{
-        try{const el=document.querySelector(selector);if(el&&typeof text==='string'&&el.textContent!==text)el.textContent=text;}catch(e){}
-      });
-    }catch(e){}
-  }
-  syncIndexOverrides();
-  setInterval(syncIndexOverrides,15000);
-})();
-</script>
-<script>
-/* Keep Live Command on its first stable message instead of cycling it away. */
-(function(){
-  try{
-    if (window.__anmolCommandTimer) clearInterval(window.__anmolCommandTimer);
-    var items=document.querySelectorAll('#commandTrack .command-item');
-    items.forEach(function(el,i){el.classList.toggle('active',i===0);});
-  }catch(e){}
-})();
-</script>
 
-<script id="index-live-dashboard-admin-sync">
-(function(){
-  function applyLiveDashboard(cfg){
-    if(!cfg) return;
-    var cards=document.querySelectorAll('.live-dashboard .metric-card');
-    (cfg.cards||[]).forEach(function(c,i){
-      if(!cards[i]) return;
-      var small=cards[i].querySelector('small'), num=cards[i].querySelector('.metric-number'), tr=cards[i].querySelector('.metric-trend');
-      if(c.label!=null&&small) small.textContent=c.label;
-      if(c.value!=null&&num){ num.textContent=(c.prefix||'')+c.value; num.removeAttribute('data-target'); }
-      if(c.trend!=null&&tr) tr.textContent=c.trend;
-    });
+<script>
+(function () {
+  'use strict';
+  var API = window.SHDL_API_BASE || '/api';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+  /* ───────── Defaults (used until the backend answers; admin edits replace them) ───────── */
+  var LOGIN_FEATURES = [
+    { icon: '🛡', name: 'Admin Login', desc: 'Full control & system management', href: '/admin-login' },
+    { icon: '♟', name: 'Agent Login', desc: 'Book distribution & services', href: '/agent-login' },
+    { icon: '👥', name: 'HRMS Login', desc: 'Staff, attendance & HR management', href: '/hrms-login' },
+    { icon: '🎓', name: 'Student Login', desc: 'Books, fees, attendance & services', href: '/student-login' },
+    { icon: '📦', name: 'Invoice Generator', desc: 'Materials, invoices & stock management', href: '/invoice-login' }
+  ];
+  var APP_FEATURES = [
+    { icon: '🟢', name: 'NMS Attendance App', desc: 'Download attendance app', href: '#mobile-app', download: true },
+    { icon: '👥', name: 'HRMS App', desc: 'Download HRMS app', href: '#mobile-app', download: true }
+  ];
+  var LATEST_UPDATES = [['Welcome to Anmol LibMatrix — Smart Digital Library.', '']];
+  var COMMANDS = [
+    'Welcome to Anmol LibMatrix Smart Digital Library — Learn • Read • Grow',
+    'Digital library resources, attendance and performance services are available.',
+    'Smart Future: faster access to books, digital resources and library insights.'
+  ];
+
+  /* ───────── Portal links ───────── */
+  var LEGACY = { 'admin_panel_login.html': '/admin-login', 'admin_login.html': '/admin-login', 'new_admin_login.html': '/admin-login', 'super_admin_login.html': '/admin-login',
+    'agent_login.html': '/agent-login', 'hrms_login.html': '/hrms-login', 'pfms_login.html': '/pfms-login', 'student_attendance.html': '/student-login',
+    'student_attendance_portal.html': '/student-login', 'invoice_login.html': '/invoice-login', 'anmol_material_entry.html': '/invoice-login', 'anmol_material_login.html': '/invoice-login' };
+  function safeHref(u) {
+    u = String(u == null ? '' : u).trim();
+    if (!u || /^\s*(javascript|vbscript|data):/i.test(u)) return '#';
+    if (!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)) { var base = u.split(/[?#]/)[0].toLowerCase(); if (LEGACY[base]) return LEGACY[base] + u.slice(base.length); }
+    return u;
   }
-  function load(){ fetch(SHDL_API_BASE+'/site-data/live_dashboard',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){ if(x&&x.value) applyLiveDashboard(x.value); }).catch(function(){}); }
-  setTimeout(load,300); setInterval(load,5000);
-})();
-</script>
-<script id="index-gallery-admin-sync">
-(function(){
-  function load(){ fetch(SHDL_API_BASE+'/site-data/index_gallery',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
-    var list=x&&x.value&&Array.isArray(x.value.photos)?x.value.photos:[]; if(!list.length) return;
-    var slider=document.querySelector('.hero-slider'); if(!slider) return;
-    list.slice(0,12).forEach(function(ph,i){
-      if(!ph||!ph.url) return;
-      var exists=slider.querySelector('img[data-admin-gallery="'+ph.id+'"]');
-      if(exists) return;
-      var slide=document.createElement('div'); slide.className='slide'; slide.setAttribute('data-admin-gallery',''+ph.id);
-      slide.innerHTML='<img src="'+String(ph.url).replace(/"/g,'&quot;')+'" alt="'+String(ph.alt||'Anmol Library Matrix').replace(/"/g,'&quot;')+'">';
-      slider.appendChild(slide);
-    });
-  }).catch(function(){}); }
-  setTimeout(load,500); setInterval(load,7000);
-})();
-</script>
-<script id="index-latest-updates-admin-sync">
-// ══════════════════════════════════════════════════════════════════
-// 🔗 LATEST UPDATES LIVE SYNC — Admin Panel ke naye "Latest Updates
-//   Manager" (Settings → 📢 Latest Updates Manager) mein jo bhi
-//   updates save kiye jaayein, woh backend ke /api/site-data/
-//   latest_updates (key) mein jaate hain. Yeh script har 5 second
-//   mein wahi data padhkar TOP TICKER aur "Latest Updates" popup
-//   (LATEST_UPDATES array) dono ko turant update kar deta hai —
-//   pehle yeh dono hamesha ek FIXED hardcoded list hi dikhate the,
-//   Admin Panel ka save kahin dikhta hi nahi tha. Backend abhi khaali
-//   ho (kuch save na hua ho) to upar wali defaults hi dikhte rehte
-//   hain, kuch nahi tootta.
-// ══════════════════════════════════════════════════════════════════
-(function(){
-  function renderTicker(items){
-    var track = document.querySelector('.ticker-static');
-    if(!track) return;
-    track.innerHTML = items.map(function(u){ return '<span>'+String(u[0]).replace(/</g,'&lt;')+'</span>'; }).join('');
-    // Continuous scroll ke liye spans ko clone karke double kar dete hain
-    // (yeh wahi logic hai jo page-load par ek baar chalti thi).
-    var kids = [].slice.call(track.children);
-    kids.forEach(function(el){ track.appendChild(el.cloneNode(true)); });
-    track.dataset.looped = 'true';
-  }
-  function setTickerVisible(visible){
-    // 🆕 Admin ke "Ticker website par LIVE dikhaayein" checkbox se —
-    // OFF hone par poora ticker bar (topbar ke andar wala hissa) chhup
-    // jaata hai, live date/time/status widget par koi asar nahi padta.
-    var bar = document.getElementById('latestUpdates');
-    if (bar) bar.style.display = visible ? '' : 'none';
-  }
-  function applyLatestUpdates(payload){
-    // Backward-compatible: purana format seedha array tha, naya format
-    // { enabled, items } object hai.
-    var enabled = true, list = payload;
-    if (payload && !Array.isArray(payload) && typeof payload === 'object') {
-      enabled = payload.enabled !== false;
-      list = payload.items;
-    }
-    setTickerVisible(enabled);
-    if (!enabled) return; // OFF hai to items refresh karne ki zaroorat nahi
-    if (!Array.isArray(list) || !list.length) return;
-    var items = list.map(function(u){ return [ (u && u.text) || '', (u && u.date) || '' ]; }).filter(function(x){ return x[0]; });
-    if (!items.length) return;
-    window.LATEST_UPDATES = items; // "View All →" popup (openUpdates) isi array se banta hai
-    renderTicker(items);
-  }
-  function load(){
-    fetch(SHDL_API_BASE+'/site-data/latest_updates',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
-      if(x && x.value) applyLatestUpdates(x.value);
-    }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
-  }
-  setTimeout(load,400); setInterval(load,5000);
-})();
-</script>
-<script id="index-notice-board-admin-sync">
-// ══════════════════════════════════════════════════════════════════
-// 🔔 NOTICE BOARD LIVE SYNC — Admin Panel ke naye "Notice Board
-//   Manager" (Settings → 🔔 Notice Board Manager) mein jo bhi
-//   notices (Title + Description + Date) Add/Edit/Delete/Save ki
-//   jaayein, woh backend ke /api/site-data/notices (key) mein jaati
-//   hain. Yeh script har 5 second mein wahi data padhkar homepage ke
-//   "🔔 Latest Notices" box ko turant update kar deta hai. Yeh Ticker
-//   (upar wala scrolling message) se poori tarah ALAG/independent hai.
-// ══════════════════════════════════════════════════════════════════
-(function(){
-  function renderNoticeBoard(list){
-    var wrap = document.querySelector('.notices');
-    if(!wrap) return;
-    if (!Array.isArray(list) || !list.length) return;
-    wrap.innerHTML = list.slice(0,8).map(function(n){
-      var title = String((n && n.title) || '').replace(/</g,'&lt;');
-      var desc = String((n && n.description) || '').replace(/</g,'&lt;');
-      var date = String((n && n.date) || '').replace(/</g,'&lt;');
-      return '<div class="notice"><i></i><div><b>'+title+'</b>'
-        + (desc ? '<span style="display:block;color:var(--muted);font-size:10px;margin-top:2px;opacity:.85">'+desc+'</span>' : '')
-        + '<small>'+date+'</small></div></div>';
+  function renderMenu(id, items, label) {
+    var el = document.getElementById(id); if (!el) return;
+    el.innerHTML = '<div class="panel-label">' + esc(label) + '</div>' + items.map(function (x) {
+      var href = safeHref(x.href), newTab = !x.download && href.charAt(0) !== '#';
+      return '<a role="menuitem" href="' + esc(href) + '"' + (x.download ? ' download="' + esc(x.fileName || x.name || 'download') + '"' : '') + (newTab ? ' target="_blank" rel="noopener"' : '') + ' onclick="closeMenus()">' +
+        '<span class="item-icon">' + esc(x.icon) + '</span><span class="item-copy"><b>' + esc(x.name) + '</b><small>' + esc(x.desc) + '</small></span></a>';
     }).join('');
   }
-  function load(){
-    fetch(SHDL_API_BASE+'/site-data/notices',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
-      if(x && x.value) renderNoticeBoard(x.value);
-    }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
+  function normalizeMenu(list, forceDownload) {
+    return (Array.isArray(list) ? list : [])
+      .filter(function (x) { return x && x.url && !/pfms/i.test(String(x.url) + ' ' + String(x.title || x.name || '')); }) // PFMS is reachable only through the secure Admin gate
+      .map(function (x) { return { icon: x.icon || '🔐', name: x.title || x.name || '', desc: x.sub || x.desc || '', href: x.url || x.href, fileName: x.fileName || x.title, download: forceDownload || !!x.download }; });
   }
-  setTimeout(load,450); setInterval(load,5000);
-})();
-</script>
-<script id="index-kyc-performance-live-sync">
-// ══════════════════════════════════════════════════════════════════
-// 🔷 KYC VERIFICATION & PERFORMANCE REPORT — LIVE DATA
-//   Pehle yeh section (🔷 KYC Verification & Performance Report) 4
-//   FIXED/hardcoded numbers dikhata tha (98.6%, 97.9%, 1.8s, 100%),
-//   jo kabhi badalte hi nahi the. Ab yeh section har 8 second mein
-//   backend ke /api/dashboard/live-stats (wahi route jo Admin
-//   Dashboard bhi use karta hai) se asli, DB-connected numbers
-//   khinchta hai:
-//     • KYC Verified        → Agents ke KYC documents (Aadhar/UPI/QR)
-//                              complete hone ka asli %
-//     • Active Verification → Agents+Students mein se kitne "active"
-//                              status mein hain, uska asli %
-//     • Live Logins Today   → Aaj ab tak hue successful logins ki
-//                              asli, real-time ginti
-//     • Secure Records      → Database mein maujood total protected
-//                              records (agents+students+staff+admins)
-//                              ki asli live ginti
-//   Design/CSS/layout bilkul nahi chhua gaya hai — sirf values update
-//   hoti hain, poora card structure/animation/glassmorphism look
-//   waisa hi rehta hai. Backend abhi down ho ya slow ho, to bhi page
-//   par upar wale (pehle se maujood) default numbers hi dikhte rehte
-//   hain — kabhi khaali ya broken nahi dikhega.
-// ══════════════════════════════════════════════════════════════════
-(function(){
-  function setPct(id, barId, val){
-    var v = Math.max(0, Math.min(100, Number(val) || 0));
-    var el = document.getElementById(id);
-    if (el) el.textContent = v.toFixed(1).replace(/\.0$/,'') + '%';
-    var bar = document.getElementById(barId);
-    if (bar) bar.style.width = v + '%';
-  }
-  function applyValues(s){
-    if (!s) return;
-    setPct('kyc-stat-verified', 'kyc-bar-verified', s.kycVerifiedPercent);
-    setPct('kyc-stat-active', 'kyc-bar-active', s.activeVerificationPercent);
 
-    var logins = Number(s.todayLogins) || 0;
-    var loginsEl = document.getElementById('kyc-stat-logins');
-    if (loginsEl) loginsEl.textContent = logins;
-    var loginsBar = document.getElementById('kyc-bar-logins');
-    if (loginsBar) loginsBar.style.width = Math.max(6, Math.min(100, logins * 4)) + '%';
+  /* ───────── Menus, modal, mobile nav ───────── */
+  window.closeMenus = function () {
+    $$('.dropdown-panel.open').forEach(function (x) { x.classList.remove('open'); });
+    $$('.dropdown-toggle[aria-expanded="true"]').forEach(function (x) { x.setAttribute('aria-expanded', 'false'); });
+  };
+  window.toggleMenu = function (id, btn) {
+    var t = document.getElementById(id), was = t.classList.contains('open');
+    closeMenus();
+    if (!was) { t.classList.add('open'); btn.setAttribute('aria-expanded', 'true'); }
+  };
+  window.toggleMobileMenu = function (btn) { var m = document.getElementById('mobileMenu'), o = m.classList.toggle('open'); btn.setAttribute('aria-expanded', o ? 'true' : 'false'); };
+  window.openUpdates = function () {
+    document.getElementById('updatesList').innerHTML = LATEST_UPDATES.map(function (x) { return '<div class="update-row"><span class="update-dot"></span><div><b>' + esc(x[0]) + '</b>' + (x[1] ? '<small>' + esc(x[1]) + '</small>' : '') + '</div></div>'; }).join('');
+    document.getElementById('updatesModal').classList.add('open');
+  };
+  window.closeUpdates = function () { document.getElementById('updatesModal').classList.remove('open'); };
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.nav-dropdown') && !e.target.closest('.feature-hub')) closeMenus();
+    if (e.target.id === 'updatesModal') closeUpdates();
+    if (e.target.closest('.mobile-menu a')) { $('#mobileMenu').classList.remove('open'); }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeMenus(); closeUpdates(); } });
 
-    var recEl = document.getElementById('kyc-stat-records');
-    if (recEl && typeof s.totalSecureRecords === 'number') {
-      recEl.textContent = s.totalSecureRecords.toLocaleString('en-IN') + ' records protected' + (s.__manual ? '' : ' (live)');
-    }
+  /* ───────── Ticker / command strip ───────── */
+  function renderTicker(items) {
+    var tr = document.getElementById('tickerTrack'); if (!tr) return;
+    var html = items.map(function (u) { return '<span>' + esc(u[0]) + '</span>'; }).join('');
+    tr.innerHTML = html + html; // doubled for a seamless loop
   }
-  function load(){
-    // 🆕 Pehle Admin ka "Data Mode" check karte hain — agar Custom/Manual
-    // set hai, to seedha wahi typed values dikhao (DB se koi lena-dena
-    // nahi). Agar Real Data hai (ya kabhi set hi nahi kiya gaya), to
-    // /api/dashboard/live-stats se asli DB numbers khinchte hain.
-    fetch(SHDL_API_BASE+'/site-data/kyc_performance_mode',{cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(x){
-      var cfg = x && x.value;
-      if (cfg && cfg.mode === 'manual' && cfg.manual) {
-        var m = Object.assign({}, cfg.manual, { __manual: true });
-        applyValues(m);
-        return null; // handled — live-stats fetch ki zaroorat nahi
+  var cmdIdx = 0;
+  function showCommand() { document.getElementById('commandTrack').textContent = COMMANDS[cmdIdx % COMMANDS.length]; }
+  window.nextCommandUpdate = function () { cmdIdx = (cmdIdx + 1) % COMMANDS.length; showCommand(); };
+
+  /* ───────── Clock ───────── */
+  function tickClock() {
+    var n = new Date();
+    document.getElementById('liveDate').textContent = n.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    document.getElementById('liveTime').textContent = n.toLocaleTimeString('en-GB', { hour12: false });
+  }
+
+  /* ───────── Hero + eKYC sliders ───────── */
+  var slideIdx = 0, slideTimer;
+  function slides() { return $$('#heroSlider .slide'); }
+  function buildDots() {
+    var d = document.getElementById('heroDots');
+    d.innerHTML = slides().map(function (_, i) { return '<button class="dot' + (i === slideIdx ? ' active' : '') + '" aria-label="Slide ' + (i + 1) + '" onclick="goSlide(' + i + ')" type="button"></button>'; }).join('');
+  }
+  function showSlide(n) {
+    var s = slides(); if (!s.length) return;
+    slideIdx = (n + s.length) % s.length;
+    s.forEach(function (x, i) { x.classList.toggle('active', i === slideIdx); });
+    $$('#heroDots .dot').forEach(function (x, i) { x.classList.toggle('active', i === slideIdx); });
+  }
+  function restartHero() { clearInterval(slideTimer); slideTimer = setInterval(function () { showSlide(slideIdx + 1); }, 5500); }
+  window.changeSlide = function (n) { showSlide(slideIdx + n); restartHero(); };
+  window.goSlide = function (n) { showSlide(n); restartHero(); };
+
+  var kycIdx = 0, kycTimer;
+  function showKyc(n) {
+    var a = $$('.kyc-slide'), d = $$('.kyc-dot'); if (!a.length) return;
+    kycIdx = (n + a.length) % a.length;
+    a.forEach(function (x, i) { x.classList.toggle('active', i === kycIdx); });
+    d.forEach(function (x, i) { x.classList.toggle('active', i === kycIdx); });
+  }
+  function restartKyc() { clearInterval(kycTimer); kycTimer = setInterval(function () { showKyc(kycIdx + 1); }, 4500); }
+  window.changeKycSlide = function (n) { showKyc(kycIdx + n); restartKyc(); };
+  window.goKycSlide = function (n) { showKyc(n); restartKyc(); };
+
+  /* ───────── Live dashboard + KYC report (backend: GET /api/dashboard/live-stats) ───────── */
+  var live = { stats: null, cards: null, kycManual: null };
+  function pct(v) { return Math.max(0, Math.min(100, Number(v) || 0)); }
+  function pctText(v) { return pct(v).toFixed(1).replace(/\.0$/, '') + '%'; }
+  function renderLive() {
+    var s = live.stats, cards = $$('#liveCards .metric-card');
+    var auto = !s ? null : [
+      { v: s.totalBooks, t: s.issuedBooks ? s.issuedBooks + ' issued' : 'In library catalogue' },
+      { v: s.totalStudents, t: (s.activeStudents != null ? s.activeStudents : 0) + ' active' },
+      { v: s.attendancePercent, suffix: '%', dec: 1, t: s.todayAttendanceMarked ? s.todayAttendancePresent + ' of ' + s.todayAttendanceMarked + ' present' : 'No attendance marked yet' },
+      { v: s.kycVerifiedPercent, suffix: '%', dec: 1, t: (s.totalAgents || 0) + ' agents registered' }
+    ];
+    cards.forEach(function (card, i) {
+      var num = $('.metric-number', card), tr = $('.metric-trend', card), small = $('small', card), man = (live.cards || [])[i] || {};
+      if (man.label) small.textContent = man.label;
+      if (man.value != null && String(man.value) !== '') { // manual override from Admin → Website Manager → Dashboard cards
+        num.textContent = (man.prefix || '') + man.value; num.removeAttribute('data-v'); if (man.trend != null) tr.textContent = man.trend; return;
       }
-      return fetch(SHDL_API_BASE+'/dashboard/live-stats',{cache:'no-store'}).then(function(r2){ return r2.ok ? r2.json() : null; });
-    }).then(function(s){
-      if (s) applyValues(s);
-    }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
+      if (!auto) return;
+      AnmolLive.countUp(num, auto[i].v, { suffix: auto[i].suffix || '', decimals: auto[i].dec || 0 });
+      tr.textContent = man.trend != null && man.trend !== '' ? man.trend : auto[i].t;
+    });
+    if (!s) return;
+    var k = live.kycManual || s;
+    function set(id, bar, val, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; var b = document.getElementById(bar); if (b) b.style.width = val + '%'; }
+    set('kyc-stat-verified', 'kyc-bar-verified', pct(k.kycVerifiedPercent), pctText(k.kycVerifiedPercent));
+    set('kyc-stat-active', 'kyc-bar-active', pct(k.activeVerificationPercent), pctText(k.activeVerificationPercent));
+    var lg = Number(k.todayLogins) || 0; set('kyc-stat-logins', 'kyc-bar-logins', Math.max(6, Math.min(100, lg * 4)), lg.toLocaleString('en-IN'));
+    var rec = Number(k.totalSecureRecords) || 0; set('kyc-stat-secure', 'kyc-bar-secure', rec ? 100 : 0, rec.toLocaleString('en-IN'));
+    document.getElementById('kyc-stat-records').textContent = rec ? 'Protected records in the database' + (live.kycManual ? '' : ' (live)') : 'Protected records in the database';
   }
-  setTimeout(load, 600); setInterval(load, 8000);
+  function setBadge(online) {
+    var b = document.getElementById('liveBadge'); b.classList.toggle('off', !online);
+    document.getElementById('liveBadgeText').textContent = online ? 'Live updating' : 'Reconnecting…';
+  }
+  AnmolLive.subscribe(function (s, m) { if (s) live.stats = s; setBadge(m.online); renderLive(); });
+
+  /* ───────── Admin-managed content (single poll of GET /api/site-data) ───────── */
+  var THEME_OK = /^#[0-9a-fA-F]{3,8}$|^rgba?\([\d\s.,%]+\)$/;
+  function applyTheme(t) {
+    if (!t || typeof t !== 'object') return;
+    var v = t.vars || {};
+    Object.keys(v).forEach(function (k) { if (/^--[a-z0-9-]{1,30}$/.test(k) && THEME_OK.test(String(v[k]))) document.documentElement.style.setProperty(k, String(v[k])); });
+    if (t.font && /^[A-Za-z0-9 ,'"-]{1,80}$/.test(t.font)) document.body.style.fontFamily = t.font;
+  }
+  function applyUpdates(p) {
+    var enabled = true, list = p;
+    if (p && !Array.isArray(p) && typeof p === 'object') { enabled = p.enabled !== false; list = p.items; }
+    document.getElementById('latestUpdates').style.display = enabled ? '' : 'none';
+    if (!enabled || !Array.isArray(list) || !list.length) return;
+    var items = list.map(function (u) { return [(u && u.text) || '', (u && u.date) || '']; }).filter(function (x) { return x[0]; });
+    if (!items.length) return;
+    LATEST_UPDATES = items; renderTicker(items);
+  }
+  function applyNotices(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    document.getElementById('noticeList').innerHTML = list.slice(0, 8).map(function (n) {
+      return '<div class="notice"><i></i><div><b>' + esc(n && n.title) + '</b>' + (n && n.description ? '<span>' + esc(n.description) + '</span>' : '') + (n && n.date ? '<small>' + esc(n.date) + '</small>' : '') + '</div></div>';
+    }).join('');
+  }
+  function applyGallery(g) {
+    var photos = g && Array.isArray(g.photos) ? g.photos : []; if (!photos.length) return;
+    var slider = document.getElementById('heroSlider'), added = false;
+    photos.slice(0, 12).forEach(function (ph) {
+      if (!ph || !ph.url || $('[data-admin-gallery="' + ph.id + '"]', slider)) return;
+      var el = document.createElement('div'); el.className = 'slide'; el.setAttribute('data-admin-gallery', String(ph.id));
+      var img = document.createElement('img'); img.src = String(ph.url); img.alt = String(ph.alt || 'Anmol LibMatrix'); img.loading = 'lazy';
+      el.appendChild(img); slider.insertBefore(el, $('.arrow.prev', slider)); added = true;
+    });
+    if (added) buildDots();
+  }
+  function applyOverrides(o) {
+    if (!o || typeof o !== 'object') return;
+    Object.keys(o).forEach(function (sel) { try { var el = document.querySelector(sel); if (el && typeof o[sel] === 'string' && el.textContent !== o[sel]) el.textContent = o[sel]; } catch (e) {} });
+  }
+  function applyFooter(f) {
+    if (f && f.copyright) document.getElementById('footerCopyright').textContent = f.copyright;
+    // social links are handled by brand.js (same "footer.social" key)
+  }
+  function applySite(d) {
+    if (!d) return;
+    if (Array.isArray(d.login_options)) renderMenu('loginMenu', normalizeMenu(d.login_options, false), 'Login Features');
+    if (Array.isArray(d.apps)) renderMenu('appMenu', normalizeMenu(d.apps, true), 'App Features');
+    applyFooter(d.footer); applyTheme(d.index_theme); applyUpdates(d.latest_updates); applyNotices(d.notices); applyGallery(d.index_gallery); applyOverrides(d.index_overrides);
+    live.cards = d.live_dashboard && Array.isArray(d.live_dashboard.cards) ? d.live_dashboard.cards : null;
+    var km = d.kyc_performance_mode; live.kycManual = km && km.mode === 'manual' && km.manual ? km.manual : null;
+    renderLive();
+  }
+  var siteBusy = false;
+  function syncSite() {
+    if (siteBusy || document.hidden) return; siteBusy = true;
+    fetch(API + '/site-data', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(applySite).catch(function () {}).then(function () { siteBusy = false; });
+  }
+
+  /* ───────── Boot ───────── */
+  renderMenu('loginMenu', LOGIN_FEATURES, 'Login Features');
+  renderMenu('appMenu', APP_FEATURES, 'App Features');
+  renderTicker(LATEST_UPDATES); showCommand(); buildDots(); restartHero(); restartKyc();
+  tickClock(); setInterval(tickClock, 1000);
+  syncSite(); setInterval(syncSite, 8000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) syncSite(); });
+
+  // highlight the current section in the main menu
+  if ('IntersectionObserver' in window) {
+    var links = $$('.menu a'), map = {};
+    links.forEach(function (a) { map[a.getAttribute('href')] = a; });
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting && map['#' + e.target.id]) { links.forEach(function (l) { l.classList.remove('active'); }); map['#' + e.target.id].classList.add('active'); } });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    ['home', 'about', 'features', 'gallery', 'contact'].forEach(function (id) { var el = document.getElementById(id); if (el) io.observe(el); });
+  }
 })();
 </script>
 </body>
