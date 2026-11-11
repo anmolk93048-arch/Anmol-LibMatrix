@@ -143,6 +143,16 @@ function create(ctx) {
             if (ctx.hitRateLimit && ctx.hitRateLimit('nav-map:' + (req.ip || ''), 120, 60 * 1000)) return res.status(429).json({ error: 'Too many requests.' });
             res.set('Cache-Control', 'no-store').json({ map: mapFor(), ts: Date.now() });
         });
+        // 🛟 ALWAYS-WORKS FALLBACK for the home-page buttons:  /go/<portal>  (e.g. /go/admin, /go/agent, /go/hrms, /go/invoice)
+        //    issues a brand-new encrypted /app/<66-hex> link on the spot and redirects to it, so a click can never fail just because the
+        //    browser did not receive the link map. It does NOT re-open the legacy paths (/admin-login … still answer 404).
+        app.get('/go/:key', function (req, res) {
+            if (ctx.hitRateLimit && ctx.hitRateLimit('nav-go:' + (req.ip || ''), 120, 60 * 1000)) return res.status(429).send('Too many requests.');
+            const k = resolveKey(req.params.key), u = k ? urlFor(k) : null;
+            if (!u) return ctx.notFound(req, res);
+            res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive', 'Referrer-Policy': 'same-origin' });
+            res.redirect(302, u);
+        });
         // the masked pages + the assets they request relatively
         app.get('/app/*', function (req, res, next) {
             const rest = req.path.slice(5);

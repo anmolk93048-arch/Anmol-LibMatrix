@@ -756,30 +756,15 @@ function portalKeyForUrl(u){
   if(probe&&!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(probe)){const base=probe.split(/[?#]/)[0].toLowerCase(); if(LEGACY_PAGES[base])probe=LEGACY_PAGES[base];}
   return probe?portalKeyOf(probe):null;
 }
-// Click handler for every portal link. Uses the injected map at once; if it is missing it fetches /api/nav/map (retry after 1 s,
-// hard stop after 6 s) while a blank tab is already open, so the click is never silently ignored and the page never hangs.
-function fetchPortalMap(ms){
-  const ctl=(typeof AbortController!=='undefined')?new AbortController():null;
-  const t=setTimeout(()=>{try{ctl&&ctl.abort()}catch(e){}},ms);
-  return fetch('/api/nav/map',{cache:'no-store',signal:ctl?ctl.signal:undefined}).then(r=>r.ok?r.json():null).then(d=>{
-    clearTimeout(t);
-    if(d&&d.map){window.__ANMOL_NAV=d.map;window.__ANMOL_NAV_TS=Date.now();return d.map}
-    return null;
-  }).catch(()=>{clearTimeout(t);return null});
-}
+// Click handler for every portal link: the injected masked URL when present, otherwise /go/<portal> (server-side redirect to a fresh
+// masked link). No fetch, no timeout, no alert — the click always lands on a working page.
 function openPortal(ev,key){
-  if(ev){ if(ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.button>0){ if(maskedPortalUrl(key))return true; } ev.preventDefault(); }
+  if(ev&&(ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.button>0))return true;   // let the browser use the link's own href
+  if(ev)ev.preventDefault();
   try{closeMenus()}catch(e){}
-  let url=maskedPortalUrl(key);
-  if(url){ const w=window.open(url,'_blank','noopener'); if(!w)location.assign(url); return false; }
-  const w=window.open('about:blank','_blank');            // opened inside the click, so the browser does not block it
-  if(w){try{w.opener=null}catch(e){} try{w.document.title='Opening…';w.document.body.innerHTML='<p style="font-family:Arial;padding:24px">Opening secure page…</p>'}catch(e){}}
-  const go=(m)=>{ const u=m&&typeof m[key]==='string'&&/^\/app\/[0-9a-f]{66}$/.test(m[key])?m[key]:null;
-    if(u){ if(w&&!w.closed)w.location.href=location.origin+u; else location.assign(u); return true; } return false; };
-  fetchPortalMap(1000).then(m=>go(m)||fetchPortalMap(5000).then(m2=>go(m2))).then(ok=>{
-    if(!ok){ if(w&&!w.closed)w.close(); alert('The secure link could not be created right now. Please check your connection and try again.'); }
-    else if(typeof rerenderMenus==='function')rerenderMenus();
-  });
+  const url=maskedPortalUrl(key)||('/go/'+key);
+  const w=window.open(url,'_blank');                                       // (not 'noopener' in the feature string: that makes open() return null even on success)
+  if(w){try{w.opener=null}catch(e){}} else location.assign(url);            // pop-up blocked → open in this tab instead
   return false;
 }
 function safeHref(u){
@@ -789,8 +774,8 @@ function safeHref(u){
   let probe=u;
   try{ if(/^https?:\/\//i.test(u)){const x=new URL(u); if(x.origin===location.origin) probe=x.pathname; else probe=''; } }catch(e){probe='';}
   const key=probe?portalKeyOf(probe):null;
-  if(key){const m=maskedPortalUrl(key); if(m)return m; return '#';}   // '#' until the map is available — never fall back to the 404 path
-  if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base]){const k2=portalKeyOf(LEGACY_PAGES[base]);const m2=k2&&maskedPortalUrl(k2);return m2||'#';}}
+  if(key){return maskedPortalUrl(key)||('/go/'+key);}   // no map yet → /go/<portal>: the server mints a fresh masked link and redirects (never a dead '#')
+  if(!/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(u)){const base=u.split(/[?#]/)[0].toLowerCase();if(LEGACY_PAGES[base]){const k2=portalKeyOf(LEGACY_PAGES[base]);const m2=k2&&maskedPortalUrl(k2);return m2||(k2?'/go/'+k2:'#');}}
   return u;
 }
 function escAttr(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
