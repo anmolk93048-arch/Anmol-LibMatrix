@@ -5204,50 +5204,78 @@ async function verifyResetOtpHandler(req, res) {
 //             · correct OTP → JWT (+ a random deviceToken when trustDevice is true; the browser keeps it)
 //             · no OTP → accepted only with a valid deviceToken, else 401 OTP_REQUIRED
 //   Trusted devices are stored hashed (sha256) in the otp_codes table, expire after TRUSTED_DEVICE_DAYS (default 90) and are
-//   all revoked when the password is reset. ADMIN_LOGIN_OTP=off turns the OTP requirement off (emergency switch).
+//   all revoked when the password is reset. Per-portal ON/OFF switches: see OTP_PORTAL_REGISTRY below (ADMIN_LOGIN_OTP=off = break-glass override).
 // ══════════════════════════════════════════════════════════════════
 const ADMIN_OTP_LEN = OTP_LENGTH;
 const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS || '365', 10) || 365) * 24 * 60 * 60 * 1000;
-// 🎚️ OTP ON/OFF switch. Super Admin sidebar toggle → stored in the database (key cfg|login_otp, works on serverless).
-//    ADMIN_LOGIN_OTP=off in the environment is a hard override (OTP stays off whatever the toggle says).
-//    OFF → the login goes straight in with User ID + password: no WhatsApp message is sent (no per-message cost).
-// ── per-portal switches (Super Admin → sidebar → "OTP Settings"): admin · invoice · agent · hrms ──────────────────────
-//    Stored in the database (key cfg|login_otp → { portals:{admin,invoice,agent,hrms}, ... }). A portal whose switch is OFF never sends a
-//    WhatsApp OTP — the user signs in with ID + password only. Defaults (nothing saved yet): admin ON, invoice ON, agent OFF, hrms OFF.
-//    Old single-switch records ({enabled:false}) keep working: they switch admin + invoice OFF.
-const OTP_PORTALS = ['admin', 'invoice', 'agent', 'hrms'];
-const OTP_PORTAL_DEFAULT = { admin: true, invoice: true, agent: false, hrms: false };
+// 🎚️ PER-PORTAL OTP SWITCHES (Super Admin → sidebar → "OTP Settings")
+//    ONE registry (OTP_PORTAL_REGISTRY) is the single source of truth for "which portals exist". The dashboard builds its switch list from
+//    GET /api/admin/login-otp-setting, so a new portal appears there automatically after ONE call:
+//        registerOtpPortal({ id: 'vendor', label: 'Vendor portal', icon: '🏭', description: '…', roles: ['vendor'] });
+//    and its login route only has to call  adminSecondFactor(req, userId, 'vendor').
+//    ON  → the portal enforces the 6-digit WhatsApp/SMS OTP (on a device that is not yet trusted).
+//    OFF → Emergency Mode: that portal alone skips the OTP completely — ID + password only, no message is sent.
+//    State is stored in the database (key cfg|login_otp → { portals:{ <id>: true|false }, by, at }) so it survives restarts and works on
+//    serverless. Nothing is kept in the browser. A portal with no saved value uses its registered default; if the setting cannot be read the registered
+//    defaults apply (a failed read never switches a protected portal OFF).
+//    ADMIN_LOGIN_OTP=off in the environment is kept only as a break-glass override for the case where nobody can log in to flip a switch.
+const OTP_PORTAL_REGISTRY = [];
+function registerOtpPortal(def) {
+    const id = lc(def && def.id).replace(/[^a-z0-9_-]/g, '');
+    if (!id) throw new Error('registerOtpPortal: a portal id (letters, digits, - or _) is required');
+    if (OTP_PORTAL_REGISTRY.some(p => p.id === id)) return id;   // registering twice is harmless
+    OTP_PORTAL_REGISTRY.push({
+        id: id,
+        label: String((def && def.label) || id),
+        icon: String((def && def.icon) || '🔐'),
+        description: String((def && def.description) || ''),
+        defaultOn: !(def && def.defaultOn === false),            // a new portal is protected (ON) unless it says otherwise
+        roles: ((def && def.roles) || []).map(lc)                // login "role" values that belong to this portal (used by /auth/portal-otp/send)
+    });
+    return id;
+}
+// Order here = order of the switches in the dashboard.
+registerOtpPortal({ id: 'invoice', label: 'Invoice portal', icon: '🧾', description: 'Invoice / material users — OTP on a new device only.', defaultOn: true });
+registerOtpPortal({ id: 'agent', label: 'Agent portal', icon: '♟', description: 'Agent logins. (Staff users are not affected.)', defaultOn: false, roles: ['agent'] });
+registerOtpPortal({ id: 'hrms', label: 'HRMS portal', icon: '👥', description: 'Employee (HRMS) logins.', defaultOn: false, roles: ['employee', 'hrms'] });
+registerOtpPortal({ id: 'admin', label: 'Admin portal', icon: '🛡', description: 'Super Admin login.', defaultOn: true });
+const otpPortalById = (id) => OTP_PORTAL_REGISTRY.find(p => p.id === lc(id)) || null;
+const otpPortalByRole = (role) => OTP_PORTAL_REGISTRY.find(p => p.roles.indexOf(lc(role)) >= 0) || null;
 const _otpForcedOff = () => String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off';
 let _otpCfgCache = { v: null, t: 0 };
-async function _otpCfgRecord() {
-    if (_otpCfgCache.v !== null && Date.now() - _otpCfgCache.t < 5000) return _otpCfgCache.v;
+async function _otpCfgRecord(fresh) {
+    if (!fresh && _otpCfgCache.v !== null && Date.now() - _otpCfgCache.t < 2000) return _otpCfgCache.v;   // short cache: an emergency OFF reaches every instance within ~2 s
     let r = null;
-    try { r = (await _otpStore.get('cfg|login_otp')) || null; } catch (e) { r = null; }   // unreadable setting → defaults (admin + invoice stay ON)
+    try { r = (await _otpStore.get('cfg|login_otp')) || null; } catch (e) { r = null; }   // unreadable → registered defaults (never "everything OFF")
     _otpCfgCache = { v: r, t: Date.now() };
     return r;
 }
 function _otpPortalValue(cfg, portal) {
-    if (cfg && cfg.portals && typeof cfg.portals[portal] === 'boolean') return cfg.portals[portal];
-    if (cfg && cfg.enabled === false && (portal === 'admin' || portal === 'invoice')) return false;   // legacy single switch
-    return OTP_PORTAL_DEFAULT[portal];
+    if (cfg && cfg.portals && typeof cfg.portals[portal.id] === 'boolean') return cfg.portals[portal.id];
+    return portal.defaultOn;
 }
-async function loginOtpSettings() {
-    const cfg = await _otpCfgRecord(), out = {};
-    OTP_PORTALS.forEach(p => { out[p] = _otpPortalValue(cfg, p); });
-    return out;
+// Everything the dashboard needs, one entry per registered portal.
+async function loginOtpPortalList(fresh) {
+    const cfg = await _otpCfgRecord(fresh), forced = _otpForcedOff();
+    return OTP_PORTAL_REGISTRY.map(p => {
+        const enabled = _otpPortalValue(cfg, p);
+        return { id: p.id, label: p.label, icon: p.icon, description: p.description, enabled: enabled, effective: enabled && !forced };
+    });
 }
-async function loginOtpEnabled(portal) {
-    portal = OTP_PORTALS.indexOf(portal) >= 0 ? portal : 'admin';
+async function loginOtpEnabled(portalId) {
+    const portal = otpPortalById(portalId);
+    if (!portal) { console.warn('[otp] unknown portal "' + portalId + '" — OTP stays ON. Register it with registerOtpPortal().'); return true; }
     if (_otpForcedOff()) return false;
     return _otpPortalValue(await _otpCfgRecord(), portal);
 }
+// patch = { <portalId>: true|false, … }  → returns the updated list. Unknown ids are rejected by the caller before this runs.
 async function setLoginOtpPortals(patch, by) {
-    const now = await loginOtpSettings(), portals = {};
-    OTP_PORTALS.forEach(p => { portals[p] = typeof patch[p] === 'boolean' ? patch[p] : now[p]; });
-    const rec = { enabled: portals.admin, portals: portals, by: String(by || ''), at: Date.now(), exp: Date.now() + 3650 * 24 * 60 * 60 * 1000 };
+    const cfg = await _otpCfgRecord(true), portals = {};   // read fresh so two quick changes never overwrite each other
+    OTP_PORTAL_REGISTRY.forEach(p => { portals[p.id] = typeof patch[p.id] === 'boolean' ? patch[p.id] : _otpPortalValue(cfg, p); });
+    const rec = { portals: portals, by: String(by || ''), at: Date.now(), exp: Date.now() + 3650 * 24 * 60 * 60 * 1000 };
     await _otpStore.set('cfg|login_otp', rec);
     _otpCfgCache = { v: rec, t: Date.now() };
-    return portals;
+    return loginOtpPortalList(true);
 }
 // ── 📱 DEVICE TRUST ──────────────────────────────────────────────────────────────────────────────────────────────
 //    After one successful OTP the device gets a random token. The server stores only its sha256 and ALSO hands it to the browser as a
@@ -5346,26 +5374,27 @@ app.post('/api/send-otp', noStore, (req, res, next) => {
     if (purpose === 'recovery' || purpose === 'forgot-password') { req.otpLen = ADMIN_OTP_LEN; return forgotPasswordHandler(req, res); }
     return res.status(400).json({ error: 'Invalid request. purpose must be "login" or "recovery".' });
 });
-// Public status (a login page may ask whether ITS portal needs an OTP step: /api/auth/otp-status?portal=invoice) + Super Admin switches.
+// Public status: a login page may ask whether ITS portal needs an OTP step → GET /api/auth/otp-status?portal=invoice
 app.get('/api/auth/otp-status', noStore, asyncRoute(async (req, res) => {
-    const portal = OTP_PORTALS.indexOf(lc(req.query && req.query.portal)) >= 0 ? lc(req.query.portal) : 'admin';
-    res.json({ enabled: await loginOtpEnabled(portal), portal: portal, length: OTP_LENGTH });
+    const portal = otpPortalById(req.query && req.query.portal);
+    if (!portal) return res.status(404).json({ error: 'Unknown portal.', portals: OTP_PORTAL_REGISTRY.map(p => p.id) });
+    res.json({ enabled: await loginOtpEnabled(portal.id), portal: portal.id, length: OTP_LENGTH });
 }));
-const _otpSettingsPayload = async () => { const portals = await loginOtpSettings(); return { portals: portals, enabled: portals.admin, forcedOff: _otpForcedOff(), length: OTP_LENGTH }; };
-app.get('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => { res.json(await _otpSettingsPayload()); }));
-// body: { portal:'invoice', enabled:true }  |  { portals:{ admin:true, invoice:false, agent:false, hrms:false } }  |  legacy { enabled:true } (admin + invoice)
+const _otpSettingsPayload = async (fresh) => ({ portals: await loginOtpPortalList(fresh), forcedOff: _otpForcedOff(), length: OTP_LENGTH });
+// Super Admin: GET → the full, registry-driven list.   POST { portal:'invoice', enabled:false }  or  { portals:{ invoice:false, agent:true } }
+app.get('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => { res.json(await _otpSettingsPayload(true)); }));
 app.post('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const b = req.body || {}, patch = {};
-    if (b.portals && typeof b.portals === 'object') { OTP_PORTALS.forEach(p => { if (typeof b.portals[p] === 'boolean') patch[p] = b.portals[p]; }); }
-    else if (typeof b.portal === 'string') {
-        const p = lc(b.portal);
-        if (OTP_PORTALS.indexOf(p) < 0 || typeof b.enabled !== 'boolean') return res.status(400).json({ error: 'portal must be admin, invoice, agent or hrms and enabled must be true or false.' });
-        patch[p] = b.enabled;
-    } else if (typeof b.enabled === 'boolean') { patch.admin = b.enabled; patch.invoice = b.enabled; }
+    const b = req.body || {}, patch = {}, valid = OTP_PORTAL_REGISTRY.map(p => p.id);
+    const put = (id, v) => { const p = otpPortalById(id); if (!p || typeof v !== 'boolean') return false; patch[p.id] = v; return true; };
+    if (b.portals && typeof b.portals === 'object' && !Array.isArray(b.portals)) {
+        for (const id of Object.keys(b.portals)) if (!put(id, b.portals[id])) return res.status(400).json({ error: 'Unknown portal "' + id + '" or a value that is not true/false. Valid portals: ' + valid.join(', ') + '.' });
+    } else if (typeof b.portal === 'string') {
+        if (!put(b.portal, b.enabled)) return res.status(400).json({ error: 'portal must be one of: ' + valid.join(', ') + ' and enabled must be true or false.' });
+    }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change. Send { portal, enabled } or { portals:{…} }.' });
-    await setLoginOtpPortals(patch, req.authUser && (req.authUser.username || req.authUser.via));
+    const list = await setLoginOtpPortals(patch, req.authUser && (req.authUser.username || req.authUser.via));
     console.log('[otp-setting] ' + JSON.stringify(patch) + ' by ' + (req.authUser && req.authUser.username));
-    res.json(Object.assign({ success: true }, await _otpSettingsPayload()));
+    res.json({ success: true, portals: list, forcedOff: _otpForcedOff(), length: OTP_LENGTH });
 }));
 // ══════════════════════════════════════════════════════════════════
 // 🧾 INVOICE / MATERIAL PORTAL LOGIN — 6-digit WhatsApp OTP on a NEW device + "remember this device"
@@ -5485,9 +5514,10 @@ async function adminSecondFactor(req, userId, portal) {
 app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
     const b = req.body || {};
     const roleKey = lc(b.role);
-    const portal = roleKey === 'agent' ? 'agent' : ((roleKey === 'employee' || roleKey === 'hrms') ? 'hrms' : null);
+    const portalDef = otpPortalByRole(roleKey), portal = portalDef ? portalDef.id : null;   // agent → agent, employee/hrms → hrms (registry)
     const username = String(b.username || '').trim();
-    if (!portal || !username) return res.status(400).json({ error: 'Role and User ID are required.' });
+    // this endpoint knows how to look up Agent and HRMS accounts only; another portal needs its own send route (see registerOtpPortal)
+    if (!portal || (portal !== 'agent' && portal !== 'hrms') || !username) return res.status(400).json({ error: 'Role and User ID are required.' });
     if (hitRateLimit('potp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('potpu:' + portal + ':' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     let id, mobile;
     if (portal === 'agent') {

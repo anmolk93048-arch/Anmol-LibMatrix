@@ -4197,17 +4197,20 @@ html,body,#admin-app{width:100%;min-width:0;}
     #page-config-otp .otp-row b{display:block;font-size:14px}
     #page-config-otp .otp-row small{display:block;margin-top:3px;opacity:.75;font-size:12px;line-height:1.4}
     #page-config-otp .otp-state{font-weight:700;font-size:12px;min-width:34px;text-align:right}
+    #page-config-otp .otp-empty{padding:18px 4px;font-size:13px;opacity:.75}
+    #page-config-otp .otp-empty.err{color:#c0392b;opacity:1}
+    #page-config-otp .otp-main{min-width:0}
+    #page-config-otp .otp-flag{display:none;margin-top:6px;font-size:11px;font-weight:700;color:#b45309;background:rgba(245,158,11,.14);border-radius:6px;padding:3px 8px;width:fit-content}
+    #page-config-otp .otp-row.is-off .otp-flag{display:block}
+    #page-config-otp .otp-sw input:focus-visible+span{outline:2px solid #1a8d4b;outline-offset:2px}
     #page-config-otp .otp-note{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(128,128,128,.12);font-size:12px;line-height:1.5}
   </style>
-  <div class="page-header"><div><div class="page-title">📲 OTP Settings</div><div class="page-sub">Choose, portal by portal, where a 6-digit WhatsApp OTP is required. OFF = the user signs in with ID + password only (no WhatsApp message, no cost).</div></div>
+  <div class="page-header"><div><div class="page-title">📲 OTP Settings</div><div class="page-sub">Every portal is listed here automatically. ON = login needs the 6-digit WhatsApp/SMS OTP. OFF = Emergency Mode: that portal alone signs in with ID + password only (no message is sent, no cost).</div></div>
     <div class="actions-row"><button class="btn btn-ghost" onclick="OTPSET.load()">⟳ Refresh</button></div></div>
   <div class="card" style="padding:8px 16px">
     <div id="otpset-forced" class="otp-note" style="display:none;margin:10px 0">⚠️ OTP is forced OFF for every portal by the server setting <code>ADMIN_LOGIN_OTP=off</code>. The switches below are locked until that is removed.</div>
-    <div class="otp-row"><div><b>🧾 Invoice portal</b><small>Invoice / material users — OTP on a new device only.</small></div><span class="otp-state" id="otpset-state-invoice">…</span><label class="otp-sw"><input type="checkbox" id="otpset-invoice" onchange="OTPSET.save('invoice',this)" disabled><span></span></label></div>
-    <div class="otp-row"><div><b>♟ Agent portal</b><small>Agent logins. (Staff users are not affected.)</small></div><span class="otp-state" id="otpset-state-agent">…</span><label class="otp-sw"><input type="checkbox" id="otpset-agent" onchange="OTPSET.save('agent',this)" disabled><span></span></label></div>
-    <div class="otp-row"><div><b>👥 HRMS portal</b><small>Employee (HRMS) logins.</small></div><span class="otp-state" id="otpset-state-hrms">…</span><label class="otp-sw"><input type="checkbox" id="otpset-hrms" onchange="OTPSET.save('hrms',this)" disabled><span></span></label></div>
-    <div class="otp-row"><div><b>🛡 Admin portal</b><small>Super Admin login.</small></div><span class="otp-state" id="otpset-state-admin">…</span><label class="otp-sw"><input type="checkbox" id="otpset-admin" onchange="OTPSET.save('admin',this)" disabled><span></span></label></div>
-    <div class="otp-note">• Only a <b>new device</b> is asked for an OTP. After one successful OTP the device is remembered (about 1 year) — logging out and in again on the same laptop/phone does <b>not</b> send another OTP.<br>• Turning a portal ON later asks each device for one OTP the next time; turning it OFF never sends a message.<br>• These switches exist only here — they do not appear on any login or portal page.</div>
+    <div id="otpset-list" aria-live="polite"><div class="otp-empty">Loading portals…</div></div>
+    <div class="otp-note">• Only a <b>new device</b> is asked for an OTP. After one successful OTP the device is remembered (about 1 year) — logging out and in again on the same laptop/phone does <b>not</b> send another OTP.<br>• Turning a portal ON later asks each device for one OTP the next time; turning it OFF (Emergency Mode) never sends a message and takes effect within a few seconds.<br>• New portals appear in this list on their own once the server registers them.<br>• These switches exist only here — they do not appear on any login or portal page.</div>
     <div id="otpset-msg" style="min-height:18px;margin:8px 0 4px;font-size:12px"></div>
   </div>
 </div>
@@ -16975,34 +16978,52 @@ img,svg,video,canvas,iframe{max-width:100%}
 })();
 </script>
 <script>
-/* ── Super Admin → OTP Settings (per-portal switches) ── */
+/* ── Super Admin → OTP Settings (one switch per portal, list comes from the server) ── */
 window.OTPSET=(function(){
-  var PORTALS=['invoice','agent','hrms','admin'], st=null, loading=false;
+  var st=null, loading=false, saving={};
   function $(id){return document.getElementById(id)}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function msg(t,bad){var m=$('otpset-msg');if(m){m.textContent=t||'';m.style.color=bad?'#c0392b':'#1a8d4b';}}
+  function find(id){var l=(st&&st.portals)||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null;}
+  function rowHtml(p){
+    var locked=!!st.forcedOff, on=!locked&&!!p.enabled, id='otpset-sw-'+esc(p.id);
+    return '<div class="otp-row'+(on?'':' is-off')+'" data-portal="'+esc(p.id)+'">'+
+      '<div class="otp-main"><b>'+esc((p.icon?p.icon+' ':'')+p.label)+'</b>'+(p.description?'<small>'+esc(p.description)+'</small>':'')+
+      '<span class="otp-flag">Emergency Mode — ID + password only, no OTP</span></div>'+
+      '<span class="otp-state" style="color:'+(on?'#1a8d4b':'#c0392b')+'">'+(on?'ON':'OFF')+'</span>'+
+      '<label class="otp-sw"><input type="checkbox" id="'+id+'" role="switch" aria-label="'+esc(p.label)+' OTP"'+(on?' checked':'')+(locked||saving[p.id]?' disabled':'')+' data-portal="'+esc(p.id)+'"><span></span></label></div>';
+  }
   function paint(){
-    if(!st)return;
+    var box=$('otpset-list'); if(!box||!st)return;
     if($('otpset-forced'))$('otpset-forced').style.display=st.forcedOff?'block':'none';
-    PORTALS.forEach(function(p){
-      var cb=$('otpset-'+p),lab=$('otpset-state-'+p); if(!cb)return;
-      var on=!st.forcedOff&&!!st.portals[p];
-      cb.checked=on; cb.disabled=!!st.forcedOff;
-      if(lab){lab.textContent=on?'ON':'OFF';lab.style.color=on?'#1a8d4b':'#c0392b';}
-    });
+    var l=st.portals||[];
+    box.innerHTML=l.length?l.map(rowHtml).join(''):'<div class="otp-empty">No portals are registered on the server yet.</div>';
   }
   function load(){
     if(loading)return; loading=true; msg('Loading…');
-    return API.get('/admin/login-otp-setting').then(function(d){st=d;paint();msg('');})
-      .catch(function(e){msg('Could not load OTP settings: '+(e.message||e),true);})
-      .then(function(){loading=false;});
+    return API.get('/admin/login-otp-setting').then(function(d){
+      if(!d||!Array.isArray(d.portals))throw new Error('unexpected response from the server');
+      st=d;paint();msg('');
+    }).catch(function(e){
+      var box=$('otpset-list'); if(box&&!st)box.innerHTML='<div class="otp-empty err">Could not load the portal list. Use Refresh to try again.</div>';
+      msg('Could not load OTP settings: '+(e&&e.message||e),true);
+    }).then(function(){loading=false;});
   }
-  function save(portal,cb){
-    var want=cb.checked; cb.disabled=true; msg('Saving…');
-    API.post('/admin/login-otp-setting',{portal:portal,enabled:want}).then(function(d){
-      st=d;paint();msg((portal.charAt(0).toUpperCase()+portal.slice(1))+' OTP turned '+(want?'ON':'OFF')+'.');
-    }).catch(function(e){cb.checked=!want;msg('Could not change the setting: '+(e.message||e),true);})
-      .then(function(){cb.disabled=!!(st&&st.forcedOff);});
+  function save(id,cb){
+    var p=find(id); if(!p||saving[id]){return;}
+    var want=cb.checked;
+    if(!want&&!window.confirm('Turn OTP OFF for the '+p.label+'?\n\nEmergency Mode: everyone on this portal will sign in with ID + password only until you turn it back ON.')){cb.checked=true;return;}
+    saving[id]=true; cb.disabled=true; msg('Saving…');
+    API.post('/admin/login-otp-setting',{portal:id,enabled:want}).then(function(d){
+      if(!d||!Array.isArray(d.portals))throw new Error('unexpected response from the server');
+      st=d; delete saving[id]; paint(); msg(p.label+' OTP turned '+(want?'ON':'OFF')+'.');
+    }).catch(function(e){
+      delete saving[id]; paint(); msg('Could not change the setting: '+(e&&e.message||e),true);   // repaint = switch goes back to what the server really has
+    });
   }
+  document.addEventListener('change',function(ev){
+    var t=ev.target; if(t&&t.matches&&t.matches('#otpset-list input[type=checkbox][data-portal]'))save(t.getAttribute('data-portal'),t);
+  });
   return {load:load,save:save};
 })();
 (function(){var g=window.GOTO;window.GOTO=function(page){var r=g.apply(this,arguments);if(page==='config-otp')OTPSET.load();return r;};})();
