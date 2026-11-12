@@ -2118,7 +2118,7 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
             db.query("UPDATE material_user_requests SET status='approved', reviewed_at=CURRENT_TIMESTAMP, approved_userid=?, aadhaar_enc=NULL, aadhaar_hash=NULL, cred_enc=?, cred_at=?, cred_views=0 WHERE id = ?", [userId, credEnc, credEnc ? Date.now() : null, reqId], () => {
                 auditPii(req, 'material_approve', userId, 'request=' + reqId);
                 notifyAccount({ kind: 'credentials', portal: 'invoice', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
-                    res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '', notified: ch || null });
+                    res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '', notified: ch || null, notifyError: ch === 'whatsapp' ? undefined : (_lastNotifyError || undefined) });
                 });
             });
         }
@@ -4800,6 +4800,9 @@ function config() {
         lang: env('WA_TEMPLATE_LANG', env('FAST2SMS_WA_LANG', 'en')),
         cc: digits(env('WA_DEFAULT_CC', env('FAST2SMS_WA_CC', '91'))) || '91',
         timeoutMs: parseInt(env('WA_TIMEOUT_MS', '12000'), 10) || 12000,
+        langs: {   // each template can have its own approved language code (e.g. OTP "en", info "en_US")
+            otp: env('WA_TEMPLATE_OTP_LANG'), info: env('WA_TEMPLATE_INFO_LANG'), notice: env('WA_TEMPLATE_NOTICE_LANG')
+        },
         templates: {
             otp: env('WA_TEMPLATE_OTP', env('FAST2SMS_WA_TEMPLATE_NAME', env('WA_OTP_TEMPLATE'))),
             info: env('WA_TEMPLATE_INFO', env('CREDENTIALS_WA_TEMPLATE_NAME', env('WA_CRED_TEMPLATE'))),
@@ -4850,7 +4853,7 @@ function postJson(urlStr, headers, body, timeoutMs) {
 function waError(msg, extra) { const e = new Error(msg); e.channel = 'whatsapp'; if (extra) Object.assign(e, extra); return e; }
 
 // Generic template sender. bodyParams → {{1}}, {{2}} … ; buttonParam (optional) → the Copy-code / URL button.
-async function sendTemplate(mobile, templateName, bodyParams, buttonParam) {
+async function sendTemplate(mobile, templateName, bodyParams, buttonParam, langOverride) {
     const c = config();
     if (!c.enabled) throw waError('WhatsApp sending is disabled (WA_ENABLED=false).');
     if (!isConfigured()) throw waError('WhatsApp is not configured (set ' + missingConfig().join(' / ') + ').');
@@ -4860,7 +4863,7 @@ async function sendTemplate(mobile, templateName, bodyParams, buttonParam) {
     const components = [{ type: 'body', parameters: bodyParams.map((p) => ({ type: 'text', text: String(p) })) }];
     if (buttonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(buttonParam) }] });
     const body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.cc + num, type: 'template',
-        template: { name: templateName, language: { code: c.lang }, components } };
+        template: { name: templateName, language: { code: langOverride || c.lang }, components } };
     let url, headers;
     if (c.provider === 'fast2sms') {
         url = c.f2s.base.replace(/\/$/, '') + '/' + c.f2s.version + '/' + encodeURIComponent(c.f2s.phoneId) + '/messages';
@@ -4884,17 +4887,20 @@ async function sendTemplate(mobile, templateName, bodyParams, buttonParam) {
 
 // ── the two core templates ───────────────────────────────────────────────────────────────────────────────
 // 1) OTP — identical for every portal.
-function sendOtp(mobile, otp) { return sendTemplate(mobile, config().templates.otp, [otp], otp); }
+function sendOtp(mobile, otp) { const c = config(); return sendTemplate(mobile, c.templates.otp, [otp], otp, c.langs.otp); }
 // 2) Login info — User ID + password + the portal's own login link, for registrations AND password resets in every portal.
 function sendLoginInfo(mobile, o) {
     o = o || {};
-    return sendTemplate(mobile, config().templates.info, [clean(o.name || 'User'), clean(o.userId), clean(o.password), clean(portalLink(o.portal, o.link))]);
+    const c = config(), link = String(o.link || '').replace(/^-$/, '');
+    const params = [clean(o.name || 'User'), clean(o.userId), clean(o.password), clean(portalLink(o.portal, link))];   // {{1}} name · {{2}} User ID · {{3}} password · {{4}} login link — Meta rejects empty values, clean() never returns ''
+    return sendTemplate(mobile, c.templates.info, params, null, c.langs.info);
 }
 // Optional: password-less notices (approved / password changed / username recovered). Only used when WA_TEMPLATE_NOTICE is set.
 function noticeEnabled() { return !!config().templates.notice; }
 function sendNotice(mobile, o) {
     o = o || {};
-    return sendTemplate(mobile, config().templates.notice, [clean(o.name || 'User'), clean(o.text), clean(o.userId), clean(portalLink(o.portal, o.link))]);
+    const c = config();
+    return sendTemplate(mobile, c.templates.notice, [clean(o.name || 'User'), clean(o.text), clean(o.userId), clean(portalLink(o.portal, o.link))], null, c.langs.notice);
 }
 
 return { config, isConfigured, missingConfig, describe, portalLink, sendTemplate, sendOtp, sendLoginInfo, sendNotice, noticeEnabled, clean };
@@ -4914,6 +4920,7 @@ const NOTICE_TEXT = {
     hr_approved: 'your HRMS profile has been approved.',
     username_recovered: 'as requested, your Anmol LibMatrix Username is shown below. Your password is never sent by message. Please do not share this message.'
 };
+let _lastNotifyError = '';
 async function _notifyAccountOnce(ev) {
     try {
         const mobile = last10(ev.mobile);
@@ -4922,11 +4929,15 @@ async function _notifyAccountOnce(ev) {
         let sms, send = null;
         const portal = ev.portal || '';
         const plink = waTxt(wa.portalLink(portal, freshenLinks(ev.link) || liveBaseUrl()) || '');   // PORTAL_URL_<PORTAL> wins, else the live domain
-        if (ev.kind === 'credentials') {
+        if (ev.kind === 'credentials' || ev.kind === 'userid_recovered') {
             // INFO template (WA_TEMPLATE_INFO): {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal login link — same for every portal.
-            send = () => wa.sendLoginInfo(mobile, { name: name, userId: uid, password: ev.password, portal: portal, link: plink });
+            // User-ID recovery has no plain password (stored hashed only) → {{3}} carries a pointer to "Forgot Password" instead.
+            const shownPwd = ev.kind === 'credentials' ? String(ev.password == null ? '' : ev.password) : (process.env.WA_RECOVERY_PASSWORD_TEXT || 'Use your existing password (Forgot Password to reset)');
+            send = () => wa.sendLoginInfo(mobile, { name: name, userId: uid, password: shownPwd, portal: portal, link: plink === '-' ? '' : plink });
             const cfg = await loadSmsConfig();
-            sms = freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), plink, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''));   // a saved SMS template may still hold the old link
+            sms = ev.kind === 'credentials'
+                ? freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), plink, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''))   // a saved SMS template may still hold the old link
+                : 'Hello ' + name + ', your User ID is ' + uid + '. Use your existing password (or Forgot Password).' + (plink !== '-' ? ' Login: ' + plink : '');
         } else {
             const text = NOTICE_TEXT[ev.kind] || String(ev.text || '');
             if (wa.noticeEnabled()) send = () => wa.sendNotice(mobile, { name: name, text: waTxt(freshenLinks(text)), userId: uid, portal: portal, link: plink });   // optional WA_TEMPLATE_NOTICE
@@ -4934,8 +4945,8 @@ async function _notifyAccountOnce(ev) {
         }
         if (send && waConfigured()) {
             try { await send(); return 'whatsapp'; }
-            catch (e) { console.warn('WhatsApp notification (' + ev.kind + ') failed, falling back to SMS:', e.message); }
-        }
+            catch (e) { _lastNotifyError = String(e && e.message || e).slice(0, 300); console.error('[notify] WhatsApp (' + ev.kind + ') to XXXXXX' + mobile.slice(-4) + ' FAILED: ' + _lastNotifyError); }
+        } else if (send) { _lastNotifyError = 'WhatsApp is not configured (missing: ' + (wa.missingConfig().join(', ') || 'WA_ENABLED=false') + ')'; console.error('[notify] ' + _lastNotifyError); }
         if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
         return null;
     } catch (e) { console.warn('notifyAccount (' + (ev && ev.kind) + ') failed:', e.message); return null; }
@@ -4950,7 +4961,7 @@ async function notifyAccount(ev) {
     const ch = await _notifyAccountOnce(ev);
     if (!track) return ch;
     if (ch) { await _setDelivery(ev.userId, { status: ch === 'whatsapp' ? 'sent' : 'sms', channel: ch }); return ch; }
-    await _setDelivery(ev.userId, { status: 'retrying' });
+    await _setDelivery(ev.userId, { status: 'retrying', error: _lastNotifyError });
     (async () => {
         for (const wait of [3000, 12000]) {
             await new Promise((r) => setTimeout(r, wait));
@@ -4958,7 +4969,7 @@ async function notifyAccount(ev) {
             if (c) return _setDelivery(ev.userId, { status: c === 'whatsapp' ? 'sent' : 'sms', channel: c });
         }
         console.warn('[notify] ' + ev.kind + ' message for ' + ev.userId + ' could not be delivered after retries.');
-        await _setDelivery(ev.userId, { status: 'failed' });
+        await _setDelivery(ev.userId, { status: 'failed', error: _lastNotifyError });
     })().catch(() => {});
     return null;
 }
@@ -5159,6 +5170,97 @@ async function forgotUsernameVerifyHandler(req, res) {
     } catch (e) { console.error('[forgot-username/verify] failed:', e && e.message); if (!res.headersSent) res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' }); }
 }
 // === FORGOT USERNAME (OTP) END ===
+// === MATERIAL (INVOICE) ACCOUNT RECOVERY START ===
+// The Invoice login page's 3-step recovery modal calls these (all 6-digit WhatsApp OTP):
+//   POST /api/material/recovery/send-otp          {purpose:'password-reset'|'userid-recovery', method:'mobile', contact, userId?}
+//   POST /api/material/recovery/verify-otp        {purpose, method, contact, userId?, otp}
+//        password-reset  → {resetToken}  (single use, 10 min)          userid-recovery → the User ID is sent on WhatsApp (anmol_libmatrix_login_info)
+//   POST /api/material/recovery/reset-credentials {userId, mobile, newUserId, newPassword, resetToken}
+// Aliases under /api/auth/recovery/* are registered too. Passwords are only ever stored hashed and are never sent back.
+const MREC_PURPOSES = ['password-reset', 'userid-recovery'];
+function _mrecKey(purpose, userId, mobile) { return 'mrec|' + purpose + '|' + (purpose === 'password-reset' ? lc(userId) : last10(mobile)); }
+async function _mrecFind(purpose, userId, contact) {
+    const c = String(contact || '').trim();
+    if (purpose === 'password-reset') return findRecoveryAccount(userId, c, 'material');
+    return findRecoveryAccount('', c, 'material');
+}
+const materialRecoverySendOtp = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const purpose = String(b.purpose || '').trim(), userId = String(b.userId || b.user || '').trim(), contact = String(b.contact || b.mobile || '').trim();
+    if (MREC_PURPOSES.indexOf(purpose) < 0) return res.status(400).json({ error: 'Invalid recovery request.' });
+    if (!contact) return res.status(400).json({ error: 'Please enter your registered mobile number.' });
+    if (purpose === 'password-reset' && !userId) return res.status(400).json({ error: 'Please enter your valid User ID.' });
+    if (hitRateLimit('mrec:' + (req.ip || ''), 15, 10 * 60 * 1000) || hitRateLimit('mrecc:' + lc(contact), 6, 30 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
+    const acc = await _mrecFind(purpose, userId, contact);
+    const real = !!(acc && acc.kind === 'material' && acc.mobile.length === 10 && last10(contact) === acc.mobile);   // recovery is by registered MOBILE number
+    const m4 = (real ? acc.mobile : last10(contact)).slice(-4) || '0000';
+    const okBody = { success: true, channel: 'whatsapp', otpLength: OTP_LENGTH, expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000),
+        message: 'A ' + OTP_LENGTH + '-digit OTP has been sent on WhatsApp to the registered mobile number ending ' + m4 + '.' };
+    if (!real) {
+        if (purpose === 'password-reset') return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        return res.json(okBody);   // User-ID recovery: identical answer for unknown numbers (no account enumeration)
+    }
+    const key = _mrecKey(purpose, acc.userId, acc.mobile);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    const otp = String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH));
+    try { await sendOtpMessage(acc.mobile, otp); } catch (e) { return otpSendFailed(res, e, 'material-recovery'); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0, userId: acc.userId, mobile: acc.mobile, name: acc.rec && acc.rec.name || '' });
+    res.json(okBody);
+});
+const materialRecoveryVerifyOtp = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const purpose = String(b.purpose || '').trim(), userId = String(b.userId || b.user || '').trim(), contact = String(b.contact || b.mobile || '').trim();
+    const code = String(b.otp || b.code || '').replace(/\D/g, '');
+    if (MREC_PURPOSES.indexOf(purpose) < 0 || code.length !== OTP_LENGTH) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.', code: 'INVALID_OTP' });
+    if (hitRateLimit('mrecv:' + (req.ip || ''), 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const bad = () => res.status(400).json({ error: 'Invalid or expired OTP. Please try again.', code: 'INVALID_OTP' });
+    const acc = await _mrecFind(purpose, userId, contact);
+    if (!acc || acc.kind !== 'material' || last10(contact) !== acc.mobile) return bad();
+    const key = _mrecKey(purpose, acc.userId, acc.mobile);
+    const o = await _otpStore.get(key);
+    if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return bad(); }
+    o.tries++;
+    if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return bad(); }
+    await _otpStore.set(key, o);
+    if (!security.safeEqual(o.hash, sha(code))) return bad();
+    await _otpStore.delete(key);   // one-time use
+    if (purpose === 'password-reset') {
+        const jti = crypto.randomBytes(16).toString('hex');
+        await _otpStore.set('mrj|' + jti, { exp: Date.now() + 10 * 60 * 1000 });
+        const resetToken = jwt.sign({ purpose: 'material-recovery', u: String(acc.userId), jti: jti }, JWT_SECRET, { expiresIn: '10m' });
+        return res.json({ success: true, resetToken: resetToken, message: 'OTP verified. Set your new password.' });
+    }
+    // User-ID recovery: OTP proven → the User ID goes to the registered WhatsApp number through the INFO template. The password is hashed, so it is never sent.
+    const via = await notifyAccount({ kind: 'userid_recovered', portal: 'invoice', mobile: acc.mobile, name: acc.rec && acc.rec.name, userId: acc.userId, link: portalLink(req) });
+    if (!via) return res.status(424).json({ error: 'Your OTP was verified, but the message could not be delivered right now. Please try again shortly.', code: 'DELIVERY_FAILED' });
+    res.json({ success: true, smsSent: via === 'sms', channel: via, message: 'Your User ID has been sent to your registered ' + (via === 'whatsapp' ? 'WhatsApp number' : 'mobile number by SMS') + ' ending ' + acc.mobile.slice(-4) + '.' });
+});
+const materialRecoveryReset = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const userId = String(b.userId || '').trim(), newPassword = String(b.newPassword || ''), token = String(b.resetToken || '');
+    if (hitRateLimit('mrecr:' + (req.ip || ''), 20, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    if (newPassword.length < 8) return res.status(400).json({ error: 'New password must contain at least 8 characters.' });
+    let d;
+    try { d = jwt.verify(token, JWT_SECRET); } catch (e) { d = null; }
+    const stored = d && d.purpose === 'material-recovery' && d.jti ? await _otpStore.get('mrj|' + d.jti) : null;
+    if (!d || !stored || lc(d.u) !== lc(userId)) return res.status(401).json({ error: 'This reset session has expired. Please verify the OTP again.', code: 'INVALID_RESET_TOKEN' });
+    await _otpStore.delete('mrj|' + d.jti);   // single use
+    const rows = await dbq('SELECT id, userid, mobile FROM material_users WHERE userid = ?', [d.u]);
+    if (!rows || !rows.length) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+    await dbq('UPDATE material_users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(newPassword, 10), rows[0].id]);
+    await revokeTrustedDevices(rows[0].userid);   // 🔒 password changed → every remembered device must pass the OTP again
+    notifyAccount({ kind: 'password_changed', portal: 'invoice', mobile: rows[0].mobile, name: '', userId: rows[0].userid });   // confirmation, never contains the password
+    const kept = String(b.newUserId || '').trim() && lc(b.newUserId) !== lc(rows[0].userid);
+    res.json({ success: true, userId: rows[0].userid, message: 'Your password has been updated. Please sign in with User ID ' + rows[0].userid + ' and your new password.' + (kept ? ' (The User ID cannot be changed from this screen and stays the same.)' : '') });
+});
+['/api/material/recovery', '/api/auth/recovery'].forEach(base => {
+    app.post(base + '/send-otp', noStore, materialRecoverySendOtp);
+    app.post(base + '/verify-otp', noStore, materialRecoveryVerifyOtp);
+    app.post(base + '/reset-credentials', noStore, materialRecoveryReset);
+});
+// === MATERIAL (INVOICE) ACCOUNT RECOVERY END ===
 // Step 2 of the Super Admin "Reset Password" modal: checks the 6-digit OTP WITHOUT consuming it
 // (reset-password re-checks and consumes it when the new password is saved).
 async function verifyResetOtpHandler(req, res) {
@@ -5542,6 +5644,18 @@ app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
     catch (e) { return otpSendFailed(res, e, portal + '-login-otp'); }
     await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
     res.json({ success: true, channel: channel, message: 'A ' + ADMIN_OTP_LEN + '-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+}));
+// 🧪 POST /api/admin/whatsapp-test {mobile, template:'otp'|'info'} (admin only) — sends ONE real test message and returns the exact gateway error, if any.
+app.post('/api/admin/whatsapp-test', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {}, mobile = last10(b.mobile);
+    if (mobile.length !== 10) return res.status(400).json({ error: 'A valid 10-digit mobile number is required.' });
+    const out = { config: wa.describe() };
+    try {
+        if (String(b.template || 'info') === 'otp') await wa.sendOtp(mobile, String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH)));
+        else await wa.sendLoginInfo(mobile, { name: 'Test User', userId: 'TEST001', password: 'Test@1234', portal: b.portal || '', link: liveBaseUrl(req) });
+        out.success = true;
+    } catch (e) { out.success = false; out.error = String(e && e.message || e).slice(0, 400); }
+    res.json(out);
 }));
 // 🩺 OTP health check — GET /api/auth/otp-diagnostics with header  x-diag-secret: <OTP_DIAG_SECRET>  (route is disabled unless that env var is set).
 //    Shows whether the WhatsApp credentials / templates / database are configured; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.

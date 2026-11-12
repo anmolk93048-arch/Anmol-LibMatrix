@@ -730,6 +730,41 @@ html[data-theme="dark"] .otp-status.is-error{color:#ff8f86}html[data-theme="dark
 html[data-theme="dark"] .otp-box{background:#141e2d;color:#e6edf7;border-color:#2b3a4f}
 html[data-theme="dark"] .otp-link{color:#9ec5ff}
 </style>
+<style id="login-otp-compact-fix">
+  /* OTP step: compact boxes + the Login/Verify button is ALWAYS reachable (card scrolls, button sticks to the bottom). */
+  #loginGate .login-card{
+    overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    scrollbar-width:thin!important;scrollbar-color:#9aacc6 transparent!important;-ms-overflow-style:auto!important;
+    max-height:calc(100vh - 20px)!important;max-height:calc(100dvh - 20px)!important;
+  }
+  #loginGate .login-card::-webkit-scrollbar{display:block!important;width:6px!important;height:6px!important;background:transparent!important}
+  #loginGate .login-card::-webkit-scrollbar-thumb{display:block!important;width:auto!important;background:#9aacc6!important;border-radius:6px!important}
+  #loginGate .login-card::-webkit-scrollbar-track{display:block!important;width:auto!important;background:transparent!important}
+  #loginGate #loginSubmitBtn{position:sticky;bottom:0;z-index:6;box-shadow:0 -8px 12px -6px rgba(255,255,255,.95),0 2px 6px rgba(15,46,93,.18)}
+  /* compact OTP panel */
+  .otp-panel{padding:9px 10px 6px!important}
+  .otp-title{font-size:.84rem!important;margin:0!important}
+  .otp-hint{font-size:.7rem!important;line-height:1.3!important;margin:2px 0 7px!important}
+  .otp-boxes{gap:6px!important}
+  #loginGate .otp-boxes .otp-box{box-sizing:border-box!important;padding:0!important;width:100%!important;min-width:0!important;max-width:38px!important;height:42px!important;font-size:1.15rem!important;border-radius:7px!important;text-align:center!important}
+  .otp-status{min-height:14px!important;margin:5px 0 0!important;font-size:.72rem!important}
+  .otp-remember{margin:3px 0 0!important;font-size:.7rem!important}
+  .otp-actions{margin-top:2px!important}
+  /* while the OTP step is open, shrink everything above it so button + boxes fit on laptop AND phone screens */
+  #loginGate .login-card:has(#otpReveal.is-open) .login-card-header{padding:9px 16px 7px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .login-logo-frame{min-height:0!important;margin-bottom:3px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) #loginBrandLogo{max-width:38px!important;max-height:38px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .login-brand-title{font-size:15px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .login-subtitle{display:none!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .p-5{padding:9px 16px 12px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .space-y-3>:not([hidden])~:not([hidden]){margin-top:.45rem!important}
+  #loginGate .login-card:has(#otpReveal.is-open) input:not([type="file"]):not([type="checkbox"]):not(.otp-box){padding-top:6px!important;padding-bottom:6px!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .captcha-box{padding-top:4px!important;padding-bottom:4px!important;min-height:0!important;font-size:.9rem!important}
+  #loginGate .login-card:has(#otpReveal.is-open) .login-recovery-links,
+  #loginGate .login-card:has(#otpReveal.is-open) #regToggleBtn,
+  #loginGate .login-card:has(#otpReveal.is-open) #regTrackLinkBtn{display:none!important}
+  @media (max-width:380px){.otp-boxes{gap:4px!important}#loginGate .otp-boxes .otp-box{max-width:34px!important;height:40px!important;font-size:1.05rem!important}}
+</style>
 </head>
 <body class="min-h-screen locked">
 
