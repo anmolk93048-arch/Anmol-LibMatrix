@@ -2500,7 +2500,7 @@ app.post('/api/auth/login', (req, res) => {
             res.json(Object.assign({ token }, extra || {}));
         };
         if (!_isAdminLogin) return _issue();
-        // 🔐 Super Admin: 8-digit OTP, skipped only for a trusted device (see "SUPER ADMIN LOGIN" block)
+        // 🔐 Super Admin: 6-digit OTP, skipped only for a trusted device (see "SUPER ADMIN LOGIN" block)
         adminSecondFactor(req, String(user.username || username)).then(r => {
             if (!r.ok) return res.status(r.status).json(r.body);
             _issue(r.deviceToken ? { deviceToken: r.deviceToken } : null);
@@ -4495,11 +4495,12 @@ app.post('/api/admin/agent-registrations/:id/decision', requireRole('admin'), as
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🔐 CREDENTIAL RECOVERY (4-digit OTP via SMS) + AGENT CREDENTIAL SMS + ANNOUNCEMENTS
+// 🔐 CREDENTIAL RECOVERY (6-digit OTP via WhatsApp or SMS) + AGENT CREDENTIAL SMS + ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════
 const OTP_TTL_MS = 10 * 60 * 1000;            // 📲 OTP validity — 10 minutes (must match the WhatsApp template's code_expiration_minutes)
 const OTP_RESEND_MS = 60 * 1000;               // minimum gap between two OTP requests for the same account
 const OTP_MAX_TRIES = 5;
+const OTP_LENGTH = 6;                          // 🔢 EVERY OTP in this project (login, recovery, forgot-username) is exactly 6 digits
 // OTP store lives in the database so it works on serverless (no shared memory between instances).
 let _otpTableReady = null;
 function ensureOtpTable() {
@@ -4713,7 +4714,7 @@ async function autoNotifyEntityCredentials(key, incoming, existing, link) {
 // 💬 FAST2SMS WHATSAPP — AUTHENTICATION-TEMPLATE OTP  (the ONLY OTP channel — no SMS, no bulkV2, so error 996 cannot occur)
 //   POST https://www.fast2sms.com/dev/whatsapp/v26.0/1419889517875516/messages
 //   Header   Authorization: <FAST2SMS_API_KEY>
-//   Body     Meta "authentication template" payload: the 8-digit OTP is sent in the message body AND the Copy-code / One-tap button.
+//   Body     Meta "authentication template" payload: the 6-digit OTP is sent in the message body AND the Copy-code / One-tap button.
 //   Render → Environment:
 //     FAST2SMS_API_KEY            – Fast2SMS → Dev API → API key (required)
 //     FAST2SMS_WA_TEMPLATE_NAME   – approved AUTHENTICATION template name (default: libmatrix_login_otp)
@@ -4793,7 +4794,7 @@ async function fast2smsWaSendTemplate(mobile, templateName, bodyParams, urlButto
     throw err;
 }
 // ── Template 1: OTP (authentication template). Env: FAST2SMS_WA_TEMPLATE_NAME ──
-//    The 8-digit OTP goes in the body {{1}} AND the Copy-code / One-tap button.
+//    The 6-digit OTP goes in the body {{1}} AND the Copy-code / One-tap button.
 function sendFast2SmsWhatsAppOtp(mobile, otp) {
     return fast2smsWaSendTemplate(mobile, fast2smsWaConfig().template, [otp], otp);
 }
@@ -4849,14 +4850,14 @@ async function forgotPasswordCore(req, res) {
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
             return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
         }
-        const otpLen = req.otpLen === 8 ? 8 : 4;   // /api/send-otp → 8 digits; legacy /forgot-password routes (Agent / Material portals) keep 4
+        const otpLen = OTP_LENGTH;   // always 6 digits (same for /api/send-otp and the legacy /forgot-password routes)
         const otp = String(crypto.randomInt(10 ** (otpLen - 1), 10 ** otpLen));
         let channel;
         try { channel = await sendOtpMessage(acc.mobile, otp); }
         catch (e) { return otpSendFailed(res, e, 'forgot-password'); }
         await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         const m = acc.mobile;
-        res.json({ success: true, channel: channel, message: (otpLen === 8 ? 'An 8-digit' : 'A 4-digit') + ' OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+        res.json({ success: true, channel: channel, message: 'A ' + OTP_LENGTH + '-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
     } catch (e) {
         console.error('[forgot-password] FAILED:', e && (e.stack || e.message));
         if (res.headersSent) return;
@@ -4877,7 +4878,7 @@ async function resetPasswordHandler(req, res) {
         const contact = String(b.contact || '').trim();
         const code = String(b.code || b.otp || '').trim();
         const newPassword = String(b.newPassword || '');
-        if (!/^(\d{4}|\d{8})$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
+        if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         if (newPassword.length < 6) return res.status(400).json({ error: 'Passwords do not match or fields are empty.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
@@ -4909,7 +4910,7 @@ async function resetPasswordHandler(req, res) {
 // Step 2  POST <base>/forgot-username/verify    {challengeId, otp}     -> correct OTP -> ONLY the Username is sent to that WhatsApp number
 //         POST <base>/forgot-username/resend    {challengeId}
 // The response never contains the Username or any password. Unknown numbers get an identical-looking step-1 answer (no account enumeration).
-const FU_LEN = 8;
+const FU_LEN = OTP_LENGTH;
 const FU_ID_RE = /^[0-9a-f]{48}$/;
 async function forgotUsernameHandler(req, res) {
     try {
@@ -4929,7 +4930,7 @@ async function forgotUsernameHandler(req, res) {
             await _otpStore.set('fu|' + id, { hash: sha(otp), userId: acc.userId, mobile: acc.mobile, name: acc.rec && (acc.rec.name || acc.rec.fullName) || '', sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         }
         res.json({ success: true, challengeId: id, otpLength: FU_LEN, maskedMobile: 'XXXXXX' + m4, expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000),
-            message: 'If this number is registered, an ' + FU_LEN + '-digit OTP has been sent on WhatsApp to the number ending ' + m4 + '.' });
+            message: 'If this number is registered, a ' + FU_LEN + '-digit OTP has been sent on WhatsApp to the number ending ' + m4 + '.' });
     } catch (e) { console.error('[forgot-username] failed:', e && e.message); if (!res.headersSent) res.status(502).json({ error: 'Unable to process the request right now. Please try again.' }); }
 }
 async function forgotUsernameResendHandler(req, res) {
@@ -4967,7 +4968,7 @@ async function forgotUsernameVerifyHandler(req, res) {
     } catch (e) { console.error('[forgot-username/verify] failed:', e && e.message); if (!res.headersSent) res.status(500).json({ error: 'Unable to verify the OTP right now. Please try again.' }); }
 }
 // === FORGOT USERNAME (OTP) END ===
-// Step 2 of the Super Admin "Reset Password" modal: checks the 4-digit OTP WITHOUT consuming it
+// Step 2 of the Super Admin "Reset Password" modal: checks the 6-digit OTP WITHOUT consuming it
 // (reset-password re-checks and consumes it when the new password is saved).
 async function verifyResetOtpHandler(req, res) {
     try {
@@ -4976,7 +4977,7 @@ async function verifyResetOtpHandler(req, res) {
         const userId = String(b.user || b.userId || b.username || '').trim();
         const contact = String(b.contact || '').trim();
         const code = String(b.code || b.otp || '').trim();
-        if (!/^(\d{4}|\d{8})$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
+        if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Invalid or expired OTP. Please try again.' });
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         const key = lc(acc.userId) + '|' + acc.kind;
@@ -4995,18 +4996,18 @@ async function verifyResetOtpHandler(req, res) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 🔐 SUPER ADMIN LOGIN — 8-digit OTP (Fast2SMS) + "Remember this device"
+// 🔐 SUPER ADMIN LOGIN — 6-digit OTP (Fast2SMS) + "Remember this device"
 //   Step 1  POST /api/auth/admin-login-otp  {username, password, deviceToken?}
 //             · wrong credentials → 401 (no OTP is sent)
 //             · valid trusted-device token for this user → {skipped:true, trusted:true}  (no OTP)
-//             · otherwise an 8-digit OTP is sent to the admin's registered mobile
+//             · otherwise an 6-digit OTP is sent to the admin's registered mobile
 //   Step 2  POST /api/auth/login  {role:'admin', username, password, otp, trustDevice}
 //             · correct OTP → JWT (+ a random deviceToken when trustDevice is true; the browser keeps it)
 //             · no OTP → accepted only with a valid deviceToken, else 401 OTP_REQUIRED
 //   Trusted devices are stored hashed (sha256) in the otp_codes table, expire after TRUSTED_DEVICE_DAYS (default 90) and are
 //   all revoked when the password is reset. ADMIN_LOGIN_OTP=off turns the OTP requirement off (emergency switch).
 // ══════════════════════════════════════════════════════════════════
-const ADMIN_OTP_LEN = 8;
+const ADMIN_OTP_LEN = OTP_LENGTH;
 const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS || '90', 10) || 90) * 24 * 60 * 60 * 1000;
 function adminOtpEnabled() { return String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() !== 'off'; }
 const _tdKey = (user, token) => 'td|' + lc(user) + '|' + sha(String(token));
@@ -5057,12 +5058,12 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     try { channel = await sendOtpMessage(mobile, otp); }
     catch (e) { return otpSendFailed(res, e, 'admin-login-otp'); }
     await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
-    res.json({ success: true, channel: channel, message: 'An 8-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+    res.json({ success: true, channel: channel, message: 'A ' + ADMIN_OTP_LEN + '-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
 });
 app.post('/api/auth/admin-login-otp', noStore, adminLoginOtpHandler);   // kept for backward compatibility
 
 // ══════════════════════════════════════════════════════════════════
-// 📲 POST /api/send-otp — single entry point for the Super Admin 8-digit OTP (WhatsApp via Fast2SMS, SMS fallback)
+// 📲 POST /api/send-otp — single entry point for the Super Admin 6-digit OTP (WhatsApp via Fast2SMS, SMS fallback)
 //   {purpose:'login',    username, password, deviceToken?}   → verifies the credentials FIRST; a wrong password never triggers an OTP
 //   {purpose:'recovery', user, mobile|contact, email?}       → account must match the stored record (User ID + registered mobile)
 //   The OTP is ALWAYS sent to the mobile number stored on the account — never to a number supplied by the browser — and only a

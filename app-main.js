@@ -232,7 +232,7 @@ app.get('/_am/otp-toggle.js', function (req, res) {
     res.send('/* retired: OTP switches are managed in Super Admin → OTP Settings */');
 });
 
-// 📲 6-digit OTP prompt for the Invoice / Agent / HRMS login pages (injected only there, see the masked-page middleware).
+// 📲 6-digit OTP prompt for the Agent / HRMS login pages (injected only there, see the masked-page middleware).
 //    The page keeps calling its normal login API. When the server answers 401 OTP_REQUIRED (portal switch ON + unknown device) this script
 //    asks for the OTP (WhatsApp, sent only now), then repeats the SAME login with the code. A remembered device never reaches this code:
 //    the server recognises it by its HttpOnly cookie, so the user simply logs in with ID + password.
@@ -394,8 +394,8 @@ app.use(function (req, res, next) {
         if (!chunks.length) return origEnd.call(res, done);
         let out = Buffer.concat(chunks).toString('utf8');
         let tag = '<script src="/_am/bridge.js" defer></script>';
-        // 6-digit OTP prompt for the portals that have no OTP screen of their own (Invoice / Agent / HRMS). Admin keeps its own flow.
-        if (/__ANMOL_PAGE=("|')(invoice_login|agent_login|hrms_login)\.html\1/.test(out)) tag += '<script src="/_am/otp-flow.js" defer></script>';
+        // 6-digit OTP prompt for the portals that have no OTP screen of their own (Agent / HRMS). Admin and Invoice have their own OTP screens.
+        if (/__ANMOL_PAGE=("|')(agent_login|hrms_login)\.html\1/.test(out)) tag += '<script src="/_am/otp-flow.js" defer></script>';
         out = /<\/body>/i.test(out) ? out.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : out + tag;
         res.removeHeader('Content-Length'); res.removeHeader('ETag');
         return origEnd.call(res, out, 'utf8', done);
