@@ -9,39 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Admin Control Panel — Anmol LibMatrix</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- ══ FIREBASE SDK ══ -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
-<!-- ══ FIRESTORE SDK — 'Invoice Material List' module (Material Users + Material
-     Bills) ke liye. Yeh data yahan Cloud Firestore mein rakha gaya hai (Realtime
-     DB mein nahi) kyunki ise alag "Anmol LibMatrix Material Entry" portal ke saath share
-     karna hai, jo pehle se Firestore par bana hua hai. Same Firebase project
-     (digital-library-21663) — bas ek alag Firebase product use ho raha hai. ══ -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-// ══ FIREBASE CONFIG (Anmol LibMatrix) ══
-const firebaseConfig = {
-  apiKey: "AIzaSyDnK_3vfnclWSRnvsINBOcaOG02_fEuCKU",
-  authDomain: "digital-library-21663.firebaseapp.com",
-  databaseURL: "https://digital-library-21663-default-rtdb.firebaseio.com/",
-  projectId: "digital-library-21663",
-  storageBucket: "digital-library-21663.firebasestorage.app",
-  messagingSenderId: "410179243155",
-  appId: "1:410179243155:web:6eb1d7825cd4afa58c1166",
-  measurementId: "G-RCKKC4907R"
-};
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const FBDB = firebase.database();
-const FBAUTH = firebase.auth();
-const FBFUNC = firebase.functions();
-const FB_ROOT = 'shdl'; // Firebase root path
-
-// ══ FIRESTORE — 'Invoice Material List' module ══
-// Anmol LibMatrix Material Entry पोर्टल isi Firestore project ki 'material_users' aur
-// 'material_bills' collections use karta hai — dono jagah se same data दिखेगा।
-const FSDB = firebase.firestore();
 let materialUsersCache = [];
 let materialRequestsCache = [];
 
@@ -62,7 +30,7 @@ let materialRequestsCache = [];
 //        student data, passwords, ya koi private info yahan mat daalein
 // ══════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════
-// ☁️ WEBSITE CONTENT (Site Data) — ab Firestore ke through jaata hai
+// ☁️ WEBSITE CONTENT (Site Data) — ab legacy DB ke through jaata hai
 //    (naye backend ke /api/site-data/<key> routes se), GCS bucket me
 //    JSON files ki tarah SEEDHE browser se nahi likha jaata — kyunki
 //    ye bucket public-write tha, koi bhi bucket naam jaan kar usme
@@ -74,7 +42,7 @@ let materialRequestsCache = [];
 //    ka implementation badla gaya hai.
 //
 //    Sirf BADI FILES (homepage photo, login-page HTML, APK) ab bhi GCS
-//    bucket me jaati hain — Firestore document me itni badi files nahi
+//    bucket me jaati hain — legacy DB document me itni badi files nahi
 //    rakhi ja sakti — lekin ab woh upload bhi seedhe browser→bucket
 //    nahi, balki backend ke admin-authenticated /api/site-content/
 //    upload-file route se hoti hai (isi wajah se bucket ko public-write
@@ -118,10 +86,10 @@ const SITE_DATA = {
 //      settings, notices, mem_plans, members, hrms_registrations,
 //      staff_att, leave_requests, agent_plans, agent_payments,
 //      razorpay_config (generic blob store)
-//   🔶 Abhi bhi Firebase se: att_records, fee_records, salary_claims,
+//   🔶 Abhi bhi legacy DB se: att_records, fee_records, salary_claims,
 //      transactions (already alag normalized routes se serve ho rahe
 //      Student/HRMS portals mein — Admin ki bulk-view yahan abhi bhi
-//      Firebase se hai, agla refinement step), selfies, GPS locations
+//      legacy DB se hai, agla refinement step), selfies, GPS locations
 // ══════════════════════════════════════════════════════════════════
 const API_BASE = window.SHDL_API_BASE || 'https://anmol-backend-851351972760.asia-south1.run.app/api';
 let AUTH_TOKEN = null;
@@ -149,10 +117,129 @@ const BACKEND_ENTITY_KEYS = ['admins', 'staff', 'agents', 'students'];
 // In keys ke liye generic blob store hai (routes/blob.js ke ALLOWED_KEYS se match)
 const BACKEND_BLOB_KEYS = ['settings', 'activity', 'notices', 'mem_plans', 'members',
   'hrms_registrations', 'staff_att', 'leave_requests', 'agent_plans', 'agent_payments',
-  'razorpay_config', 'sms_api_config'];
+  'razorpay_config', 'sms_api_config',
+  'att_records', 'fee_records', 'salary_claims', 'pending_staff', 'selfies', 'attendance_locations',
+  'customer_pending_registrations',
+  'hrms_employees', 'hrms_pending_registrations', 'hrms_salary_slips', 'hrms_attendance', 'hrms_leaves', 'hrms_salary_claims', 'student_photos'];
+
+
+// ══ CLOUD DATA ADAPTER ══
+// Small ref()/once()/on()/set()/update()/remove() facade over the backend REST store (/admin-entities + /blob),
+// so every screen reads and writes the SAME server data as the portals. on('value') polls (no push channel).
+// Nodes that have no backend store keep only a local cache.
+const CLOUD_ROOT = 'shdl';
+const CloudDB = (function () {
+  var ALIAS = { pending_registrations: 'customer_pending_registrations' };
+  var POLL_MS = 20000;
+  function parse(path) {
+    var p = String(path || '').replace(/^\/+/, '').split('/').filter(Boolean);
+    if (p[0] === CLOUD_ROOT) p.shift();
+    else if (p[0] === 'hrms') { p.shift(); if (p.length) p[0] = 'hrms_' + p[0]; }
+    var key = p.shift() || '';
+    if (ALIAS[key]) key = ALIAS[key];
+    return { key: key, rest: p };
+  }
+  function kindOf(key) {
+    if (BACKEND_ENTITY_KEYS.indexOf(key) >= 0) return 'entity';
+    if (BACKEND_BLOB_KEYS.indexOf(key) >= 0) return 'blob';
+    return null;
+  }
+  function url(key, kind) { return (kind === 'entity' ? '/admin-entities/' : '/blob/') + encodeURIComponent(key); }
+  function cached(key) { try { return JSON.parse(localStorage.getItem('shdl_' + key)); } catch (e) { return null; } }
+  function readRoot(key) {
+    var kind = kindOf(key);
+    if (!key) return Promise.resolve(null);
+    if (!kind) return Promise.resolve(cached(key));
+    return API.get(url(key, kind)).then(function (v) { return v === undefined ? null : v; });
+  }
+  function writeRoot(key, val) {
+    var kind = kindOf(key);
+    try { if (val === null) localStorage.removeItem('shdl_' + key); else localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch (e) {}
+    if (!kind) return Promise.resolve();
+    if (val === null) return kind === 'entity' ? API.post(url(key, kind), []) : API.del(url(key, kind));
+    return API.post(url(key, kind), val);
+  }
+  function idx(arr, seg) {
+    for (var i = 0; i < arr.length; i++) if (arr[i] && String(arr[i].id) === seg) return i;
+    return (/^\d+$/.test(seg) && +seg < arr.length) ? +seg : -1;
+  }
+  function getIn(v, rest) {
+    for (var i = 0; i < rest.length; i++) {
+      if (v == null) return null;
+      if (Array.isArray(v)) { var k = idx(v, rest[i]); v = k < 0 ? null : v[k]; } else v = v[rest[i]];
+    }
+    return v === undefined ? null : v;
+  }
+  function setIn(root, rest, value) {            // value === null deletes
+    if (!rest.length) return value;
+    var seg = rest[0], last = rest.length === 1;
+    var base = Array.isArray(root) ? root.slice() : Object.assign({}, root && typeof root === 'object' ? root : {});
+    if (Array.isArray(base)) {
+      var k = idx(base, seg);
+      if (k < 0) { if (value === null) return base; k = base.length; }
+      var child = setIn(base[k], rest.slice(1), value);
+      if (last && value === null) base.splice(k, 1); else base[k] = child;
+    } else {
+      var c = setIn(base[seg], rest.slice(1), value);
+      if (last && value === null) delete base[seg]; else base[seg] = c;
+    }
+    return base;
+  }
+  function snap(v) { return { val: function () { return v == null ? null : v; }, exists: function () { return v != null; } }; }
+  function applyOps(ops) {                        // ops: [{key, rest, value}] — one read + one write per node
+    var byKey = {};
+    ops.forEach(function (o) { (byKey[o.key] = byKey[o.key] || []).push(o); });
+    return Promise.all(Object.keys(byKey).map(function (key) {
+      var list = byKey[key];
+      if (list.length === 1 && !list[0].rest.length) return writeRoot(key, list[0].value);
+      return readRoot(key).then(function (root) {
+        list.forEach(function (o) { root = setIn(root, o.rest, o.value); });
+        return writeRoot(key, root);
+      });
+    }));
+  }
+  function done(p, cb) {
+    p.then(function () { if (cb) cb(null); }, function (e) { if (cb) cb(e); else console.warn('Cloud write error:', e && e.message); });
+    return p;
+  }
+  function ref(path) {
+    var P = parse(path);
+    function read() { return readRoot(P.key).then(function (r) { return getIn(r, P.rest); }); }
+    return {
+      once: function (evt, ok, err) {
+        var out = read().then(snap);
+        if (ok || err) out.then(function (s) { if (ok) { try { ok(s); } catch (e) { console.error(e); } } }, function (e) { if (err) err(e); });
+        return out;
+      },
+      on: function (evt, ok, err) {
+        var lastJson;
+        function tick() {
+          read().then(function (v) {
+            var j = JSON.stringify(v === undefined ? null : v);
+            if (j === lastJson) return;
+            lastJson = j;
+            try { ok(snap(v)); } catch (e) { console.error(e); }
+          }, function (e) { if (err) err(e); });
+        }
+        tick();
+        if (kindOf(P.key)) setInterval(function () { if (!document.hidden) tick(); }, POLL_MS);
+      },
+      set: function (val, cb) { return done(applyOps([{ key: P.key, rest: P.rest, value: val === undefined ? null : val }]), cb); },
+      remove: function (cb) { return done(applyOps([{ key: P.key, rest: P.rest, value: null }]), cb); },
+      update: function (obj, cb) {
+        var ops = Object.keys(obj || {}).map(function (k) {
+          var Q = parse(String(path || '') + '/' + k.replace(/^\/+/, ''));
+          return { key: Q.key, rest: Q.rest, value: obj[k] === undefined ? null : obj[k] };
+        });
+        return done(applyOps(ops), cb);
+      }
+    };
+  }
+  return { ref: ref };
+})();
 
 // ══ GOOGLE CLOUD BACKEND STATUS MONITOR ══
-// (pehle yahan Firebase '.info/connected' se status aata tha — ab naye
+// (pehle yahan legacy DB '.info/connected' se status aata tha — ab naye
 // backend ke /api/health endpoint ko har 10 second mein poll karte hain)
 function _pollCloudStatus() {
   var dot = document.getElementById('admin-fb-dot');
@@ -172,11 +259,11 @@ function _pollCloudStatus() {
 _pollCloudStatus();
 setInterval(_pollCloudStatus, 10000);
 
-// ══ FIREBASE SYNC HELPER ══
-// Ye helper localStorage ke saath Firebase ko sync karta hai
-// localStorage = instant (UI ke liye), Firebase = persistent (cloud backup)
-const FBSync = {
-  // Data load karo (naya backend ya Firebase, key ke hisaab se) aur localStorage update karo
+// ══ LEGACY-DB SYNC HELPER ══
+// Ye helper localStorage ke saath legacy DB ko sync karta hai
+// localStorage = instant (UI ke liye), legacy DB = persistent (cloud backup)
+const CloudSync = {
+  // Data load karo (naya backend ya legacy DB, key ke hisaab se) aur localStorage update karo
   pull: function(key, cb) {
     if (BACKEND_ENTITY_KEYS.includes(key) || BACKEND_BLOB_KEYS.includes(key)) {
       var path = BACKEND_ENTITY_KEYS.includes(key) ? ('/admin-entities/' + key) : ('/blob/' + key);
@@ -190,34 +277,17 @@ const FBSync = {
       });
       return;
     }
-    // 🔶 Abhi bhi Firebase se (att_records, fee_records, salary_claims, transactions, etc.)
-    FBDB.ref(FB_ROOT + '/' + key).once('value', function(snap) {
-      var val = snap.val();
-      if (val !== null) {
-        try { localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch(e){}
-        if (cb) cb(val);
-      } else {
-        try {
-          var local = JSON.parse(localStorage.getItem('shdl_' + key));
-          if (local !== null) {
-            FBDB.ref(FB_ROOT + '/' + key).set(local);
-            if (cb) cb(local);
-          } else {
-            if (cb) cb(null);
-          }
-        } catch(e) { if (cb) cb(null); }
-      }
-    }, function(err) {
-      console.warn('Firebase read error:', err);
-      if (cb) {
-        try { cb(JSON.parse(localStorage.getItem('shdl_' + key))); }
-        catch(e) { cb(null); }
-      }
-    });
+    // No backend store for this key: serve the local cache only
+    try { var local = JSON.parse(localStorage.getItem('shdl_' + key)); if (cb) cb(local); }
+    catch(e) { if (cb) cb(null); }
   },
-  // Data save karo (naya backend ya Firebase, key ke hisaab se)
+  // Data save karo (naya backend ya legacy DB, key ke hisaab se)
   push: function(key, val) {
     try { localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch(e){}
+    if(key === 'att_records') { try { localStorage.setItem('shri_hari_mob_att', JSON.stringify(val)); } catch(e){} }
+    if(key === 'fee_records') {
+      try { localStorage.setItem('shri_hari_fee_payments', JSON.stringify((val||[]).filter(function(f){ return f.status==='paid'; }))); } catch(e){}
+    }
 
     if (BACKEND_ENTITY_KEYS.includes(key) || BACKEND_BLOB_KEYS.includes(key)) {
       var path = BACKEND_ENTITY_KEYS.includes(key) ? ('/admin-entities/' + key) : ('/blob/' + key);
@@ -230,23 +300,7 @@ const FBSync = {
       return;
     }
 
-    // 🔶 Abhi bhi Firebase se (att_records, fee_records, salary_claims, transactions, etc.)
-    FBDB.ref(FB_ROOT + '/' + key).set(val, function(err){
-      if(err) console.warn('Firebase write error for', key, err);
-    });
-    if(key === 'att_records') {
-      try {
-        localStorage.setItem('shri_hari_mob_att', JSON.stringify(val));
-        FBDB.ref(FB_ROOT + '/att_records').set(val);
-      } catch(e){}
-    }
-    if(key === 'fee_records') {
-      try {
-        var feePayments = (val||[]).filter(function(f){ return f.status==='paid'; });
-        localStorage.setItem('shri_hari_fee_payments', JSON.stringify(feePayments));
-        FBDB.ref(FB_ROOT + '/fee_payments').set(feePayments);
-      } catch(e){}
-    }
+    // No backend store for this key: local cache only (already saved above)
   },
   del: function(key) {
     try { localStorage.removeItem('shdl_' + key); } catch(e){}
@@ -258,21 +312,20 @@ const FBSync = {
       API.del('/blob/' + key).catch(function(err){ console.warn('Backend delete error:', err.message); });
       return;
     }
-    FBDB.ref(FB_ROOT + '/' + key).remove();
   },
-  // Saari important data Firebase se pull karo (page load pe)
+  // Saari important data legacy DB se pull karo (page load pe)
   pullAll: function(cb) {
     var keys = ['admins','staff','agents','students','settings','activity','att_records','fee_records','notices','mem_plans','members','salary_claims','hrms_registrations','staff_att','leave_requests','agent_plans','agent_payments','razorpay_config','transactions'];
     var done = 0;
     keys.forEach(function(k){
-      FBSync.pull(k, function(){
+      CloudSync.pull(k, function(){
         done++;
         if(done === keys.length && cb) cb();
       });
     });
   },
   // Real-time listeners lagao important keys ke liye
-  // 🆕 MIGRATED: students ab naye backend se, polling se (Firebase .on()
+  // 🆕 MIGRATED: students ab naye backend se, polling se (legacy DB .on()
   // realtime push ki jagah — har 15 second mein fresh data)
   listenStudents: function() {
     function _pull(){
@@ -289,7 +342,7 @@ const FBSync = {
     setInterval(_pull, 15000);
   },
   listenAttendance: function() {
-    FBDB.ref(FB_ROOT + '/att_records').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/att_records').on('value', function(snap){
       var val = snap.val();
       if(val !== null) {
         try {
@@ -302,14 +355,14 @@ const FBSync = {
   // Live selfie + GPS listener — student mobile app se attendance selfie
   // aur uski GPS location yahan real-time aati hai (Agent panel ki tarah).
   listenSelfies: function() {
-    FBDB.ref(FB_ROOT + '/selfies').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/selfies').on('value', function(snap){
       window.STUDENT_SELFIES = snap.val() || {};
       try { localStorage.setItem('shdl_selfies', JSON.stringify(window.STUDENT_SELFIES)); } catch(e){}
       try { if(typeof RENDER_LIVE_GPS_FEED === 'function') RENDER_LIVE_GPS_FEED(); } catch(e2){}
     }, function(err){ console.warn('selfies listen error:', err); });
   },
   listenLocations: function() {
-    FBDB.ref(FB_ROOT + '/attendance_locations').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/attendance_locations').on('value', function(snap){
       window.STUDENT_LOCATIONS = snap.val() || {};
       try { localStorage.setItem('shdl_locations', JSON.stringify(window.STUDENT_LOCATIONS)); } catch(e){}
       try { if(typeof RENDER_LIVE_GPS_FEED === 'function') RENDER_LIVE_GPS_FEED(); } catch(e2){}
@@ -317,7 +370,7 @@ const FBSync = {
   },
   // Live employee punch selfie + GPS — HRMS employee app se aata hai (staff_selfies / staff_locations)
   listenStaffSelfies: function() {
-    FBDB.ref(FB_ROOT + '/staff_selfies').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/staff_selfies').on('value', function(snap){
       window.STAFF_SELFIES = snap.val() || {};
       try { localStorage.setItem('shdl_staff_selfies', JSON.stringify(window.STAFF_SELFIES)); } catch(e){}
       try { if(typeof RENDER_STAFF_GPS_FEED === 'function') RENDER_STAFF_GPS_FEED(); } catch(e2){}
@@ -325,7 +378,7 @@ const FBSync = {
     }, function(err){ console.warn('staff_selfies listen error:', err); });
   },
   listenStaffLocations: function() {
-    FBDB.ref(FB_ROOT + '/staff_locations').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/staff_locations').on('value', function(snap){
       window.STAFF_LOCATIONS = snap.val() || {};
       try { localStorage.setItem('shdl_staff_locations', JSON.stringify(window.STAFF_LOCATIONS)); } catch(e){}
       try { if(typeof RENDER_STAFF_GPS_FEED === 'function') RENDER_STAFF_GPS_FEED(); } catch(e2){}
@@ -335,7 +388,7 @@ const FBSync = {
   // records yahan aate hain (/transactions node). Agent Performance
   // Dashboard isi ko use karke "kitne payments verify hue" dikhata hai.
   listenTransactions: function() {
-    FBDB.ref(FB_ROOT + '/transactions').on('value', function(snap){
+    CloudDB.ref(CLOUD_ROOT + '/transactions').on('value', function(snap){
       var val = snap.val();
       var arr = [];
       if (val) {
@@ -1057,7 +1110,7 @@ tbody tr:hover{background:var(--row-hover)}
 
 /* ═══════════════════════════════════════════════════════════════
    Anmol LibMatrix — REFERENCE VISUAL SYSTEM OVERRIDES
-   Keeps the original data, forms, Firebase/backend calls, modals,
+   Keeps the original data, forms, legacy DB/backend calls, modals,
    registration workflows and page logic intact. Only the shell/UI
    presentation is upgraded to match the supplied reference design.
    ═══════════════════════════════════════════════════════════════ */
@@ -4065,7 +4118,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card" style="border-color:rgba(163,45,45,.3)">
             <div class="card-header" style="background:rgba(163,45,45,.08)"><span class="card-title" style="color:#f87171">💥 Full Reset</span></div>
             <div class="card-body">
-              <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px">This option deletes ALL test/experiment data — students, staff, agents, attendance, fees, selfies, locations, pending registrations, membership, salary claims/slips, HRMS employees, as well as the data of the Agent, HRMS and Student Attendance portals (including Firebase). Only the Admin login and Library Settings will remain, and new registrations will start afresh.</p>
+              <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px">This option deletes ALL test/experiment data — students, staff, agents, attendance, fees, selfies, locations, pending registrations, membership, salary claims/slips, HRMS employees, as well as the data of the Agent, HRMS and Student Attendance portals. Only the Admin login and Library Settings will remain, and new registrations will start afresh.</p>
               <button class="btn btn-danger" onclick="DEL_CONFIRM('full_reset','DELETE ALL DATA? This action cannot be undone.')">💥 Full System Reset</button>
             </div>
           </div>
@@ -4685,7 +4738,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="bkp-layout-grid">
             <article class="bkp-card">
               <div class="bkp-card-heading"><div class="bkp-card-icon bkp-icon-blue">⬇</div><div><h3>Create &amp; Download Full Backup</h3><p>Pen-drive / external-drive export</p></div></div>
-              <p class="bkp-card-copy">Collects managed local data plus server records available through the configured admin APIs and Firebase connection. The export includes a manifest and any read warnings.</p>
+              <p class="bkp-card-copy">Collects managed local data plus server records available through the configured admin APIs. The export includes a manifest and any read warnings.</p>
               <label class="bkp-label" for="bkp-export-format">Backup format</label>
               <select id="bkp-export-format" class="bkp-control"><option value="json">JSON backup (.json)</option><option value="zip">ZIP archive containing backup.json (.zip)</option></select>
               <div class="bkp-action-row"><button type="button" class="btn btn-primary" id="bkp-download-btn" onclick="BKP_DOWNLOAD_FULL()">⬇ Download Full System Backup</button></div>
@@ -4708,7 +4761,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <article class="bkp-card bkp-danger-card">
             <div class="bkp-card-heading"><div class="bkp-card-icon bkp-icon-red">⚠</div><div><h3>Master System Factory Reset</h3><p>Danger zone — permanently clears operational records</p></div></div>
             <p class="bkp-card-copy">Resets Agent accounts, student profiles, staff/HRMS records, attendance, fee transactions and related operational records to empty defaults. Super Admin accounts, login/session setup, admin settings and payment/SMS configuration are retained so you do not lock yourself out. Create a backup first.</p>
-            <div class="bkp-danger-foot"><div class="bkp-small-note"><strong>Server note:</strong> Online reset writes to configured admin-entity/blob APIs and legacy Firebase nodes. If a remote write fails, the page reports the failed table and does not claim the full reset succeeded.</div><button type="button" class="btn btn-danger" onclick="BKP_OPEN_RESET_STEP1()">⚠ Master Factory Reset</button></div>
+            <div class="bkp-danger-foot"><div class="bkp-small-note"><strong>Server note:</strong> Online reset writes to configured admin-entity/blob APIs. If a remote write fails, the page reports the failed table and does not claim the full reset succeeded.</div><button type="button" class="btn btn-danger" onclick="BKP_OPEN_RESET_STEP1()">⚠ Master Factory Reset</button></div>
           </article>
 
           <article class="bkp-card bkp-log-card">
@@ -6124,20 +6177,20 @@ html,body,#admin-app{width:100%;min-width:0;}
 //  DATA STORE — localStorage with shdl_ prefix
 // ════════════════════════════════════════════════════
 
-// ── Agents ke liye INCREMENTAL Firebase write ──
+// ── Agents ke liye INCREMENTAL legacy DB write ──
 // Pehle: har Approve / Add / Edit Agent par SAARE agents (unki saari base64
-// photo/Aadhar/UPI/banner images samet) dobara poori ki poori Firebase par
+// photo/Aadhar/UPI/banner images samet) dobara poori ki poori legacy DB par
 // upload hoti thi. Agent list jitni badi hoti gayi, ye upload utna hi slow
 // hota gaya — isi wajah se "Approve & Create ID" / "Save" click karne ke
 // baad "successful" hone mein time lagta tha.
 // Ab sirf JIS agent ka data change hua hai (add/edit), SIRF uska hi record
-// Firebase par bhejte hain — poori list nahi. localStorage turant (sync)
+// legacy DB par bhejte hain — poori list nahi. localStorage turant (sync)
 // update hota hai isliye UI turant refresh hoti hai.
-// ✅ PERSISTENCE FIX: agents used to be written ONLY to localStorage + Firebase here, but the live Agents table
+// ✅ PERSISTENCE FIX: agents used to be written ONLY to localStorage + legacy DB here, but the live Agents table
 // (the one Login, Aadhaar Search and the Agents list read after every refresh) is the backend entity store
 // (/admin-entities/agents). So an approved agent vanished on the next reload. Now every agent save goes to the
 // backend (serialised, so saves never overwrite each other out of order); localStorage is just a cache and
-// Firebase is a best-effort mirror.
+// legacy DB is a best-effort mirror.
 var _agentSaveChain = Promise.resolve();
 function DB_SAVE_AGENTS(agentsList, changedIndex){
   try { localStorage.setItem('shdl_agents', JSON.stringify(agentsList)); } catch(e){}
@@ -6147,14 +6200,11 @@ function DB_SAVE_AGENTS(agentsList, changedIndex){
   try { snapshot = JSON.parse(JSON.stringify(agentsList)); } catch(e){ snapshot = agentsList; }
   _agentSaveChain = _agentSaveChain
     .then(function(){ return API.post('/admin-entities/agents', snapshot); })
-    .then(function(){
-      try { FBDB.ref(FB_ROOT + '/agents').set(snapshot, function(err){ if (err) console.warn('Firebase agents mirror error:', err); }); } catch(e){}
-      return true;
-    })
+    .then(function(){ return true; })
     .catch(function(err){
       console.error('Agent save to server failed:', err);
       if (typeof SHOW_TOAST === 'function') SHOW_TOAST('❌ The agent could NOT be saved to the server: ' + ((err && err.message) || 'network error') + '. The list has been reloaded from the server.', 7000);
-      FBSync.pull('agents', function(){ try { RENDER_AGENTS(); } catch(e){} var n=document.getElementById('nb-agents'); var l=DB.get('agents')||[]; if(n&&Array.isArray(l)) n.textContent=l.length; });
+      CloudSync.pull('agents', function(){ try { RENDER_AGENTS(); } catch(e){} var n=document.getElementById('nb-agents'); var l=DB.get('agents')||[]; if(n&&Array.isArray(l)) n.textContent=l.length; });
       return false;
     });
   return _agentSaveChain;
@@ -6164,12 +6214,12 @@ const DB = {
   get(k){
     try{
       var v = JSON.parse(localStorage.getItem('shdl_'+k));
-      // ── Firebase Realtime DB ek quirk hai: agar array mein beech se
-      // koi item delete ho jaaye (gaps ban jaayein), to Firebase usse
+      // ── legacy realtime DB ek quirk hai: agar array mein beech se
+      // koi item delete ho jaaye (gaps ban jaayein), to legacy DB usse
       // ARRAY ki jagah OBJECT ({0:.., 2:..}) bana ke deta hai. Isse
       // .find()/.filter()/.push() jaisi array methods fail ho jaati thi
       // (e.g. "_existingAgents.find is not a function"). Yahan hamesha
-      // asli array wapas karo, chahe Firebase se object hi kyun na aaya ho.
+      // asli array wapas karo, chahe legacy DB se object hi kyun na aaya ho.
       if (v && typeof v === 'object' && !Array.isArray(v)) {
         var keys = Object.keys(v);
         var looksArrayLike = keys.length > 0 && keys.every(function(kk){ return /^\d+$/.test(kk); });
@@ -6183,8 +6233,8 @@ const DB = {
   set(k,v){
     // ── localStorage mein turant save (UI fast rahe) ──
     localStorage.setItem('shdl_'+k, JSON.stringify(v));
-    // ── Firebase mein async save (cloud sync) ──
-    FBSync.push(k, v);
+    // ── legacy DB mein async save (cloud sync) ──
+    CloudSync.push(k, v);
     // Students ke liye normalized data library + mobile app dono ke liye save karo
     if(k==='students'){
       try {
@@ -6215,20 +6265,12 @@ const DB = {
         });
         localStorage.setItem('shdl_students', JSON.stringify(normalized));
         localStorage.setItem('shri_hari_students', JSON.stringify(normalized));
-        // Firebase mein bhi normalized save karo
-        FBDB.ref(FB_ROOT + '/students').set(normalized, function(err){
-          if(err){
-            console.error('❌ Firebase students write error:', err);
-            if(typeof SHOW_TOAST === 'function') SHOW_TOAST('⚠️ Firebase save FAILED: '+err.message+' — check Database Rules!', 6000);
-          }
-        });
-        FBDB.ref(FB_ROOT + '/shri_hari_students').set(normalized);
       } catch(e){ localStorage.setItem('shri_hari_students', JSON.stringify(v)); }
     }
   },
   del(k){
     localStorage.removeItem('shdl_'+k);
-    FBSync.del(k);
+    CloudSync.del(k);
   }
 };
 
@@ -6455,8 +6497,8 @@ function DO_LOGIN(){
   // ⚠️ SECURITY: hardcoded superadmin fallback (username/password seedhe
   // is file mein likha hua) HATA DIYA GAYA HAI — yeh ek backdoor tha jo
   // koi bhi page source dekh kar use kar sakta tha. Agar admin record
-  // localStorage/Firebase se kho jaaye, naya admin banane ke liye ab
-  // Firebase Console se seedha 'shdl/admins' node edit karein, ya ek
+  // localStorage/legacy DB se kho jaaye, naya admin banane ke liye ab
+  // legacy DB Console se seedha 'shdl/admins' node edit karein, ya ek
   // dedicated (auth-protected) "create first admin" Cloud Function
   // banwayein — is file mein credential kabhi hardcode na karein.
 
@@ -6875,7 +6917,7 @@ function REFRESH_DASH(){
     window._ANMOL_AGENT_DASH_TIMER=setInterval(function(){
       var pg=document.getElementById('page-dashboard');
       if(!pg || !pg.classList.contains('active') || window.__ANMOL_DASH_SYNCING) return;
-      if(typeof FBSync==='undefined' || typeof FBSync.pull!=='function'){ REFRESH_DASH(); return; }
+      if(typeof CloudSync==='undefined' || typeof CloudSync.pull!=='function'){ REFRESH_DASH(); return; }
       window.__ANMOL_DASH_SYNCING=true;
       var pending=2;
       var done=function(){
@@ -6885,8 +6927,8 @@ function REFRESH_DASH(){
           if(pg.classList.contains('active')) REFRESH_DASH();
         }
       };
-      try{ FBSync.pull('agents',done); }catch(e){ done(); }
-      try{ FBSync.pull('activity',done); }catch(e){ done(); }
+      try{ CloudSync.pull('agents',done); }catch(e){ done(); }
+      try{ CloudSync.pull('activity',done); }catch(e){ done(); }
     },15000);
   }
 }
@@ -7046,7 +7088,7 @@ function RENDER_GATEWAY_WALLET(){
 //  AGENT PERFORMANCE DASHBOARD
 // ──────────────────────────────────────────────────────
 //  Do metrics track karte hain, dono existing data-model se
-//  link karke (koi naya Firebase node/shape nahi banaya):
+//  link karke (koi naya legacy DB node/shape nahi banaya):
 //
 //   1) Payments Verified  → `/transactions` node (HRMS Portal isse
 //      likhta hai). Har txn ke saath uska `agentId` already save hota
@@ -7064,11 +7106,11 @@ function RENDER_GATEWAY_WALLET(){
 //      sakte hain us linkage se.
 // ════════════════════════════════════════════════════
 
-// `/transactions` abhi FBSync.pullAll() ka standard part nahi tha, isliye
+// `/transactions` abhi CloudSync.pullAll() ka standard part nahi tha, isliye
 // page khulte hi ek fresh pull kar lete hain (real-time listener already
 // window.SHDL_TRANSACTIONS ko update karta rehta hai uske baad).
 function LOAD_TRANSACTIONS_FOR_PERF(cb){
-  FBDB.ref(FB_ROOT + '/transactions').once('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/transactions').once('value', function(snap){
     var val = snap.val();
     var arr = [];
     if (val) {
@@ -7785,7 +7827,7 @@ function ADMIN_REJECT_SAL(id){
 
 // Real-time: Agent Login se koi naya claim ya verification aane par turant update
 (function INIT_SALARY_SYNC(){
-  FBDB.ref(FB_ROOT + '/salary_claims').on('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/salary_claims').on('value', function(snap){
     var val = snap.val();
     var claims = Array.isArray(val) ? val : (val ? Object.values(val) : []);
     try { localStorage.setItem('shdl_salary_claims', JSON.stringify(claims)); } catch(e){}
@@ -8032,7 +8074,7 @@ function ADMIN_REJECT_STAFF(id){
 }
 // Real-time: Agent Login se koi naya staff registration aane par turant update
 (function INIT_PENDING_STAFF_SYNC_ADMIN(){
-  FBDB.ref(FB_ROOT + '/pending_staff').on('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/pending_staff').on('value', function(snap){
     var val = snap.val();
     var list = Array.isArray(val) ? val : (val ? Object.values(val) : []);
     try { localStorage.setItem('shdl_pending_staff', JSON.stringify(list)); } catch(e){}
@@ -9344,7 +9386,6 @@ function TOGGLE_AGENT_BLOCK(id, name, doBlock, reason){
     SHOW_TOAST('✅ '+name+' account has been unblocked.');
   }
   DB.set('agents', agents);
-  try{ FBDB.ref(FB_ROOT+'/agents').set(agents); }catch(e){}
   RENDER_AGENTS(document.getElementById('agent-search')?document.getElementById('agent-search').value:'');
 }
 
@@ -9387,7 +9428,7 @@ function AGENT_AUTO_PWD(){
 
 
 // ── SMS/WhatsApp API Config (custom backend jaise Fast2SMS/MSG91/Twilio/apna server) ──
-// NOTE: DB.get/DB.set ka use hota hai (localStorage + Firebase 'shdl/sms_api_config') taaki
+// NOTE: DB.get/DB.set ka use hota hai (localStorage + legacy DB 'shdl/sms_api_config') taaki
 // Student Portal / Agent Login jaisi ALAG files bhi yahi config padh sakein aur Fee-Due SMS
 // student ke apne mobile par automatically bhej sakein — sirf is Admin browser tak limited na rahe.
 function _SMS_API_CFG(){
@@ -9470,7 +9511,7 @@ function RENDER_WITHDRAWALS(){
       }).join('');
   }
 
-  // 🆕 MIGRATED: naye backend se, polling (Firebase .on() ki jagah — har
+  // 🆕 MIGRATED: naye backend se, polling (legacy DB .on() ki jagah — har
   // 8 second mein fresh list, "Paid Mark Karein"/"Reject" ke baad bhi
   // turant manual refresh call hoti hai neeche).
   function _pull(){
@@ -9524,7 +9565,7 @@ function CONFIRM_REJECT_WITHDRAWAL(){
 }
 
 // ── Razorpay Config (Agent App subscription payment page ke liye) ──
-// NOTE: DB.set() ke through Firebase ('shdl/razorpay_config') mein bhi save hota hai
+// NOTE: DB.set() ke through legacy DB ('shdl/razorpay_config') mein bhi save hota hai
 // taaki Agent Login app (alag file/portal) yahi Key ID padh kar checkout khol sake.
 // Sirf public Key ID yahan store hoti hai — Key Secret kabhi client-side nahi jaata.
 function _RZP_CFG(){ return DB.get('razorpay_config')||{}; }
@@ -9781,7 +9822,7 @@ function SAVE_AGENT(){
     LOG_ACTIVITY('➕ Agent registered: '+name+' ('+obj.agentId+') UserID:'+username);
     SHOW_TOAST('The agent has been registered. ID: '+obj.agentId+' | Login: '+username+' / '+password);
   }
-  // ✅ Sirf jo agent add/edit hua hai, sirf uska hi data Firebase par jaata hai
+  // ✅ Sirf jo agent add/edit hua hai, sirf uska hi data legacy DB par jaata hai
   DB_SAVE_AGENTS(agents, _savedIdx);
   CLOSE_MODAL('modal-agent');
   setTimeout(function(){ RENDER_AGENTS(); }, 0);
@@ -9874,7 +9915,6 @@ function TOGGLE_STUDENT_BLOCK(id, name, doBlock, reason){
     SHOW_TOAST('✅ '+name+' ID has been unblocked.');
   }
   DB.set('students', students);
-  try{ FBDB.ref(FB_ROOT+'/students').set(students); }catch(e){}
   RENDER_STUDENTS(document.getElementById('student-search')?document.getElementById('student-search').value:'');
 }
 
@@ -9882,7 +9922,7 @@ function SEARCH_STUDENTS(v){ RENDER_STUDENTS(v); }
 
 // ════════════════════════════════════════════════════════════════════
 //  🧾 INVOICE MATERIAL LIST — 'Anmol LibMatrix Material Entry' पोर्टल के यूज़र्स
-//  Data Firestore mein hai (material_users / material_bills collections),
+//  Data legacy DB mein hai (material_users / material_bills collections),
 //  isliye realtime हर device par turant sync hota hai — koi manual refresh
 //  nahi chahiye.
 // ════════════════════════════════════════════════════════════════════
@@ -10781,8 +10821,8 @@ function SAVE_STUDENT(){
     LOG_ACTIVITY('➕ Student added: '+name+' ['+newStudentId+']'+(agentId?' via Agent '+agentId:''));
     SHOW_TOAST('The student has been added. ID: '+newStudentId+' | Auto-synced to the library ✓');
   }
-  // DB.set already syncs to Firebase Realtime Database at shdl/students (array,
-  // each item now carries agentId) — see FBSync.push() near top of file.
+  // DB.set already syncs to legacy realtime DB at shdl/students (array,
+  // each item now carries agentId) — see CloudSync.push() near top of file.
   DB.set('students',students);
   CLOSE_MODAL('modal-student');
   RENDER_STUDENTS();
@@ -11512,18 +11552,18 @@ function EXEC_DELETE(){
     DB.set('salary_claims',[]);DB.set('hrms_registrations',[]);DB.set('staff_att',[]);DB.set('leave_requests',[]);
     DB.set('members',[]);DB.set('notices',[]);
 
-    // ── Extra shdl_* keys jo DB wrapper se bahar seedhe (localStorage + Firebase) save hote hain ──
+    // ── Extra shdl_* keys jo DB wrapper se bahar seedhe (localStorage + legacy DB) save hote hain ──
     ['locations','selfies','staff_locations','staff_selfies','pending_regs','pending_staff','student_photos'].forEach(function(k){
       try{ localStorage.removeItem('shdl_'+k); }catch(e){}
-      try{ FBDB.ref(FB_ROOT+'/'+k).remove(); }catch(e){}
+      try{ CloudDB.ref(CLOUD_ROOT+'/'+k).remove(); }catch(e){}
     });
 
     // ── Legacy/duplicate keys jo Student Attendance Portal / mobile app use karte hain ──
     ['shri_hari_students','shri_hari_mob_att','shri_hari_fee_payments','shri_hari_fee_updated','shdl_last_batch','shdl_last_student_id'].forEach(function(k){
       try{ localStorage.removeItem(k); }catch(e){}
     });
-    try{ FBDB.ref(FB_ROOT+'/shri_hari_students').remove(); }catch(e){}
-    try{ FBDB.ref(FB_ROOT+'/fee_payments').remove(); }catch(e){}
+    try{ CloudDB.ref(CLOUD_ROOT+'/shri_hari_students').remove(); }catch(e){}
+    try{ CloudDB.ref(CLOUD_ROOT+'/fee_payments').remove(); }catch(e){}
 
     // ── Mobile app selfie photos (mob_photo_<studentId> keys) ──
     try{
@@ -11532,10 +11572,10 @@ function EXEC_DELETE(){
       });
     }catch(e){}
 
-    // ── HRMS Portal ka poora data bhi clear (same Firebase project, alag 'hrms' root) ──
+    // ── HRMS Portal ka poora data bhi clear (same legacy DB project, alag 'hrms' root) ──
     ['employees','salary_slips','attendance','leaves','pending_registrations','salary_claims'].forEach(function(k){
       try{ localStorage.removeItem('hrms_'+k); }catch(e){}
-      try{ FBDB.ref('hrms/'+k).remove(); }catch(e){}
+      try{ CloudDB.ref('hrms/'+k).remove(); }catch(e){}
     });
 
     LOG_ACTIVITY('💥 A full system reset was performed (all data cleared: Admin, Agent, HRMS and Student Portal).');
@@ -11626,7 +11666,7 @@ function REMOVE_LOGO(){
 // ══════════════════════════════════════════════════════════════════
 // 🔗 HEADER / NAV CUSTOM BUTTONS MANAGER
 //    Data DB.get('navButtons') me local/apne-backend store hoti hai,
-//    aur har save par PUBLIC_DB (website ka Firebase) me bhi likhi
+//    aur har save par PUBLIC_DB (website ka legacy DB) me bhi likhi
 //    jaati hai taaki index.html turant naya button dikha sake.
 // ══════════════════════════════════════════════════════════════════
 var _navBtnEditingId = null;
@@ -12275,18 +12315,18 @@ window.addEventListener('storage', function(e){
 });
 
 document.addEventListener('DOMContentLoaded',function(){
-  // ── Firebase se data pull karo, phir initialize karo ──
-  FBSync.pullAll(function(){
+  // ── legacy DB se data pull karo, phir initialize karo ──
+  CloudSync.pullAll(function(){
     INIT_DATA();
     APPLY_SETTINGS();
     // Real-time listeners start karo
-    FBSync.listenStudents();
-    FBSync.listenAttendance();
-    FBSync.listenSelfies();
-    FBSync.listenLocations();
-    FBSync.listenStaffSelfies();
-    FBSync.listenStaffLocations();
-    FBSync.listenTransactions();
+    CloudSync.listenStudents();
+    CloudSync.listenAttendance();
+    CloudSync.listenSelfies();
+    CloudSync.listenLocations();
+    CloudSync.listenStaffSelfies();
+    CloudSync.listenStaffLocations();
+    CloudSync.listenTransactions();
   });
   CREATE_PARTICLES();
   GEN_CAPTCHA();
@@ -12567,8 +12607,8 @@ function INIT_AGENT_SUBS(){
     {id:'ap3',name:'Annual',days:365,price:4499,desc:'Poore saal ka Agent App access',color:'#c9a227'}
   ]);
   // 🔒 FIX: pehle yahan `if(!DB.get('agent_payments')) DB.set('agent_payments',[]);` tha —
-  // isse FBSync.pullAll() poora hone se pehle (ya localStorage cache khaali hone par) Admin
-  // Panel khud Firebase ke 'agent_payments' ko khaali array se overwrite kar deta tha, jisse
+  // isse CloudSync.pullAll() poora hone se pehle (ya localStorage cache khaali hone par) Admin
+  // Panel khud legacy DB ke 'agent_payments' ko khaali array se overwrite kar deta tha, jisse
   // Agent App ke real payment records mit jaate the. Ab koi write nahi karte — render function
   // (RENDER_AGENT_PAYMENTS) already `DB.get('agent_payments')||[]` se safely khaali list handle
   // karta hai, is init-write ki zaroorat hi nahi thi.
@@ -12754,7 +12794,7 @@ function AGENT_RENEW_PREVIEW(){
 // ══════════════════════════════════════════════════════════════════
 function AGENT_ACTIVATE_ALL_STUDENTS_SUBSCRIPTION(agentId, newExpiryStr, cb){
   if(!agentId){ if(cb) cb(0); return; }
-  FBDB.ref(FB_ROOT + '/students').once('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/students').once('value', function(snap){
     var val = snap.val();
     if(!val){ if(cb) cb(0); return; }
     var keys = Object.keys(val);
@@ -12769,7 +12809,7 @@ function AGENT_ACTIVATE_ALL_STUDENTS_SUBSCRIPTION(agentId, newExpiryStr, cb){
       }
     });
     if(count === 0){ if(cb) cb(0); return; }
-    FBDB.ref(FB_ROOT).update(updates, function(err){
+    CloudDB.ref(CLOUD_ROOT).update(updates, function(err){
       if(err){
         console.warn('⚠️ Bulk activation of student subscriptions failed:', err.message);
         if(typeof SHOW_TOAST === 'function') SHOW_TOAST('⚠️ Unable to activate the student subscription: '+err.message, 5000);
@@ -13086,13 +13126,13 @@ var _pregAllData = [];
 var _pregLogo = '', _pregAadharFront = '', _pregAadharBack = '', _pregUpiSS = '', _pregBannerImg = '';
 
 function LOAD_PENDING_REGS() {
-  // Firebase se real-time data load karo
-  FBDB.ref('shdl/pending_registrations').once('value', function(snap) {
+  // legacy DB se real-time data load karo
+  CloudDB.ref('shdl/pending_registrations').once('value', function(snap) {
     var val = snap.val();
     var arr = [];
     if (val) {
       // Object to array convert karo — agar record mein 'id' field missing hai
-      // (purane registrations jo bina id field ke save hue the) to Firebase
+      // (purane registrations jo bina id field ke save hue the) to legacy DB
       // key ko hi id bana do, warna Approve/Reject/Verify buttons silently
       // fail ho jaate hain kyunki record match hi nahi ho paata.
       Object.keys(val).forEach(function(k) {
@@ -13212,8 +13252,8 @@ function PREG_ACTION(id, action) {
     SHOW_TOAST('The registration has been rejected.');
     LOG_ACTIVITY('❌ Customer registration rejected: ' + rec.name + ' (' + rec.mobile + ')');
   }
-  // Firebase update karo
-  FBDB.ref('shdl/pending_registrations/' + id).update({ status: rec.status, approvedAt: rec.approvedAt||null, rejectedAt: rec.rejectedAt||null });
+  // legacy DB update karo
+  CloudDB.ref('shdl/pending_registrations/' + id).update({ status: rec.status, approvedAt: rec.approvedAt||null, rejectedAt: rec.rejectedAt||null });
   // localStorage update karo
   try { localStorage.setItem('shdl_pending_regs', JSON.stringify(_pregAllData)); } catch(e){}
   PREG_UPDATE_COUNTS();
@@ -13410,8 +13450,8 @@ function PREG_SAVE_VERIFY() {
   var rec = _pregAllData.find(function(r){ return r.id===id; });
   if (!rec) { SHOW_TOAST('Record not found. Please refresh the page and try again.'); return; }
   _PREG_COLLECT_FIELDS(rec);
-  // Firebase update
-  FBDB.ref('shdl/pending_registrations/' + id).update({
+  // legacy DB update
+  CloudDB.ref('shdl/pending_registrations/' + id).update({
     name: rec.name, mobile: rec.mobile, email: rec.email, company: rec.company,
     address: rec.address, note: rec.note, planPref: rec.planPref, photo: rec.photo,
     username: rec.username, password: rec.password,
@@ -13499,8 +13539,8 @@ function PREG_APPROVE_FROM_MODAL() {
     rec.status    = 'approved';
     rec.approvedAt= new Date().toLocaleString('hi-IN');
 
-    // Update Firebase pending_registrations
-    FBDB.ref('shdl/pending_registrations/' + id).update({
+    // Update legacy DB pending_registrations
+    CloudDB.ref('shdl/pending_registrations/' + id).update({
       name: rec.name, mobile: rec.mobile, email: rec.email, company: rec.company,
       address: rec.address, note: rec.note, planPref: rec.planPref, photo: rec.photo,
       username: rec.username, password: rec.password,
@@ -13512,7 +13552,7 @@ function PREG_APPROVE_FROM_MODAL() {
       bannerImg: rec.bannerImg||null,
       status: 'approved', approvedAt: rec.approvedAt,
       assignedUserId: uid, assignedPassword: pwd
-    }, function(err){ if(err) console.warn('Firebase pending_registrations update error:', err); });
+    }, function(err){ if(err) console.warn('legacy DB pending_registrations update error:', err); });
     try { localStorage.setItem('shdl_pending_regs', JSON.stringify(_pregAllData)); } catch(e){}
 
     // ── FULL AGENT RECORD BANAO (saari details ke saath) ──
@@ -13552,7 +13592,7 @@ function PREG_APPROVE_FROM_MODAL() {
     };
 
     agentsList.push(newAgent);
-    // ✅ Sirf naya agent hi Firebase par jaata hai (poori list nahi) — is wajah se
+    // ✅ Sirf naya agent hi legacy DB par jaata hai (poori list nahi) — is wajah se
     // ye ab turant hoga chahe kitne bhi agents pehle se registered ho
     DB_SAVE_AGENTS(agentsList, agentsList.length - 1);
     LOG_ACTIVITY('✅ Agent approved: ' + rec.name + ' | ID: ' + uid + (rec.company?' | '+rec.company:''));
@@ -13604,7 +13644,7 @@ function PREG_REJECT_FROM_MODAL() {
   if (!rec) { SHOW_TOAST('Record not found. Please refresh the page and try again.'); return; }
   rec.status = 'rejected';
   rec.rejectedAt = new Date().toLocaleString('hi-IN');
-  FBDB.ref('shdl/pending_registrations/' + id).update({ status: 'rejected', rejectedAt: rec.rejectedAt });
+  CloudDB.ref('shdl/pending_registrations/' + id).update({ status: 'rejected', rejectedAt: rec.rejectedAt });
   try { localStorage.setItem('shdl_pending_regs', JSON.stringify(_pregAllData)); } catch(e){}
   LOG_ACTIVITY('❌ Customer rejected: ' + rec.name + ' (' + rec.mobile + ')');
   CLOSE_MODAL('modal-preg-verify');
@@ -13771,7 +13811,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 // On page load: pending registrations badge update karo
 (function INIT_PREG_BADGE() {
-  FBDB.ref('shdl/pending_registrations').once('value', function(snap) {
+  CloudDB.ref('shdl/pending_registrations').once('value', function(snap) {
     var val = snap.val();
     if (val) {
       var pending = Object.values(val).filter(function(r){ return r.status==='pending'; }).length;
@@ -13780,7 +13820,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   });
   // Real-time listener bhi lagao
-  FBDB.ref('shdl/pending_registrations').on('value', function(snap) {
+  CloudDB.ref('shdl/pending_registrations').on('value', function(snap) {
     var val = snap.val();
     if (val) {
       var pending = Object.values(val).filter(function(r){ return r.status==='pending'; }).length;
@@ -13792,16 +13832,16 @@ document.addEventListener('DOMContentLoaded', function(){
 
 // ════════════════════════════════════════════════════
 //  🚫 REAL-TIME BLOCK ENFORCEMENT
-//  Jab admin kisi agent ko block kare, Firebase pe
+//  Jab admin kisi agent ko block kare, legacy DB pe
 //  turant blocked:true set hota hai. Agent Login file
 //  mein yeh listener login/session dono band karta hai.
 //  In the Admin panel yeh sirf activity log karta hai.
 // ════════════════════════════════════════════════════
 (function INIT_BLOCK_ENFORCER(){
-  FBDB.ref(FB_ROOT + '/agents').on('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/agents').on('value', function(snap){
     var raw = snap.val();
     if(!raw) return;
-    // Firebase kabhi kabhi array ki jagah object bhejta hai (jab beech se
+    // legacy DB kabhi kabhi array ki jagah object bhejta hai (jab beech se
     // koi agent delete hua ho) — dono cases handle karo
     var agents = Array.isArray(raw) ? raw : Object.keys(raw).sort(function(a,b){return a-b;}).map(function(k){ return raw[k]; });
     // Sync to localStorage so Agent Login file ka fallback bhi updated rahe
@@ -13819,7 +13859,7 @@ document.addEventListener('DOMContentLoaded', function(){
 //  kar deta hai — bina reload/refresh kiye.
 // ════════════════════════════════════════════════════
 (function INIT_FEE_MEMBER_SYNC(){
-  FBDB.ref(FB_ROOT + '/fee_records').on('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/fee_records').on('value', function(snap){
     var val = snap.val();
     var records = Array.isArray(val) ? val : (val ? Object.values(val) : []);
     try {
@@ -13831,7 +13871,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var feeNb = document.getElementById('fee-nb');
     if (feeNb) feeNb.textContent = records.filter(function(f){ return f.status === 'pending'; }).length;
   });
-  FBDB.ref(FB_ROOT + '/members').on('value', function(snap){
+  CloudDB.ref(CLOUD_ROOT + '/members').on('value', function(snap){
     var val = snap.val();
     var members = Array.isArray(val) ? val : (val ? Object.values(val) : []);
     try { localStorage.setItem('shdl_members', JSON.stringify(members)); } catch(e){}
@@ -15203,7 +15243,7 @@ function SAVE_CONTROL_USER(){
   var RESET_EMPTY_OBJECT_KEYS = ['selfies','locations','staff_locations','staff_selfies','attendance_locations'];
   var BACKUP_ENTITY_KEYS = ['admins','staff','agents','students'];
   var BACKUP_BLOB_KEYS = ['settings','activity','notices','mem_plans','members','hrms_registrations','staff_att','leave_requests','agent_plans','agent_payments','razorpay_config','sms_api_config'];
-  var BACKUP_FIREBASE_KEYS = ['att_records','fee_records','salary_claims','transactions','selfies','locations','staff_locations','staff_selfies','pending_staff','fee_payments','shri_hari_students','attendance_locations','members'];
+  var BACKUP_CLOUD_KEYS = ['att_records','fee_records','salary_claims','pending_staff','selfies','attendance_locations'];
   var BACKUP_SITE_KEYS = ['nav_buttons','login_options','homepage','apps','ticker','stats','footer'];
   var SENSITIVE_STORAGE_KEYS = new Set(['shdl_auth_token','auth_token','access_token','refresh_token','id_token']);
 
@@ -15224,11 +15264,11 @@ function SAVE_CONTROL_USER(){
     }catch(e){return {items:result,count:count,error:'Browser local storage could not be fully read: '+e.message};}
     return {items:result,count:count,error:null};
   }
-  function readFirebaseValue(key){
+  function readCloudValue(key){
     return new Promise(function(resolve,reject){
       try{
-        if(typeof FBDB==='undefined'||!FBDB||typeof FB_ROOT==='undefined'){reject(new Error('Firebase is not available'));return;}
-        FBDB.ref(FB_ROOT+'/'+key).once('value').then(function(snap){resolve(snap&&snap.val()!=null?snap.val():null);}).catch(reject);
+        if(typeof CloudDB==='undefined'||!CloudDB||typeof CLOUD_ROOT==='undefined'){reject(new Error('Cloud data adapter is not available'));return;}
+        CloudDB.ref(CLOUD_ROOT+'/'+key).once('value').then(function(snap){resolve(snap&&snap.val()!=null?snap.val():null);}).catch(reject);
       }catch(e){reject(e);}
     });
   }
@@ -15252,7 +15292,7 @@ function SAVE_CONTROL_USER(){
   window.INIT_BACKUP_RESTORE_PAGE=function(){
     var snap=readLocalStoreSnapshot();
     if(byId('bkp-local-count'))byId('bkp-local-count').textContent=String(snap.count);
-    if(byId('bkp-server-count'))byId('bkp-server-count').textContent=String(BACKUP_ENTITY_KEYS.length+BACKUP_BLOB_KEYS.length+BACKUP_SITE_KEYS.length+BACKUP_FIREBASE_KEYS.length);
+    if(byId('bkp-server-count'))byId('bkp-server-count').textContent=String(BACKUP_ENTITY_KEYS.length+BACKUP_BLOB_KEYS.length+BACKUP_SITE_KEYS.length+BACKUP_CLOUD_KEYS.length);
     if(byId('bkp-last-created'))byId('bkp-last-created').textContent=lastBackupDate?new Date(lastBackupDate).toLocaleString():'Not yet created';
     if(byId('bkp-file-input')&&!byId('bkp-file-input').dataset.bound){
       var input=byId('bkp-file-input');input.dataset.bound='1';input.addEventListener('change',function(){if(this.files&&this.files[0])BKP_READ_FILE(this.files[0]);});
@@ -15263,14 +15303,14 @@ function SAVE_CONTROL_USER(){
   };
 
   async function collectBackup(){
-    var warnings=[],local=readLocalStoreSnapshot(),server={entities:{},blobs:{},firebase:{},siteData:{}},sources={};
+    var warnings=[],local=readLocalStoreSnapshot(),server={entities:{},blobs:{},cloud:{},siteData:{}},sources={};
     if(local.error)warnings.push(local.error);
     var tasks=[];
     if(isOnlineBackend()){
       BACKUP_ENTITY_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/admin-entities/'+key);if(v!==undefined&&v!==null){server.entities[key]=v;sources['entity:'+key]='server';}else{warnings.push('Server returned no data for '+key);}}catch(e){warnings.push('Could not read server entity '+key+': '+e.message);}})());});
       BACKUP_BLOB_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/blob/'+key);if(v!==undefined&&v!==null){server.blobs[key]=v;sources['blob:'+key]='server';}else{warnings.push('Server returned no data for blob '+key);}}catch(e){warnings.push('Could not read server blob '+key+': '+e.message);}})());});
       BACKUP_SITE_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/site-data/'+key);if(v!==undefined&&v!==null){server.siteData[key]=(Object.prototype.hasOwnProperty.call(v,'value')?v.value:v);sources['site:'+key]='server';}else warnings.push('No server site-data for '+key);}catch(e){warnings.push('Could not read site-data '+key+': '+e.message);}})());});
-      BACKUP_FIREBASE_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await readFirebaseValue(key);if(v!==null){server.firebase[key]=v;sources['firebase:'+key]='server';}}catch(e){warnings.push('Could not read cloud node '+key+': '+e.message);}})());});
+      BACKUP_CLOUD_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await readCloudValue(key);if(v!==null){server.cloud[key]=v;sources['cloud:'+key]='server';}}catch(e){warnings.push('Could not read cloud node '+key+': '+e.message);}})());});
     }else{
       warnings.push('Backend is not reachable from this file/offline session; this export uses the local browser cache only.');
     }
@@ -15279,9 +15319,9 @@ function SAVE_CONTROL_USER(){
       format:'AnmolLibMatrix.SystemBackup',version:1,
       createdAt:new Date().toISOString(),
       createdBy:(typeof currentAdmin!=='undefined'&&currentAdmin&&currentAdmin.username)?String(currentAdmin.username):'Super Admin',
-      scope:{description:'Managed local cache and available server/Firebase datasets; session tokens excluded.',entityKeys:BACKUP_ENTITY_KEYS,blobKeys:BACKUP_BLOB_KEYS,siteDataKeys:BACKUP_SITE_KEYS,firebaseKeys:BACKUP_FIREBASE_KEYS},
-      data:{localStorage:local.items,entities:server.entities,blobs:server.blobs,siteData:server.siteData,firebase:server.firebase},
-      manifest:{localKeyCount:local.count,serverEntityCount:Object.keys(server.entities).length,serverBlobCount:Object.keys(server.blobs).length,siteDataCount:Object.keys(server.siteData).length,firebaseNodeCount:Object.keys(server.firebase).length,warnings:warnings,sources:sources}
+      scope:{description:'Managed local cache and available server datasets; session tokens excluded.',entityKeys:BACKUP_ENTITY_KEYS,blobKeys:BACKUP_BLOB_KEYS,siteDataKeys:BACKUP_SITE_KEYS,cloudKeys:BACKUP_CLOUD_KEYS},
+      data:{localStorage:local.items,entities:server.entities,blobs:server.blobs,siteData:server.siteData,cloud:server.cloud},
+      manifest:{localKeyCount:local.count,serverEntityCount:Object.keys(server.entities).length,serverBlobCount:Object.keys(server.blobs).length,siteDataCount:Object.keys(server.siteData).length,cloudNodeCount:Object.keys(server.cloud).length,warnings:warnings,sources:sources}
     };
     return backup;
   }
@@ -15308,7 +15348,7 @@ function SAVE_CONTROL_USER(){
       if(byId('bkp-local-count'))byId('bkp-local-count').textContent=String(backup.manifest.localKeyCount);
       var warningCount=backup.manifest.warnings.length;
       setStatus(warningCount?'Downloaded with warnings':'Backup downloaded',warningCount?'warn':'success');
-      logEvent('Backup downloaded ('+format.toUpperCase()+'). Local keys '+backup.manifest.localKeyCount+', server groups '+(backup.manifest.serverEntityCount+backup.manifest.serverBlobCount+backup.manifest.siteDataCount+backup.manifest.firebaseNodeCount)+'.',warningCount?'warn':'success');
+      logEvent('Backup downloaded ('+format.toUpperCase()+'). Local keys '+backup.manifest.localKeyCount+', server groups '+(backup.manifest.serverEntityCount+backup.manifest.serverBlobCount+backup.manifest.siteDataCount+backup.manifest.cloudNodeCount)+'.',warningCount?'warn':'success');
       if(warningCount)logEvent('Some data sources were unavailable; inspect manifest.warnings inside the backup file.','warn');
       if(typeof SHOW_TOAST==='function')SHOW_TOAST(warningCount?'Backup downloaded with source warnings. Check its manifest.':'Full backup downloaded successfully. Store it securely.',5000);
     }catch(e){setStatus('Backup failed','error');logEvent('Backup failed: '+e.message,'error');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Backup failed: '+e.message,6000);}
@@ -15332,9 +15372,9 @@ function SAVE_CONTROL_USER(){
       var data=JSON.parse(text);
       if(!data||data.format!=='AnmolLibMatrix.SystemBackup'||data.version!==1||!data.data||typeof data.data!=='object')throw new Error('Unsupported backup format or version. Select an Anmol LibMatrix System Backup file.');
       if(!data.data.localStorage||typeof data.data.localStorage!=='object')data.data.localStorage={};
-      ['entities','blobs','siteData','firebase'].forEach(function(k){if(!data.data[k]||typeof data.data[k]!=='object')data.data[k]={};});
+      ['entities','blobs','siteData','cloud'].forEach(function(k){if(!data.data[k]||typeof data.data[k]!=='object')data.data[k]={};});
       selectedBackup=data;
-      var groupCount=Object.keys(data.data.entities).length+Object.keys(data.data.blobs).length+Object.keys(data.data.siteData).length+Object.keys(data.data.firebase).length;
+      var groupCount=Object.keys(data.data.entities).length+Object.keys(data.data.blobs).length+Object.keys(data.data.siteData).length+Object.keys(data.data.cloud).length;
       if(prev){prev.innerHTML='<strong>Selected:</strong> '+esc(file.name)+' ('+prettyBytes(file.size)+')<br><strong>Created:</strong> '+esc(data.createdAt||'Unknown')+'<br><strong>Local keys:</strong> '+Object.keys(data.data.localStorage).length+' · <strong>Server/cloud groups:</strong> '+groupCount+'<br><span style="color:#9a6700">Restoring can overwrite current data. A safety confirmation is required next.</span>';prev.hidden=false;}
       if(btn)btn.disabled=false;
       setStatus('Backup file validated','success');logEvent('Backup file selected and validated: '+file.name+'.','success');
@@ -15348,7 +15388,7 @@ function SAVE_CONTROL_USER(){
   function showRestoreMessage(text,type){var el=byId('bkp-restore-message');if(el){el.textContent=text;el.className='bkp-modal-msg show '+(type||'error');}}
   function storageKeyAllowed(key){return /^(shdl_|shri_hari_|agent_|hrms_|student_)/i.test(key)&&!SENSITIVE_STORAGE_KEYS.has(key)&&!/(?:auth[_-]?token|access[_-]?token|refresh[_-]?token|session[_-]?token)/i.test(key);}
   function allowedObjectKeys(obj,allow){return Object.keys(obj||{}).filter(function(k){return allow.indexOf(k)>=0;});}
-  async function writeFirebase(key,value){if(typeof FBDB==='undefined'||!FBDB||typeof FB_ROOT==='undefined')throw new Error('Firebase is not available');return FBDB.ref(FB_ROOT+'/'+key).set(value);}
+  async function writeCloudValue(key,value){if(typeof CloudDB==='undefined'||!CloudDB||typeof CLOUD_ROOT==='undefined')throw new Error('Cloud data adapter is not available');return CloudDB.ref(CLOUD_ROOT+'/'+key).set(value);}
   window.BKP_APPLY_RESTORE=async function(){
     if(!selectedBackup){showRestoreMessage('Select a valid backup file first.','error');return;}
     var phrase=(byId('bkp-restore-phrase').value||'').trim();if(phrase!=='RESTORE'){showRestoreMessage('Type RESTORE exactly to confirm this overwrite.','error');return;}
@@ -15361,7 +15401,7 @@ function SAVE_CONTROL_USER(){
         allowedObjectKeys(d.entities,BACKUP_ENTITY_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/admin-entities/'+key,d.entities[key]);succeeded.push('entity:'+key);} )().catch(function(e){failures.push('entity '+key+': '+e.message);}));});
         allowedObjectKeys(d.blobs,BACKUP_BLOB_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/blob/'+key,d.blobs[key]);succeeded.push('blob:'+key);} )().catch(function(e){failures.push('blob '+key+': '+e.message);}));});
         allowedObjectKeys(d.siteData,BACKUP_SITE_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/site-data/'+key,{value:d.siteData[key]});succeeded.push('site:'+key);} )().catch(function(e){failures.push('site-data '+key+': '+e.message);}));});
-        allowedObjectKeys(d.firebase,BACKUP_FIREBASE_KEYS).forEach(function(key){tasks.push((async function(){await writeFirebase(key,d.firebase[key]);succeeded.push('firebase:'+key);} )().catch(function(e){failures.push('Firebase '+key+': '+e.message);}));});
+        allowedObjectKeys(d.cloud,BACKUP_CLOUD_KEYS).forEach(function(key){tasks.push((async function(){await writeCloudValue(key,d.cloud[key]);succeeded.push('cloud:'+key);} )().catch(function(e){failures.push('Cloud '+key+': '+e.message);}));});
         await Promise.all(tasks);
       }else{failures.push('Backend is unavailable in this file/offline session; cloud/server tables were not restored.');}
       // Restore only managed, namespaced browser keys; never import auth tokens.
@@ -15412,9 +15452,8 @@ function SAVE_CONTROL_USER(){
       Object.keys(blobs).forEach(function(k){ops.push((async function(){await API.post('/blob/'+k,blobs[k]);ok.push('blob:'+k);})().catch(function(e){failed.push('blob '+k+': '+e.message);}));});
       await Promise.all(ops);
       var fbOps=[];
-      RESET_EMPTY_ARRAY_KEYS.filter(function(k){return ['salary_claims','att_records','fee_records','transactions','pending_staff','fee_payments','shri_hari_students','members'].indexOf(k)>=0;}).forEach(function(k){fbOps.push(writeFirebase(k,[]).then(function(){ok.push('firebase:'+k);}).catch(function(e){failed.push('Firebase '+k+': '+e.message);}));});
-      RESET_EMPTY_OBJECT_KEYS.forEach(function(k){fbOps.push(writeFirebase(k,{}).then(function(){ok.push('firebase:'+k);}).catch(function(e){failed.push('Firebase '+k+': '+e.message);}));});
-      // Firebase may be an optional legacy source: only attempt if configured.
+      RESET_EMPTY_ARRAY_KEYS.filter(function(k){return ['salary_claims','att_records','fee_records','transactions','pending_staff','fee_payments','shri_hari_students','members'].indexOf(k)>=0;}).forEach(function(k){fbOps.push(writeCloudValue(k,[]).then(function(){ok.push('cloud:'+k);}).catch(function(e){failed.push('Cloud '+k+': '+e.message);}));});
+      RESET_EMPTY_OBJECT_KEYS.forEach(function(k){fbOps.push(writeCloudValue(k,{}).then(function(){ok.push('cloud:'+k);}).catch(function(e){failed.push('Cloud '+k+': '+e.message);}));});
       await Promise.all(fbOps);
     }else{
       ok.push('local-only');
@@ -15439,7 +15478,7 @@ function SAVE_CONTROL_USER(){
       RESET_EMPTY_ARRAY_KEYS.forEach(function(k){try{localStorage.setItem('shdl_'+k,'[]');}catch(e){throw new Error('Cannot clear local key '+k+': '+e.message);}});
       RESET_EMPTY_OBJECT_KEYS.forEach(function(k){try{localStorage.setItem('shdl_'+k,'{}');}catch(e){throw new Error('Cannot clear local key '+k+': '+e.message);}});
       ['shri_hari_students','shri_hari_mob_att','shri_hari_fee_payments'].forEach(function(k){try{localStorage.setItem(k,'[]');}catch(e){}});
-      try{if(typeof FBSync!=='undefined'&&FBSync&&typeof FBSync.push==='function'&&auth.offline){/* local demo only; do not imply remote sync */}}catch(e){}
+      try{if(typeof CloudSync!=='undefined'&&CloudSync&&typeof CloudSync.push==='function'&&auth.offline){/* local demo only; do not imply remote sync */}}catch(e){}
       closeModal('bkp-reset-modal');setStatus(auth.offline?'Local demo reset complete':'Master reset complete','success');
       logEvent(auth.offline?'Factory reset completed for this browser only; admin/settings were retained.':'Factory reset completed. Admin/settings were retained; operational records were cleared.',auth.offline?'warn':'success');
       if(typeof SHOW_TOAST==='function')SHOW_TOAST(auth.offline?'Local demo data reset. Cloud/server data was not changed.':'Factory reset completed. Admin account and system settings were retained.',6000);
@@ -16782,7 +16821,7 @@ PREG_MAT_RENDER();
   window.RB_BATCH=function(b){st.batch=b||'';RB_LOAD();};
   function ids(){return Object.keys(st.sel).map(Number);}
   function refreshCaches(items){
-    try{var seen={};(items||st.items).forEach(function(x){var k=String(x.source).split(':')[1];if(k&&!seen[k]&&window.FBSync&&FBSync.pull){seen[k]=1;FBSync.pull(k,function(){});}});}catch(e){}
+    try{var seen={};(items||st.items).forEach(function(x){var k=String(x.source).split(':')[1];if(k&&!seen[k]&&window.CloudSync&&CloudSync.pull){seen[k]=1;CloudSync.pull(k,function(){});}});}catch(e){}
     try{['RENDER_STUDENTS','RENDER_AGENTS','RENDER_STAFF','RENDER_ADMINS','RENDER_MATERIAL_USERS'].forEach(function(f){if(typeof window[f]==='function')setTimeout(window[f],400);});}catch(e){}
   }
   function report(r){

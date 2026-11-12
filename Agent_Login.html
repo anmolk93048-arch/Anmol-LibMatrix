@@ -594,7 +594,7 @@ body.dark .calc-sum{background:#0a0f1e}
 <!-- jsPDF — Subscription payment ke baad automatic PDF receipt banane ke liye -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-// 🆕 GOOGLE CLOUD (Render) BACKEND — Firebase poori tarah hata diya gaya hai.
+// 🆕 GOOGLE CLOUD (Render) BACKEND — legacy DB poori tarah hata diya gaya hai.
 // Students, attendance, fees, membership, HRMS, wallet — sab kuch ab
 // Postgres REST API se (server.js).
 
@@ -603,7 +603,7 @@ body.dark .calc-sum{background:#0a0f1e}
 //   ✅ Naye backend se: login session token, wallet withdraw, salary
 //      verify (dono flow — shdl-style aur HRMS payslip-style),
 //      custom-amount payment-link generation (agent_direct)
-//   🔶 Abhi bhi Firebase se: agent/staff CRUD (Admin Panel migrate
+//   🔶 Abhi bhi legacy DB se: agent/staff CRUD (Admin Panel migrate
 //      hone ke baad iske saath consistent rahega), staff attendance,
 //      leaves, notices, selfies/GPS
 // ══════════════════════════════════════════════════════════════════
@@ -853,7 +853,7 @@ const API = {
   post: function (path, body) { return apiFetch(path, { method: 'POST', body: JSON.stringify(body || {}) }); },
   put: function (path, body) { return apiFetch(path, { method: 'PUT', body: JSON.stringify(body || {}) }); }
 };
-// 🆕 FIREBASE → BACKEND MIGRATION: real-time push listeners ki jagah REST
+// 🆕 LEGACY-DB → BACKEND MIGRATION: real-time push listeners ki jagah REST
 // polling helper — dekhein HRMS_login.html mein isi naam ka comment.
 function pollRestData(fetchFn, intervalMs) {
   fetchFn();
@@ -890,13 +890,13 @@ function _pollCloudStatus() {
 _pollCloudStatus();
 setInterval(_pollCloudStatus, 10000);
 
-// ══ AGENT BACKEND SYNC HELPER (Firebase completely removed) ══
-const AgentFB = {
+// ══ AGENT BACKEND SYNC HELPER (legacy DB completely removed) ══
+const AgentSync = {
   // Students seedha backend (Postgres, /api/admin-entities/students) se —
   // yahi jagah Student Portal (Student_Attendance.html) aur Admin Panel
-  // dono se students padhte/likhte hain. Firebase mirror/fallback poori
+  // dono se students padhte/likhte hain. legacy DB mirror/fallback poori
   // tarah hata diya gaya hai — DUAL-SOURCE hone ki wajah se hi kabhi-kabhi
-  // "login karte hi data ud gaya" jaisa lagta tha (stale Firebase cache
+  // "login karte hi data ud gaya" jaisa lagta tha (stale legacy DB cache
   // fresh backend data ko overwrite kar deta tha, ya ulta). Ab sirf EK hi
   // source-of-truth hai.
   pullStudents: function(cb) {
@@ -959,7 +959,7 @@ const AgentFB = {
   },
   // Fee records: ab poore app mein ek hi asli, relational Postgres table
   // ('fee_payments', POST/GET /api/payments/fee) istemal hoti hai — yeh
-  // whole-array blob write/pull (jo pehle Firebase 'fee_payments' path
+  // whole-array blob write/pull (jo pehle legacy DB 'fee_payments' path
   // istemal karta tha) ab isi asli backend se point karta hai.
   saveFeeRecords: function(records) {
     try { localStorage.setItem('shri_hari_fee_payments', JSON.stringify(records)); } catch(e){}
@@ -970,7 +970,7 @@ const AgentFB = {
       if (cb) cb(val);
     }).catch(function(){ if (cb) cb(null); });
   },
-  // 🆕 FIREBASE → BACKEND MIGRATION: real-time push listeners ki jagah
+  // 🆕 LEGACY-DB → BACKEND MIGRATION: real-time push listeners ki jagah
   // ab REST polling (har kuch second mein fresh data). Dekhein
   // HRMS_login.html mein isi pattern ka comment.
   listenAttendance: function() {
@@ -3156,7 +3156,7 @@ function showErr(el, msg) {
 // ===== LOGIN SYSTEM =====
 // Default credentials (can be changed)
 // ═ DATA ISOLATION: poora (sabhi agents ka) student data hamesha yahan reh raha hai —
-// yeh hi Firebase se sync/save hota hai. #stb table sirf iska FILTERED VIEW dikhata hai
+// yeh hi legacy DB se sync/save hota hai. #stb table sirf iska FILTERED VIEW dikhata hai
 // (current agent ka apna data), taaki (a) agent ko dusre ka data na dikhe, aur
 // (b) save karte waqt dusre agent ka data galti se delete/overwrite na ho jaye. ═
 window.SHDL_ALL_STUDENTS = window.SHDL_ALL_STUDENTS || [];
@@ -3181,7 +3181,7 @@ window.ADMIN_AGENTS_BY_USER = {};
 // Admin Panel ke HRMS Staff records — username(lowercase) -> staff object (fixed salary, role, batch, etc.)
 window.ADMIN_STAFF_BY_USER = {};
 
-// ── Firebase se saved agents load karo (taaki naye registered agents reload ke baad bhi rahein) ──
+// ── legacy DB se saved agents load karo (taaki naye registered agents reload ke baad bhi rahein) ──
 // NOTE: 'shdl/agent_logins' is OUR OWN path (simple Agent Register modal se banaye agents).
 // 'shdl/agents' Admin Panel ka path hai (Naam/Mobile/Photo/Aadhar/Bank wala rich form) —
 // usko hum sirf PADHTE hain (read-only), kabhi overwrite nahi karte, taaki Admin Panel ka
@@ -3212,14 +3212,14 @@ function MERGE_USER(merged, su){
   // 2) & 3) 🆕 ROOT-CAUSE FIX: Admin Panel ke rich 'agents' aur HRMS 'staff'
   // records ab MySQL (naye Cloud Run/Render backend) mein save hote hain —
   // Admin Panel khud kabhi ka '/admin-entities/agents' aur '/admin-entities/
-  // staff' REST route se hi read/write karta hai, Firebase se nahi. Yeh page
-  // ab tak PURANE 'shdl/agents' aur 'shdl/staff' Firebase path se hi padhne
+  // staff' REST route se hi read/write karta hai, legacy DB se nahi. Yeh page
+  // ab tak PURANE 'shdl/agents' aur 'shdl/staff' legacy DB path se hi padhne
   // ki koshish kar raha tha — jo ab kabhi update hi nahi hota — isliye Admin
   // Panel se register kiya gaya koi bhi naya agent (jaise SHDL27482 jaisi ID
   // wale) is login page ko kabhi dikhta hi nahi tha, aur bilkul sahi
   // username/password dalne par bhi "Username ya Password galat hai" aata
   // tha। Ab yeh dono seedhe naye backend se, poll karke (har 10 second —
-  // Firebase ke real-time .on() jaisa hi turant-update wala behavior) load
+  // legacy DB ke real-time .on() jaisa hi turant-update wala behavior) load
   // hote hain.
   function LOAD_ADMIN_AGENTS_AND_STAFF(){
     API.get('/admin-entities/agents').then(function(adminAgents){
@@ -3446,7 +3446,7 @@ function RENDER_LIBSUB_HISTORY(){
 
   // 🔒 FIX: naye secure flow se payments ab backend (kv_blob 'agent_payments')
   // mein save hote hain, isliye yahan bhi wahi se padhna hai — pehle yeh
-  // stale Firebase path se padhta tha jahan ab kuch naya likha hi nahi jaata.
+  // stale legacy DB path se padhta tha jahan ab kuch naya likha hi nahi jaata.
   API.get('/blob/agent_payments').then(function(val){
     var all = Array.isArray(val) ? val.filter(Boolean) : (val ? Object.values(val).filter(Boolean) : []);
     var mine = all.filter(function(p){ return p && p.agentId === a.id; });
@@ -3544,7 +3544,7 @@ function AGENT_SUB_MSG_EL(){
   return document.getElementById(locked ? 'sub-expired-msg' : 'libsub-msg');
 }
 
-// 🔒 FIX: yeh function pehle client-side hi Firebase mein (ek stale
+// 🔒 FIX: yeh function pehle client-side hi legacy DB mein (ek stale
 // 'shdl/agents' path par, jo agent ki asli/live data (kv_admin_entities
 // backend) se disconnect ho chuka tha) renewal likh deta tha — bina
 // kisi server verification ke. Ab yeh sirf backend ke verify response
@@ -3693,12 +3693,12 @@ function SHARE_OR_SAVE_PDF(doc, filename, shareTitle){
 // profile photo, etc.) par koi .set()/.remove() nahi chalta.
 // ══════════════════════════════════════════════════════════════════
 // ⚠️ REMOVED: AGENT_ACTIVATE_ALL_STUDENTS_SUBSCRIPTION() — yeh function pehle
-// se hi kahin call nahi hota tha ("SUPERSEDED" comment ke saath), aur Firebase
+// se hi kahin call nahi hota tha ("SUPERSEDED" comment ke saath), aur legacy DB
 // istemal karta tha. Asli bulk-activation ab secure backend flow
 // (/payments/agent-subscription/verify) khud hi karta hai. Poora function
-// yahan se hata diya gaya (Firebase cleanup ke part ke roop mein).
+// yahan se hata diya gaya (legacy DB cleanup ke part ke roop mein).
 
-// Sirf session/screen ko logout karta hai — koi bhi data (Firebase ya
+// Sirf session/screen ko logout karta hai — koi bhi data (legacy DB ya
 // localStorage) yahan delete/modify NAHI hota. Agent jab dobara sahi
 // credentials se login karega (renewal ke baad), poora purana data
 // (students/staff/attendance/fees) wapas waisa hi milega.
@@ -4026,10 +4026,10 @@ function _AFTER_LOGIN_SUCCESS() {
   // ═══════════════════════════════════════════════════════════════
   // 🔒 SUBSCRIPTION CHECK — SOFT LOCK ONLY, NEVER DELETE DATA
   // Expiry ka matlab sirf itna hai ki dashboard (#main-app) render
-  // nahi hota — koi Firebase/localStorage data (students, staff,
+  // nahi hota — koi legacy DB/localStorage data (students, staff,
   // att_records, fee_records, hrms_registrations, leave_requests,
   // salary_claims) yahan CHHUA TAK NAHI jaata. Agent ka poora data
-  // Firebase mein bilkul waisa hi safe pada rehta hai jaisa expiry
+  // legacy DB mein bilkul waisa hi safe pada rehta hai jaisa expiry
   // se pehle tha. Renew hote hi (AGENT_APPLY_RENEWAL) sirf agent
   // record ke 3 fields (planId/subStart/subExpiry) targeted update
   // hote hain — baaki sab kuch (poora dataset) waisa ka waisa wapas
@@ -4063,7 +4063,7 @@ function _AFTER_LOGIN_SUCCESS() {
     SET_USER_LOGO(found.user);
     if(typeof LOAD_AGENT_PROFILE_UI === 'function') LOAD_AGENT_PROFILE_UI();
     if(typeof FETCH_ADMIN_NOTIFS_FOR_AGENT === 'function') FETCH_ADMIN_NOTIFS_FOR_AGENT();
-    // FIX: agent ka rich data (company/logo/UPI/Bank) Firebase se load hone mein
+    // FIX: agent ka rich data (company/logo/UPI/Bank) legacy DB se load hone mein
     // thoda time lag sakta hai — isliye login ke turant baad dobara try karte hain
     // taaki company name/logo blank na reh jaaye
     setTimeout(function(){ SET_USER_LOGO(found.user); if(typeof LOAD_AGENT_PROFILE_UI === 'function') LOAD_AGENT_PROFILE_UI(); }, 800);
@@ -4222,15 +4222,15 @@ document.addEventListener('DOMContentLoaded', function(){
   if(lp) lp.addEventListener('keydown', function(e){ if(e.key==='Enter') checkCaptcha(); });
   var lu = document.getElementById('login-user');
   if(lu) lu.addEventListener('keydown', function(e){ if(e.key==='Enter' && document.getElementById('login-pass')) document.getElementById('login-pass').focus(); });
-  // ── Firebase real-time listeners start karo ──
-  AgentFB.listenStudents();
-  AgentFB.listenAttendance();
-  AgentFB.listenStudentPhotos();
-  AgentFB.listenSelfies();
-  AgentFB.listenLocations();
+  // ── legacy DB real-time listeners start karo ──
+  AgentSync.listenStudents();
+  AgentSync.listenAttendance();
+  AgentSync.listenStudentPhotos();
+  AgentSync.listenSelfies();
+  AgentSync.listenLocations();
   // Attendance data bhi pull karo
-  AgentFB.pullAttendance(function(){});
-  AgentFB.pullFeeRecords(function(){});
+  AgentSync.pullAttendance(function(){});
+  AgentSync.pullFeeRecords(function(){});
 });
 
 
@@ -4307,10 +4307,10 @@ document.addEventListener("click",function(e){
 function INI(n){var i="",p=n.split(" ");for(var j=0;j<p.length&&j<2;j++){if(p[j].length>0)i+=p[j][0].toUpperCase();}return i;}
 
 
-// ══ ADMIN PANEL SE STUDENTS LOAD KARO (Firebase + localStorage shdl_students se) ══
+// ══ ADMIN PANEL SE STUDENTS LOAD KARO (legacy DB + localStorage shdl_students se) ══
 function LOAD_ADMIN_STUDENTS() {
-  // Pehle Firebase se fresh data lo, phir render karo
-  AgentFB.pullStudents(function(fbStudents) {
+  // Pehle legacy DB se fresh data lo, phir render karo
+  AgentSync.pullStudents(function(fbStudents) {
    try {
     var saved = fbStudents || (function(){
       try { return JSON.parse(localStorage.getItem('shdl_students') || '[]'); } catch(e){ return []; }
@@ -4440,7 +4440,7 @@ function AUTO_SAVE_STUDENTS() {
     // registered mobile ki jagah Mother ka naam save ho raha tha. Ab seedha
     // tds[4] (jahan asli mobile number dikhta hai) se hi mobile liya jayega.
     var mobile = tds[4] ? tds[4].textContent.trim() : '';
-    // taaki Firebase/localStorage mein save ho aur refresh/doosre device pe na khoye
+    // taaki legacy DB/localStorage mein save ho aur refresh/doosre device pe na khoye
     var photo = r.getAttribute('data-photo') || r.getAttribute('data-selfie') || '';
     // FIX: agentId bhi capture karo taaki Student Attendance Portal par
     // agent ki biodata (UPI/QR/Bank/Company/Mobile) autofill ho sake
@@ -4482,8 +4482,8 @@ function AUTO_SAVE_STUDENTS() {
   try {
     localStorage.setItem('shdl_students', JSON.stringify(finalList));
     localStorage.setItem('shri_hari_students', JSON.stringify(finalList));
-    // Firebase mein bhi save karo
-    AgentFB.saveStudents(finalList);
+    // legacy DB mein bhi save karo
+    AgentSync.saveStudents(finalList);
   } catch(e) {}
   return students;
 }
@@ -4619,9 +4619,9 @@ function ADD_STU_CORE(){
   })();
   var e=document.getElementById("stb-e"); if(e) e.parentNode.removeChild(e);
   document.getElementById("stb").appendChild(tr);
-  // FIX: pehle UPD(), CHK_EXP(), ADD_NOTIF(), AUTO_SAVE_STUDENTS() (jisme Firebase
+  // FIX: pehle UPD(), CHK_EXP(), ADD_NOTIF(), AUTO_SAVE_STUDENTS() (jisme legacy DB
   // call bhi hai) seedhe (bina try/catch ke) call ho rahe the. Agar in mein se
-  // kisi ek mein bhi koi JS error aa jaye (e.g. Firebase/AgentFB available nahi,
+  // kisi ek mein bhi koi JS error aa jaye (e.g. legacy DB/AgentSync available nahi,
   // ya koi DOM element missing), to poora function wahin ruk jata tha aur neeche
   // wala "✅ successfully register ho gaya" wala success alert kabhi chalta hi
   // nahi tha — isliye student add hone ke baad bhi success message nahi khulta
@@ -5015,12 +5015,12 @@ function SAVE_ATT(){
   // Update dashboard attendance %
   UPD_ATT_DASH(date);
   SHOW_ATT_SUMMARY(date);
-  // ── Firebase mein save karo ──
+  // ── legacy DB mein save karo ──
   try {
     var attArray = Object.keys(ATT_RECORDS).map(function(d){
       return { date: d, records: ATT_RECORDS[d] };
     });
-    AgentFB.saveAttendance(attArray);
+    AgentSync.saveAttendance(attArray);
   } catch(e){}
   // Show green notification
   var nb = document.createElement('div');
@@ -5082,7 +5082,7 @@ function SHOW_ATT_SUMMARY(date) {
 }
 
 // FIX: called by the new real-time student_photos/selfies listeners so that as
-// soon as a student's photo arrives from Firebase, it shows up here automatically
+// soon as a student's photo arrives from legacy DB, it shows up here automatically
 // — without needing the "Mobile Sync" button. Ab Students list ki already-render
 // hui rows ko bhi patch karta hai (initials avatar -> actual clickable photo).
 function REFRESH_STU_PHOTOS() {
@@ -5151,10 +5151,10 @@ function REFRESH_STF_DUE(){
 // ════════════════════════════════════════════════════
 //  🧾 STAFF REGISTRATION → PENDING ADMIN VERIFICATION
 //  Flow: Agent yahan staff register karta hai → record ban kar
-//  Firebase 'shdl/pending_staff' list mein 'pending' status ke
+//  legacy DB 'shdl/pending_staff' list mein 'pending' status ke
 //  saath chala jata hai → Admin Login (alag device/browser) se
 //  us list ko dekh kar Verify/Reject kiya ja sakta hai.
-//  Jaise hi status Firebase mein badalta hai, yahan turant (real-time)
+//  Jaise hi status legacy DB mein badalta hai, yahan turant (real-time)
 //  badge update ho jata hai — Customer Registration / Salary Claim
 //  wale hi pattern par.
 // ════════════════════════════════════════════════════
@@ -5230,7 +5230,7 @@ function RESTORE_PENDING_STAFF_ROWS(){
   var cnt=document.querySelectorAll("#stftb tr[data-b]").length;
   ["stf-c","stf-cnt-nb","sb-stf"].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=cnt;});
 }
-// Real-time sync: Firebase se pending_staff list sunte raho (Admin Login se status
+// Real-time sync: legacy DB se pending_staff list sunte raho (Admin Login se status
 // update hote hi yahan turant reflect ho jayega, page reload ki zaroorat nahi)
 // Real-time sync ki jagah REST poll: Admin Login se status update hote hi
 // kuch second mein yahan reflect ho jayega.
@@ -5297,7 +5297,7 @@ function ADD_STF_CORE(){
   ["stf-c","stf-cnt-nb","sb-stf"].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent=cnt;});
   CM("stf");
 
-  // ── EMP ID ke saath poora record Firebase 'pending_staff' list mein bhejo,
+  // ── EMP ID ke saath poora record legacy DB 'pending_staff' list mein bhejo,
   //    taaki Admin Login (alag device/browser se) isko dekh kar Verify/Reject kar sake ──
   var pendingRec = {
     id: 'PSTF' + Date.now() + Math.floor(Math.random()*1000),
@@ -5425,7 +5425,7 @@ function PREVIEW_STF_PHOTO(input, prefix) {
 //  Flow: Staff (HRMS login) apna FIXED monthly vetan claim
 //  karta hai → Agent verify karta hai (pending_agent → pending_admin)
 //  → Admin Panel se FINAL confirmation milta hai (pending_admin → approved).
-//  Data Firebase path: shdl/salary_claims (Admin Panel ke DB jaisa hi array).
+//  Data legacy DB path: shdl/salary_claims (Admin Panel ke DB jaisa hi array).
 // ════════════════════════════════════════════════════
 function SAL_UID(){ return 'SAL' + Date.now() + Math.floor(Math.random()*1000); }
 function SAL_NOW(){
@@ -5708,7 +5708,7 @@ function RENDER_AGENT_WALLET(){
   if (!currentUser || !currentUser.agentId) return;
   var agentId = currentUser.agentId;
 
-  // 🆕 MIGRATED: wallet balance ab naye backend se, polling se (Firebase
+  // 🆕 MIGRATED: wallet balance ab naye backend se, polling se (legacy DB
   // .on() realtime push ki jagah — har 8 second mein fresh data; withdraw/
   // salary-verify/collect-payment ke turant baad bhi manual refresh hoti hai)
   if (!_WALLET_LISTENER_STARTED) {
@@ -7497,8 +7497,8 @@ document.addEventListener('input', function(e){ if(e.target && e.target.id==='cf
 
 // Payment mil jaane par: student ka fee record backend mein save karo
 // (Admin Panel ke Fee Payment History mein turant dikhega).
-// 🔒 FIX: pehle yeh seedha Firebase (fee_records) mein likhta tha — agar
-// network thoda bhi kamzor ho, to Firebase ka callback kabhi-kabhi bilkul
+// 🔒 FIX: pehle yeh seedha legacy DB (fee_records) mein likhta tha — agar
+// network thoda bhi kamzor ho, to legacy DB ka callback kabhi-kabhi bilkul
 // fire hi nahi hota tha (na success, na error) — button hamesha ke liye
 // "⏳ Saving..." par atka reh jaata tha. Ab yeh backend ke
 // '/payments/fee' route (fetch-based, hamesha turant success ya clear
@@ -7919,8 +7919,8 @@ function SYNC_STU_TO_MOBILE() {
     // FIX #1: Write to unified shdl_students key (same as admin panel + mobile app)
     localStorage.setItem('shdl_students', JSON.stringify(students));
     localStorage.setItem('shri_hari_students', JSON.stringify(students));
-    // ── Firebase mein bhi save karo ──
-    AgentFB.saveStudents(students);
+    // ── legacy DB mein bhi save karo ──
+    AgentSync.saveStudents(students);
     var idList = students.slice(0,10).map(function(s){ return s.id + ' — ' + s.name; }).join('\n');
     if(students.length > 10) idList += '\n...and ' + (students.length-10) + ' more';
     alert('✅ ' + students.length + ' students have been synced.\n\n📱 Mobile IDs:\n' + idList + '\n\nPlease use the same SHL-XXX ID to log in to the Mobile Attendance app.');
@@ -8058,7 +8058,7 @@ function LOAD_ADD_ATT_STU() {
 }
 
 // ═══ ATTENDANCE PAGE: Student ID enter/select karte hi uske Agent + Company ki
-// details (Logo, Name, UPI, QR Code, Company Name, Mobile) Firebase se automatically
+// details (Logo, Name, UPI, QR Code, Company Name, Mobile) legacy DB se automatically
 // load ho jaati hain — chahe woh student kisi bhi Agent ne register kiya ho. ═══
 var _attStuidLookupTimer = null;
 function ATT_STUID_LOOKUP(rawId) {
@@ -8748,13 +8748,13 @@ function RENDER_PLAN_PREF_OPTIONS() {
   sel.value = current || '';
   try { UPDATE_CR_PLAN_PRICE(); } catch (e) {}
 }
-// 🔒 FIX: pehle yeh Firebase (shdl/mem_plans) se load hota tha — jo Admin
+// 🔒 FIX: pehle yeh legacy DB (shdl/mem_plans) se load hota tha — jo Admin
 // Panel ke asli plans se disconnected tha (Admin Panel plans backend mein
 // save karta hai, /api/blob/mem_plans). Isi wajah se yahan hamesha khaali
 // ya purana data dikhta tha. Ab seedha backend se load hota hai, aur
 // Admin jab bhi plan add/edit/delete kare to 30 second ke andar yahan
 // bhi reflect ho jaata hai (backend live-push support nahi karta, isliye
-// polling se kaam chalate hain — Firebase jaisa real-time listener nahi,
+// polling se kaam chalate hain — legacy DB jaisa real-time listener nahi,
 // par kaafi qareeb).
 function LOAD_MEM_PLANS_FROM_BACKEND(){
   API.get('/blob/mem_plans').then(function(val){
@@ -9029,7 +9029,7 @@ function SUBMIT_CUST_REG() {
   var submitBtn = document.querySelector('#cust-reg-form button[type="submit"]');
   if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = '⏳ Preparing your order...'; }
 
-  // 🔒 FIX: pehle yahan seedha Firebase (shdl/pending_registrations) mein
+  // 🔒 FIX: pehle yahan seedha legacy DB (shdl/pending_registrations) mein
   // save ho jaata tha — bina kisi payment ke, aur ek completely alag
   // (Admin Panel se disconnected) jagah par. Ab: order backend par plan
   // ki SAHI price se banta hai (client jo bheje uska koi matlab nahi),
@@ -9233,7 +9233,7 @@ function DO_FACTORY_RESET() {
   btn.disabled = true;
   btn.textContent = 'Resetting...';
 
-  // 🔒 SAFE RESET: pehle yahan poore Firebase root ('shdl') ko delete kar
+  // 🔒 SAFE RESET: pehle yahan poore legacy DB root ('shdl') ko delete kar
   // diya jaata tha — matlab is button se EK agent dabaye to SAARE agents
   // (baaki libraries samet) ka poora data mit jaata! Ab sirf isi agent ka
   // apna data (POST /api/agent/factory-reset) delete hota hai — baaki kisi
@@ -9374,12 +9374,12 @@ function FR_CLEAR_LOCAL_AND_FINISH(okEl, btn) {
 <script>
 // ══════════════════════════════════════════════════════════════════
 // ══ HRMS: HR PANEL (Leave / Attendance) + GENERATE PAYSLIP ══
-// Ported from HRMS Portal → Agent Login (same Firebase project,
+// Ported from HRMS Portal → Agent Login (same legacy DB project,
 // separate 'hrms' root path so HRMS Portal's own data is untouched).
 // ══════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════
 // ══ HRMS: HR PANEL (Leave / Attendance) + GENERATE PAYSLIP ══
-// Ported from HRMS Portal → Agent Login. Pehle same Firebase project ka
+// Ported from HRMS Portal → Agent Login. Pehle same legacy DB project ka
 // 'hrms' root path use hota tha; ab seedha Postgres backend (server.js)
 // ke 'kv_blob' table ke 'hrms_*' keys se — Admin Panel/HRMS Portal ke
 // saath same data source.
@@ -9931,7 +9931,7 @@ function HRMS_SAVE_REG_EDIT(){
     errEl.textContent = '❌ ' + (err.message || 'Update failed. Please try again.');
   });
 }
-// ═ SOFT LOCK: registration ko approve/reject karne se pehle uska status Firebase
+// ═ SOFT LOCK: registration ko approve/reject karne se pehle uska status legacy DB
 // transaction se atomically 'pending' → 'Locking_HR' kiya jaata hai. Agar kisi
 // doosre agent/tab ne (ya double-click se) yeh registration pehle hi process kar
 // diya hai, transaction khud abort ho jaata hai — isse ek hi staff ke liye kabhi
@@ -9951,7 +9951,7 @@ function HRMS_APPROVE_REG(id){
   if (r.status !== 'pending'){ HRMS_SHOW_TOAST('⚠️ This registration is no longer pending. The page may have been refreshed.'); return; }
   if (!confirm(r.name+' — approve and grant HRMS Portal login access? The Employee ID will be generated automatically.')) return;
 
-  // 🆕 FIREBASE → BACKEND MIGRATION: pehle yahan multi-step Firebase
+  // 🆕 LEGACY-DB → BACKEND MIGRATION: pehle yahan multi-step legacy DB
   // transaction (soft-lock + empId claim) client-side hoti thi. Ab yeh
   // poora kaam POST /api/hr/registrations/:id/approve backend par
   // ATOMICALLY hota hai (empId generate + employee record banana +
@@ -10266,7 +10266,7 @@ function HRMS_RENDER_SALARY_VERIFY(){
   HRMS_UPDATE_SALVERIFY_BADGE();
 }
 // ═ SOFT LOCK (same principle as Agent commission verification): claim ka status
-// pehle Firebase transaction se atomically 'pending' → 'Locking_HR' kiya jaata hai.
+// pehle legacy DB transaction se atomically 'pending' → 'Locking_HR' kiya jaata hai.
 // Sirf tabhi aage badhte hain jab yeh lock hamare paas successfully aa jaaye — isse
 // double-click, do open tabs, ya do agents ka ek hi claim par ek saath kaam karna
 // kabhi bhi duplicate payslip ya do-baar-approval nahi bana sakta. Lock milne ke

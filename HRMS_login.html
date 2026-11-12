@@ -14,7 +14,7 @@
 // 🆕 GOOGLE CLOUD (Render) BACKEND — poori tarah migrated. Employees,
 // pending registrations, salary claims + slips, staff attendance, leave
 // requests, aur wallet/transactions — sab kuch ab Postgres REST API se
-// (Firebase real-time listeners hata diye gaye hain, sirf REST poll).
+// (legacy DB real-time listeners hata diye gaye hain, sirf REST poll).
 // ══════════════════════════════════════════════════════════════════
 const API_BASE = window.SHDL_API_BASE || '/api';
 // 🆕 This page can be served either statically on Netlify or dynamically
@@ -48,13 +48,13 @@ const API = {
   put: function (path, body) { return apiFetch(path, { method: 'PUT', body: JSON.stringify(body || {}) }); }
 };
 
-// 🆕 FIREBASE → BACKEND MIGRATION: pehle yeh sab FBDB.ref(...).on('value', cb)
-// (Firebase real-time push listener) se live update hote the. Naya secure
+// 🆕 LEGACY-DB → BACKEND MIGRATION: pehle yeh sab legacy realtime listeners
+// (legacy DB real-time push listener) se live update hote the. Naya secure
 // Postgres backend real-time push support nahi karta (yeh ek plain REST
 // API hai) — isliye ab hum har POLL_MS second mein REST se dobara fetch
 // karte hain aur wahi purana merge-logic (jo bahut saari edge-case bugs
 // fix karta hai — duplicate records, basic salary overwrite, etc.) usi
-// tarah chalate hain, bas data-source Firebase snapshot ki jagah REST
+// tarah chalate hain, bas data-source legacy DB snapshot ki jagah REST
 // response hai. Result end-user ko bilkul same lagta hai (kuch second
 // mein naya data aa jaata hai), bas ab "push" ki jagah "poll" hai.
 function pollRestData(fetchFn, intervalMs) {
@@ -62,7 +62,7 @@ function pollRestData(fetchFn, intervalMs) {
   return setInterval(fetchFn, intervalMs || 12000);
 }
 
-// FIX: Admin Panel / Agent Login (Staff Members page) apna staff data isi Firebase
+// FIX: Admin Panel / Agent Login (Staff Members page) apna staff data isi legacy DB
 // project ke 'shdl/staff' path par save karte hain — HRMS Portal ab tak sirf apne
 // khud ke 'hrms/employees' path se hi Employee ID check karta tha, isliye Admin Panel
 // mein banaya gaya EMP001/EMP002 yahan "Employee ID nahi mila" dikhta tha. Ab hum
@@ -102,10 +102,10 @@ _pollCloudStatus();
 setInterval(_pollCloudStatus, 10000);
 
 // ══ BACKEND SYNC HELPER (localStorage = instant UI, Postgres REST = cloud persistence) ══
-// 🆕 FIREBASE → BACKEND MIGRATION: pehle 'hrms/<key>' Firebase path use
+// 🆕 LEGACY-DB → BACKEND MIGRATION: pehle 'hrms/<key>' legacy DB path use
 // hota tha; ab seedha Postgres 'kv_blob' table ke 'hrms_<key>' keys se
 // (jaise 'hrms_employees', 'hrms_salary_slips', 'hrms_settings').
-const FBSync = {
+const CloudSync = {
   pull: function(key, cb){
     API.get('/blob/hrms_' + key).then(function(val){
       if (val !== null && val !== undefined) {
@@ -129,23 +129,23 @@ const FBSync = {
   },
   pullAll: function(cb){
     // 🔗 FIX: 'attendance' aur 'leaves' yahan se hata diye — inhe ab
-    // SharedFBSync (neeche) alag se 'shdl' root se pull karta hai. Pehle
+    // SharedCloudSync (neeche) alag se 'shdl' root se pull karta hai. Pehle
     // yeh dono is 'hrms' root se hi load ho rahe the, jahan HRMS khud hi
     // likhta tha (isliye UI mein data dikhta to tha, par Admin/Agent Panel
     // — jo 'shdl/staff_att' aur 'shdl/leave_requests' padhte hain — kabhi
     // yeh submissions dekh hi nahi paate the).
     var keys = ['employees','salary_slips','settings'];
     var done = 0;
-    keys.forEach(function(k){ FBSync.pull(k, function(){ done++; if (done === keys.length && cb) cb(); }); });
+    keys.forEach(function(k){ CloudSync.pull(k, function(){ done++; if (done === keys.length && cb) cb(); }); });
   }
 };
 
 // ══════════════════════════════════════════════════════════════════
-// 🔗 SharedFBSync — Digital Library ke 'shdl' Firebase root ke saath
+// 🔗 SharedCloudSync — Digital Library ke 'shdl' legacy DB root ke saath
 //   seedha kaam karta hai (Admin_panel_Login.html/Agent_login.html jis
 //   root aur jin exact key-naamon — 'staff_att', 'leave_requests' — ko
 //   padhte hain, wahi yahan bhi use hote hain). Isse pehle HRMS apna
-//   attendance/leave data alag 'hrms' Firebase root ('hrms/attendance',
+//   attendance/leave data alag 'hrms' legacy DB root ('hrms/attendance',
 //   'hrms/leaves') mein likh raha tha, jo Admin Panel/Agent Panel kabhi
 //   padhte hi nahi the — is wajah se staff ki submit ki hui leave ya
 //   attendance kahin bhi Admin/Agent ko dikhti hi nahi thi. Ab yeh
@@ -153,10 +153,10 @@ const FBSync = {
 //   dekhte hain, poora workflow ek hi data source se turant connect ho
 //   jaata hai.
 // ══════════════════════════════════════════════════════════════════
-const SharedFBSync = {
+const SharedCloudSync = {
   pull: function(key, cb){
-    // 🆕 FIREBASE → BACKEND MIGRATION: 'shdl/staff_att' aur 'shdl/leave_requests'
-    // Firebase paths ki jagah ab seedha usi Postgres 'kv_blob' table ke
+    // 🆕 LEGACY-DB → BACKEND MIGRATION: 'shdl/staff_att' aur 'shdl/leave_requests'
+    // legacy DB paths ki jagah ab seedha usi Postgres 'kv_blob' table ke
     // 'staff_att'/'leave_requests' keys se — Admin Panel/Agent Login bhi
     // yehi keys REST se padhte-likhte hain, isliye data ab bhi ek hi
     // shared jagah se connect rehta hai.
@@ -1083,8 +1083,8 @@ function ADD_EMPLOYEE(){
       designation: desig, department: dept, agentUsername: agentUsername, status: 'pending',
       submittedOn: new Date().toLocaleString('en-IN')
     };
-    // 🆕 FIREBASE → BACKEND MIGRATION: registration ab seedha naye secure
-    // Postgres backend par save hoti hai (POST /api/hr/register), Firebase
+    // 🆕 LEGACY-DB → BACKEND MIGRATION: registration ab seedha naye secure
+    // Postgres backend par save hoti hai (POST /api/hr/register), legacy DB
     // ki jagah. Yehi data Admin Panel aur Agent Login ke approval section
     // mein turant dikhta hai (dono ab isi backend se padhte hain).
     API.post('/hr/register', rec).then(function(){
@@ -1118,7 +1118,7 @@ function ADD_EMPLOYEE(){
 
 // ══════════════ LOAD DATA ══════════════
 function LOAD_ALL(cb){
-  FBSync.pullAll(function(){
+  CloudSync.pullAll(function(){
     try { EMPLOYEES = JSON.parse(localStorage.getItem('hrms_employees')) || []; } catch(e){ EMPLOYEES=[]; }
     try {
       var rawSlips = JSON.parse(localStorage.getItem('hrms_salary_slips'));
@@ -1126,17 +1126,17 @@ function LOAD_ALL(cb){
     } catch(e){ SLIPS=[]; }
     try { SETTINGS = JSON.parse(localStorage.getItem('hrms_settings')) || SETTINGS; } catch(e){}
     // 🔗 FIX: attendance/leaves ab shared 'shdl' root se aate hain (dekhein
-    // SharedFBSync upar) — taaki jo Admin/Agent Panel ne pehle se save kiya
+    // SharedCloudSync upar) — taaki jo Admin/Agent Panel ne pehle se save kiya
     // hai wahi yahan bhi dikhe, aur HRMS se naya submit kiya hua unhe bhi.
     var pending = 2;
     function doneOne(){ pending--; if (pending===0 && cb) cb(); }
-    SharedFBSync.pull('staff_att', function(arr){ ATTENDANCE = arr || []; doneOne(); });
-    SharedFBSync.pull('leave_requests', function(arr){ LEAVES = arr || []; doneOne(); });
-    console.log('HRMS: employees loaded from Firebase →', EMPLOYEES);
+    SharedCloudSync.pull('staff_att', function(arr){ ATTENDANCE = arr || []; doneOne(); });
+    SharedCloudSync.pull('leave_requests', function(arr){ LEAVES = arr || []; doneOne(); });
+    console.log('HRMS: employees loaded from legacy DB →', EMPLOYEES);
   });
 }
 
-// 🆕 MIGRATED: 'salary_slips' ab naye backend se aata hai (Firebase .on()
+// 🆕 MIGRATED: 'salary_slips' ab naye backend se aata hai (legacy DB .on()
 // realtime push ki jagah polling — har 10 second mein fresh data). Thoda
 // delay ho sakta hai (turant push nahi), par data source ab Postgres hai.
 var SALARY_SLIPS_SYNC_STARTED = false;
@@ -1156,7 +1156,7 @@ function SYNC_SALARY_SLIPS(){
 }
 
 // ══ Employee self-generated salary claims (Salary → Agent Login "Salary Verification") ══
-// 🆕 MIGRATED: naye backend se, polling (Firebase .on() ki jagah).
+// 🆕 MIGRATED: naye backend se, polling (legacy DB .on() ki jagah).
 var SALARY_CLAIMS_SYNC_STARTED = false;
 function SYNC_SALARY_CLAIMS(){
   if (SALARY_CLAIMS_SYNC_STARTED) return;
@@ -1234,7 +1234,7 @@ function SYNC_ADMIN_STAFF(){
     pollRestData(function(){
       API.get('/admin-entities/staff').then(function(adminStaff){
       if (!adminStaff) return;
-      // Firebase kabhi-kabhi array ki jagah {0:.., 2:..} jaisa object bhi de deta hai (gaps ki wajah se)
+      // legacy DB kabhi-kabhi array ki jagah {0:.., 2:..} jaisa object bhi de deta hai (gaps ki wajah se)
       if (typeof adminStaff === 'object' && !Array.isArray(adminStaff)) {
         adminStaff = Object.keys(adminStaff).map(function(k){ return adminStaff[k]; });
       }
@@ -1287,7 +1287,7 @@ function SYNC_ADMIN_STAFF(){
   }catch(e){ console.warn('Admin staff sync error:', e); }
 }
 
-// 🆕 FIREBASE → BACKEND MIGRATION: 'hrms_pending_registrations' ab Admin/
+// 🆕 LEGACY-DB → BACKEND MIGRATION: 'hrms_pending_registrations' ab Admin/
 // Agent-login-protected hai (isme applicants ka phone+photo jaisa PII
 // hota hai, isliye ab anonymous registration-screen se yeh poori list
 // padhi hi nahi ja sakti — sahi RBAC). Registration-submit ke waqt
@@ -2149,7 +2149,7 @@ function PUNCH_IN(photo, loc){
   if (photo) rec.inPhoto = photo;
   if (loc) rec.inLoc = loc;
   if (!existing) ATTENDANCE.push(rec);
-  SharedFBSync.push('staff_att', ATTENDANCE);
+  SharedCloudSync.push('staff_att', ATTENDANCE);
   SHOW_TOAST('🟢 Punched in successfully — '+rec.inTime);
   RENDER_EMP_ATTENDANCE();
 }
@@ -2161,7 +2161,7 @@ function PUNCH_OUT(photo, loc){
   rec.outTime = nowTimeStr();
   if (photo) rec.outPhoto = photo;
   if (loc) rec.outLoc = loc;
-  SharedFBSync.push('staff_att', ATTENDANCE);
+  SharedCloudSync.push('staff_att', ATTENDANCE);
   SHOW_TOAST('🔴 Punched out successfully — '+rec.outTime);
   RENDER_EMP_ATTENDANCE();
 }
@@ -2286,7 +2286,7 @@ function APPLY_LEAVE(){
     status: 'pending', appliedOn: new Date().toLocaleString('en-IN')
   };
   LEAVES.push(rec);
-  SharedFBSync.push('leave_requests', LEAVES);
+  SharedCloudSync.push('leave_requests', LEAVES);
   suc.textContent = 'Your leave application has been submitted. Please await HR approval.';
   document.getElementById('lv-reason').value='';
   document.getElementById('lv-from').value='';
@@ -2300,7 +2300,7 @@ function CANCEL_LEAVE(id){
   var l = LEAVES.find(function(x){ return x.id===id; });
   if (!l || l.status!=='pending') return;
   l.status = 'cancelled';
-  SharedFBSync.push('leave_requests', LEAVES);
+  SharedCloudSync.push('leave_requests', LEAVES);
   SHOW_TOAST('🗑️ The leave application has been cancelled.');
   RENDER_EMP_LEAVE();
 }
@@ -2419,9 +2419,9 @@ LOAD_ALL(function(){
       .catch(function (err) { callback(new Error(err.message || 'Rejection failed.')); });
   }
 
-  // 🆕 FIREBASE → BACKEND MIGRATION: pehle yeh teeno FBDB.ref(...).on('value')
+  // 🆕 LEGACY-DB → BACKEND MIGRATION: pehle yeh teeno legacy realtime listeners
   // real-time listeners the — asal mein STALE the (writes bahut pehle hi
-  // /api/payments/... route par shift ho chuki thi, Firebase ka purana
+  // /api/payments/... route par shift ho chuki thi, legacy DB ka purana
   // 'Pending_HRMS' status naye Postgres 'pending' status se kabhi match
   // hi nahi hota tha). Ab seedha REST polling (har 10 second) se, sahi
   // Postgres data ke saath.

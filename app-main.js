@@ -2398,28 +2398,48 @@ app.post('/api/material/change-mobile', requireActiveMaterialUser, (req, res) =>
         if (!auth || auth.role !== 'material_user' || !auth.userId) {
             return res.status(401).json({ error: 'Your session has expired. Please log in again.' });
         }
+        // Mobile / Password: either field (or both) may be sent; at least one is required.
         const rawMobile = req.body && req.body.newMobile;
         const newMobile = rawMobile != null ? String(rawMobile).trim() : '';
         const digitsOnly = newMobile.replace(/\D/g, '');
-        if (digitsOnly.length !== 10) {
+        const wantMobile = newMobile !== '';
+        const newPassword = req.body && req.body.newPassword != null ? String(req.body.newPassword) : '';
+        const wantPassword = newPassword !== '';
+        if (!wantMobile && !wantPassword) {
+            return res.status(400).json({ error: 'Enter a new mobile number, a new password, or both.' });
+        }
+        if (wantMobile && digitsOnly.length !== 10) {
             return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
         }
-        db.query('SELECT id, mobile FROM material_users WHERE userid = ?', [auth.userId], (err, rows) => {
+        if (wantPassword && (newPassword.length < 6 || newPassword.length > 64)) {
+            return res.status(400).json({ error: 'The password must be 6 to 64 characters long.' });
+        }
+        db.query('SELECT id, name, mobile FROM material_users WHERE userid = ?', [auth.userId], (err, rows) => {
             if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
             if (!rows || !rows.length) return res.status(404).json({ error: 'User ID not found.' });
             const me = rows[0];
-            // Duplicate check: koi aur material user isi mobile (last 10 digits
-            // ke aadhar par, taaki formatting ka farq na pade) se registered na ho.
+            const apply = () => {
+                const sets = [], params = [];
+                if (wantMobile) { sets.push('mobile = ?'); params.push(digitsOnly); }
+                if (wantPassword) { sets.push('password_hash = ?'); params.push(bcrypt.hashSync(newPassword, 10)); }
+                params.push(me.id);
+                db.query('UPDATE material_users SET ' + sets.join(', ') + ' WHERE id = ?', params, (uErr) => {
+                    if (uErr) return res.status(500).json({ error: 'DB error: ' + uErr.message });
+                    if (wantPassword) {
+                        // password changed → remembered devices must pass OTP again; confirmation never contains the password
+                        try { Promise.resolve(revokeTrustedDevices(auth.userId)).catch(() => {}); } catch (e) { /* best effort */ }
+                        try { Promise.resolve(notifyAccount({ kind: 'password_changed', mobile: wantMobile ? digitsOnly : me.mobile, name: me.name, userId: auth.userId })).catch(() => {}); } catch (e) { /* best effort */ }
+                    }
+                    res.json({ success: true, mobile: wantMobile ? digitsOnly : undefined, mobileChanged: wantMobile, passwordChanged: wantPassword });
+                });
+            };
+            if (!wantMobile) return apply();
+            // Duplicate check: no other material user may already hold this mobile (last 10 digits)
             db.query('SELECT id, mobile FROM material_users WHERE id != ?', [me.id], (dupErr, others) => {
                 if (dupErr) return res.status(500).json({ error: 'DB error: ' + dupErr.message });
                 const clash = (others || []).some(r => String(r.mobile || '').replace(/\D/g, '').slice(-10) === digitsOnly);
-                if (clash) {
-                    return res.status(409).json({ error: 'This mobile number is already registered with another ID.' });
-                }
-                db.query('UPDATE material_users SET mobile = ? WHERE id = ?', [digitsOnly, me.id], (uErr) => {
-                    if (uErr) return res.status(500).json({ error: 'DB error: ' + uErr.message });
-                    res.json({ success: true, mobile: digitsOnly });
-                });
+                if (clash) return res.status(409).json({ error: 'This mobile number is already registered with another ID.' });
+                apply();
             });
         });
     } catch (e) {
@@ -2456,7 +2476,7 @@ app.post('/api/material/verify-self', noStore, requireActiveMaterialUser, asyncR
 }));
 
 // ══════════════════════════════════════════════════════════════════
-// 🔐 AUTH BRIDGE — Admin/Agent/Student login khud client-side (Firebase
+// 🔐 AUTH BRIDGE — Admin/Agent/Student login khud client-side (legacy DB
 //   data ke against) hota hai; yeh route sirf ek session token deta hai
 //   taaki wallet/salary jaisi identity-based routes kaam kar sakein.
 // ══════════════════════════════════════════════════════════════════
@@ -2545,7 +2565,7 @@ app.post('/api/auth/login', (req, res) => {
 
     // ── Employee (HRMS) role: password nahi hota, Employee ID + mobile
     //    match hi verification hai — 'hrms_employees' blob se check karte
-    //    hain (Firebase ki jagah Postgres). ──
+    //    hain (legacy DB ki jagah Postgres). ──
     if (roleKey === 'employee') {
         if (!mobile) return res.status(400).json({ error: 'Mobile number is required.' });
         db.query('SELECT value FROM kv_blob WHERE `key` = ?', ['hrms_employees'], (err, rows) => {
@@ -2703,7 +2723,7 @@ app.post('/api/auth/logout', noStore, (req, res) => {
 
 // ══════════════════════════════════════════════════════════════════
 // 🗄️ GENERIC KEY-VALUE STORES — admin-entities / blob / site-data
-//   (Admin Panel ke FBSync.pull/push isi se judte hain)
+//   (Admin Panel ke CloudSync.pull/push isi se judte hain)
 // ══════════════════════════════════════════════════════════════════
 const ENTITY_KEYS = ['admins', 'staff', 'agents', 'students', 'agent_logins'];
 // 🔒 Secrets/config jo kabhi bhi bina Admin login ke GET bhi nahi hone
@@ -2961,7 +2981,7 @@ app.delete('/api/blob/:key', requireRole('admin'), (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// 🧑‍💼 HRMS EMPLOYEE REGISTRATION + APPROVAL (Postgres-backed, Firebase
+// 🧑‍💼 HRMS EMPLOYEE REGISTRATION + APPROVAL (Postgres-backed, legacy DB
 //   ki jagah). Data 'kv_blob' mein 'hrms_pending_registrations' aur
 //   'hrms_employees' keys ke andar rehta hai (dono BLOB_KEYS mein hain).
 //   Naya employee: self-register (pending) → Admin ya us Agent (jiski
@@ -3255,7 +3275,7 @@ app.put('/api/hr/employees/:empId', requireRole('employee', 'agent', 'admin'), (
             // 🔒 UPSERT: Admin Panel ke 'staff' entity wale employees frontend par
             // 'hrms_employees' ke saath sirf MERGE hote hain (asal blob mein nahi
             // hote) — jab agent pehli baar unki Basic Salary set kare, to yahan
-            // naya record ban jaata hai (jaisa Firebase .set() bhi karta tha).
+            // naya record ban jaata hai (jaisa legacy DB .set() bhi karta tha).
             const ownerField = (req.body && (req.body.agentUsername || req.body.ownerUser)) || '';
             if (role === 'agent' && ownerField && String(ownerField).toLowerCase() !== String(auth.username).toLowerCase()) {
                 return res.status(401).json({ error: 'You can update only the employees of your own library.' });
@@ -3279,11 +3299,11 @@ app.put('/api/hr/employees/:empId', requireRole('employee', 'agent', 'admin'), (
     });
 });
 
-// 7) HRMS ke transactions/dashboard REST reads — pehle Firebase real-time
+// 7) HRMS ke transactions/dashboard REST reads — pehle legacy DB real-time
 //    listeners (watchPendingTransactions/watchAdminDashboard) use hote the,
 //    jo asal mein STALE the (writes bahut pehle hi is naye /api/payments/
 //    route par shift ho chuki thi, status bhi 'pending'/'verified' hai,
-//    Firebase wale purane 'Pending_HRMS' status se kabhi match hi nahi
+//    legacy DB wale purane 'Pending_HRMS' status se kabhi match hi nahi
 //    hota tha). Ab seedha isi Postgres 'transactions' table se REST GET.
 app.get('/api/hr/pending-transactions', (req, res) => {
     const auth = getAuthUser(req);
@@ -3309,7 +3329,7 @@ app.get('/api/hr/admin-dashboard', requireRole('admin'), (req, res) => {
 
 // 🔒 SAFE "Factory Reset" — sirf ISI Agent ke apne data (students, attendance,
 // fee records, members, pending_staff, salary_claims — jahan bhi 'ownerUser'/
-// 'agentId'/'agentUsername' match kare) ko hataata hai. Firebase-era wala
+// 'agentId'/'agentUsername' match kare) ko hataata hai. legacy DB-era wala
 // purana button POORE 'shdl' root ko delete kar deta tha — matlab EK agent
 // dabaye to SAARE agents ka data (baaki libraries samet) mit jaata — ek
 // khatarnak cross-tenant bug jo yahan fix kiya gaya hai. Yeh naya route
@@ -4258,7 +4278,7 @@ app.get('/api/students', (req, res) => kvGet('kv_admin_entities', 'students', re
 // ban jaata. Ab yeh ID seedha live database (jo hamesha sabse sahi/
 // up-to-date jagah hai) dekh kar diya jaata hai.
 // 🆕 PENDING REGISTRATION SYNC — pehle "Agent Register" form seedha
-// Firebase (shdl/agent_logins) mein likh kar turant agent ko active kar
+// legacy DB (shdl/agent_logins) mein likh kar turant agent ko active kar
 // deta tha — Admin Panel ko iske baare mein pata hi nahi chalta tha,
 // koi "Pending" list thi hi nahi jahan yeh dikhta. Ab yeh backend mein
 // pending register hota hai; Admin Panel isse dekh kar Approve/Reject
@@ -6229,9 +6249,9 @@ app.put('/api/admin/material-invoice-settings', requireRole('admin'), asyncRoute
 
 // 🎓 STUDENT SUBSCRIPTION PAYMENT — Student_Attendance.html ka
 //   "Ab Payment Karein" button ab seedha in dono routes se judta hai
-//   (pehle yeh Admin Panel mein manually daale gaye ek alag Firebase
+//   (pehle yeh Admin Panel mein manually daale gaye ek alag legacy DB
 //   'razorpay_config.orderEndpoint' URL ko call karta tha, aur payment
-//   verify + subscription-activate ek Firebase Cloud Function ke bharose
+//   verify + subscription-activate ek legacy DB Cloud Function ke bharose
 //   chhod diya gaya tha jiska is codebase mein kahin naamo-nishaan nahi
 //   hai — isi wajah se payment ho jaane ke baad bhi student ka
 //   subscription kabhi activate nahi hota tha aur paisa kahin record
@@ -6341,7 +6361,7 @@ app.post('/api/payments/student-subscription/verify', async (req, res) => {
 // 🧑‍💼 AGENT SUBSCRIPTION PAYMENT — Agent App ke "Renew" button ko
 //   ab bhi seedha isse jodna hai (dekhein PAY_AGENT_SUBSCRIPTION()).
 //   Pehle yeh Razorpay checkout bina kisi order_id ke khulta tha, aur
-//   payment 'successful' hote hi client seedha browser se Firebase
+//   payment 'successful' hote hi client seedha browser se legacy DB
 //   likh deta tha — koi server-side verification nahi thi. Iska matlab
 //   koi bhi browser console se AGENT_APPLY_RENEWAL() ko fake refId ke
 //   saath call karke, bina paisa diye, apni subscription "renew" dikha
@@ -6779,7 +6799,7 @@ app.get('/api/hrms-salary/slips', (req, res) => {
 });
 // ══════════════════════════════════════════════════════════════════
 // 💳 SUBSCRIPTION RENEWAL — Agent_login.html ka AGENT_APPLY_RENEWAL()
-//   pehle 3 alag-alag Firebase calls karta tha (agent update, students
+//   pehle 3 alag-alag legacy DB calls karta tha (agent update, students
 //   bulk-activate, payment history log). Ab yeh sab EK hi backend call
 //   mein ho jaata hai — 'agents'/'students' (kv_admin_entities) aur
 //   'agent_payments' (kv_blob) ko seedhe DB mein update karke.

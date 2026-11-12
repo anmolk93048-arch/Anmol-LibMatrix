@@ -979,7 +979,7 @@
     <span class="wl-pill" id="walletPill" title="Prepaid credit balance — the invoice fee is deducted from this"><span class="wl-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a2 2 0 0 1 2 2v1.5"/><path d="M3 7.5V17a2 2 0 0 0 2 2h13.5a1.5 1.5 0 0 0 1.5-1.5V10a1.5 1.5 0 0 0-1.5-1.5H5.5A2.5 2.5 0 0 1 3 6"/><circle cx="16.5" cy="13.7" r="1.1" fill="currentColor" stroke="none"/></svg></span><span id="walletChip">Credit: …</span></span>
     <button type="button" class="wl-add" onclick="walletAddCredit()"><span class="plus">+</span> Add Credit</button>
     <button type="button" class="wl-ghost" onclick="openWalletLedger()" title="Your recharges, bill fees and balance history"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></svg> Wallet History</button>
-    <button type="button" class="wl-ghost" onclick="openChangeMobileModal()">📱 Change Mobile Number</button>
+    <button type="button" class="wl-ghost" onclick="openChangeMobileModal()">🔐 Mobile / Password</button>
     <button type="button" class="wl-ghost danger" onclick="logoutPortal()">🚪 Logout</button>
   </div>
 </div>
@@ -1003,23 +1003,27 @@
   </div>
 </div>
 
-<!-- ============ CHANGE MOBILE NUMBER MODAL ============ -->
+<!-- ============ MOBILE / PASSWORD MODAL ============ -->
 <div id="changeMobileModal" class="no-print" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(11,37,69,0.55);align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#fbfaf7;width:100%;max-width:380px;border-radius:6px;border:1px solid #d8d2c2;box-shadow:0 10px 40px rgba(0,0,0,0.35);overflow:hidden;">
+  <div style="background:#fbfaf7;width:100%;max-width:380px;max-height:92vh;overflow:auto;border-radius:6px;border:1px solid #d8d2c2;box-shadow:0 10px 40px rgba(0,0,0,0.35);">
     <div class="login-card-header" style="padding:14px 16px;">
-      <h3 style="font-size:14px;font-weight:800;letter-spacing:.02em;">📱 Change Mobile Number</h3>
-      <p style="font-size:11px;color:#cfe0ff;margin-top:2px;">Updating will automatically log you out</p>
+      <h3 style="font-size:14px;font-weight:800;letter-spacing:.02em;">🔐 Mobile / Password</h3>
+      <p style="font-size:11px;color:#cfe0ff;margin-top:2px;">Update your mobile number, your password, or both. You will be logged out afterwards.</p>
     </div>
     <div style="padding:16px;">
       <div id="cmError" class="login-error" style="margin-bottom:10px;"></div>
-      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">New Mobile Number</label>
-      <input type="tel" id="cmNewMobile" maxlength="10" placeholder="10-digit mobile number"
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">New Mobile Number <span style="font-weight:500;color:#6b7280">(optional)</span></label>
+      <input type="tel" id="cmNewMobile" maxlength="10" placeholder="10-digit mobile — leave blank to keep current" autocomplete="tel"
         style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;letter-spacing:1px;margin-bottom:12px;"
         oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)">
-      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">Confirm Mobile Number</label>
-      <input type="tel" id="cmConfirmMobile" maxlength="10" placeholder="Re-enter mobile number"
-        style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;letter-spacing:1px;margin-bottom:16px;"
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">Confirm New Mobile Number</label>
+      <input type="tel" id="cmConfirmMobile" maxlength="10" placeholder="Re-enter new mobile number" autocomplete="off"
+        style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;letter-spacing:1px;margin-bottom:12px;"
         oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)">
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">New Password <span style="font-weight:500;color:#6b7280">(optional)</span></label>
+      <input type="password" id="cmNewPassword" maxlength="64" placeholder="Min 6 characters — leave blank to keep current" autocomplete="new-password" style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;margin-bottom:12px;">
+      <label style="font-size:11.5px;font-weight:700;color:var(--gov-navy);display:block;margin-bottom:4px;">Confirm New Password</label>
+      <input type="password" id="cmConfirmPassword" maxlength="64" placeholder="Re-enter new password" autocomplete="new-password" style="width:100%;border:1px solid #cbd3de;border-radius:4px;padding:8px 10px;font-size:14px;margin-bottom:16px;">
       <div style="display:flex;gap:8px;">
         <button onclick="closeChangeMobileModal()" style="flex:1;padding:9px;border-radius:4px;border:1px solid #cbd3de;background:#fff;color:var(--gov-navy);font-weight:700;font-size:12.5px;cursor:pointer">Cancel</button>
         <button id="cmSubmitBtn" onclick="submitChangeMobile()" style="flex:1.4;padding:9px;border-radius:4px;border:none;background:var(--gov-blue);color:#fff;font-weight:700;font-size:12.5px;cursor:pointer">Update</button>
@@ -1471,7 +1475,7 @@
 
 <script>
 /* ============ GOOGLE CLOUD BACKEND (Cloud Run + MySQL) ============
-   यह पोर्टल अब सीधे Firestore नहीं, बल्कि उसी नए Cloud Run बैकएंड से जुड़ता
+   यह पोर्टल अब सीधे legacy DB नहीं, बल्कि उसी नए Cloud Run बैकएंड से जुड़ता
    है जो Admin Panel / Agent Login / HRMS / Student Attendance पहले से
    इस्तेमाल कर रहे हैं — ताकि सारा डेटा (Users, Bills) एक ही MySQL डेटाबेस
    में रहे। */
@@ -1535,7 +1539,7 @@ function _savesAsNewRecord(){
 
 /* Polling sync: लॉगिन के बाद सिर्फ इसी यूज़र (ownerUserId) के बिल लोड होंगे —
    ताकि User A का डेटा User B को कभी न दिखे। Admin Panel में सभी यूज़र्स का
-   डेटा अलग-अलग दिखता है। हर 10 सेकंड में fresh डेटा खींचा जाता है (Firebase
+   डेटा अलग-अलग दिखता है। हर 10 सेकंड में fresh डेटा खींचा जाता है (legacy DB
    .onSnapshot() की जगह ab REST polling — data source ab MySQL है)। */
 function startBillsSync(){
   if(_billsSyncTimer) clearInterval(_billsSyncTimer);
@@ -1750,14 +1754,62 @@ function loadMaterialCategories(){
   });
 }
 
+/* Finds a material inside a catalogue: same object, then stable id, then label. -1 if absent. */
+function _catIndexOf(cat, it){
+  if(!it) return -1;
+  let i = cat.indexOf(it);
+  if(i >= 0) return i;
+  if(it.id){ i = cat.findIndex(function(x){ return x && x.id && String(x.id) === String(it.id); }); if(i >= 0) return i; }
+  const lb = _matLabel(it);
+  return cat.findIndex(function(x){ return x && _matLabel(x) === lb; });
+}
+
+/* Work Category changed: ONLY the material dropdown options are refreshed.
+   Everything already entered in Section C (unit, price, quantity, GST, amount) is kept as-is.
+   - A row whose material also exists in the new category keeps that material selected.
+   - A row whose material is NOT in the new category keeps it too (added to its list) so its data is never lost.
+   - A row that is still untouched (first material, qty 0, default price/GST) simply follows the new category's first material. */
 function onWorkCategoryChange(){
-  const cat = document.getElementById('workCategory').value;
-  const found = WORK_CATEGORIES.find(function(c){ return c.id === cat; });
-  ACTIVE_CATALOG = found ? found.items : WORK_CATEGORIES[0].items;
-  // Reset the material rows so the newly loaded list matches the chosen category
-  document.getElementById('materialBody').innerHTML = '';
-  rowCounter = 0;
-  addRow();
+  const catId = document.getElementById('workCategory').value;
+  const found = WORK_CATEGORIES.find(function(c){ return c.id === catId; });
+  const oldCatalog = ACTIVE_CATALOG;
+  let newCatalog = (found ? found.items : WORK_CATEGORIES[0].items).slice();
+  const rows = Array.prototype.slice.call(document.querySelectorAll('#materialBody tr'));
+  const plan = rows.map(function(tr){
+    const sel = tr.querySelector('.mat-select');
+    const it = sel ? (oldCatalog[parseInt(sel.value, 10) || 0] || null) : null;
+    const qty = parseFloat(tr.querySelector('.qty-field').value) || 0;
+    const price = parseFloat(tr.querySelector('.price-field').value) || 0;
+    const gstEl = tr.querySelector('.gst-select');
+    const gst = gstEl ? (parseFloat(gstEl.value) || 0) : 0;
+    const untouched = !!it && oldCatalog.indexOf(it) === 0 && qty === 0 &&
+      price === (Number(it.price) || 0) && gst === (Number(it.gst) || 0);
+    return { tr: tr, sel: sel, it: it, untouched: untouched };
+  });
+  // keep rows' own materials selectable even when the new category doesn't list them
+  plan.forEach(function(p){
+    if(p.it && !p.untouched && _catIndexOf(newCatalog, p.it) < 0) newCatalog.push(p.it);
+  });
+  ACTIVE_CATALOG = newCatalog;
+  plan.forEach(function(p){
+    if(!p.sel) return;
+    if(p.untouched || !p.it){
+      // fresh row: follow the new category completely (same as adding a new row)
+      const m = newCatalog[0];
+      p.sel.innerHTML = materialOptions(0);
+      if(m){
+        p.tr.dataset.mid = m.id ? String(m.id) : '';
+        p.tr.querySelector('.unit-field').value = m.unit == null ? '' : String(m.unit);
+        p.tr.querySelector('.price-field').value = Number(m.price) || 0;
+        p.tr.children[6].innerHTML = gstCellHTML(Number(m.gst) || 0);
+      }
+    } else {
+      const idx = _catIndexOf(newCatalog, p.it);
+      p.sel.innerHTML = materialOptions(idx < 0 ? 0 : idx);   // options only — no value in the row is touched
+    }
+  });
+  if(!rows.length) addRow();
+  calculateAll();
 }
 
 /* Item label = [code-]name. Code / default price are managed by the Super Admin (Material Master). */
@@ -2550,9 +2602,9 @@ function printInvoiceSinglePage(){
   });
 }
 
-/* ============ SAVED BILLS — GOOGLE CLOUD FIRESTORE ============
+/* ============ SAVED BILLS — CLOUD BACKEND ============
    localStorage अब सिर्फ EMERGENCY FALLBACK के तौर पर इस्तेमाल होता है —
-   अगर इंटरनेट न हो, या firebaseConfig अभी अपडेट न किया गया हो, तो डेटा इस
+   अगर इंटरनेट न हो, या legacy-dbConfig अभी अपडेट न किया गया हो, तो डेटा इस
    ब्राउज़र में सुरक्षित रह जाता है ताकि कुछ भी खोए नहीं। */
 const LOCAL_BACKUP_KEY = 'anmol_local_backup_bills_v1';
 
@@ -2700,7 +2752,7 @@ function applyFormData(data){
   calculateAll();
 }
 
-/* साइडबार में "Load" दबाने पर Firestore से आया वही बिल फॉर्म में भर दिया जाता है */
+/* साइडबार में "Load" दबाने पर legacy DB से आया वही बिल फॉर्म में भर दिया जाता है */
 function loadBill(idx){
   const bill = cloudBillsCache[idx];
   if(!bill) return;
@@ -2834,7 +2886,7 @@ addRow({matIdx:4});   // Portland Cement
 /* =====================================================================
    ⚠️ ज़रूरी नोट (कृपया पढ़ें):
    यह लॉगिन अब Admin Panel में बनाई गई "Invoice Material List" के User ID +
-   Mobile Number से Cloud Firestore (material_users collection) में मिलान
+   Mobile Number से Cloud legacy DB (material_users collection) में मिलान
    करता है — अब User ID/Mobile कोड में हार्डकोड नहीं हैं। अगर एडमिन किसी
    यूज़र को Block कर दे, तो वह यूज़र यहां लॉगिन नहीं कर पाएगा।
    कैप्चा और अन्य फ्रंट-एंड सुरक्षा (नीचे) फिर भी सिर्फ आम यूज़र को रोकने के
@@ -3056,7 +3108,7 @@ function logoutPortal(){
   if(!confirm('Do you want to log out?')) return;
   try{AnmolPortal.notifyLogout();}catch(e){}
   // 🆕 FIX: यहाँ पहले `_billsUnsubscribe` नाम का एक ऐसा variable इस्तेमाल हो
-  // रहा था जो पूरे कोड में कहीं भी declare नहीं था (पुराने Firestore-आधारित
+  // रहा था जो पूरे कोड में कहीं भी declare नहीं था (पुराने legacy DB-आधारित
   // वर्ज़न का leftover)। इससे confirm('OK') दबाने के तुरंत बाद
   // "ReferenceError: _billsUnsubscribe is not defined" फेंकता था, और नीचे की
   // सारी लाइनें (session clear + reload) कभी चलती ही नहीं थीं — इसलिए Logout
@@ -3073,7 +3125,7 @@ function logoutPortal(){
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 🆕 CHANGE MOBILE NUMBER (login ke baad, Dashboard/Status-bar se)
+// 🆕 MOBILE / PASSWORD (login ke baad, Dashboard/Status-bar se) — mobile, password ya dono badal sakte hain
 //   Flow: naya number 2 baar likhein → 'Update करें' दबाएं → backend
 //   '/api/material/change-mobile' database mein naya mobile save karta
 //   hai (Admin Panel bhi turant yahi naya number dikhाने लगता है) →
@@ -3081,9 +3133,9 @@ function logoutPortal(){
 // ══════════════════════════════════════════════════════════════════
 function openChangeMobileModal(){
   const nm = document.getElementById('cmNewMobile');
-  const cm = document.getElementById('cmConfirmMobile');
-  if(nm) nm.value = '';
-  if(cm) cm.value = '';
+  ['cmNewMobile','cmConfirmMobile','cmNewPassword','cmConfirmPassword'].forEach(function(id){
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
   hideChangeMobileError();
   const modal = document.getElementById('changeMobileModal');
   if(modal) modal.style.display = 'flex';
@@ -3108,21 +3160,40 @@ function hideChangeMobileError(){
 }
 
 async function submitChangeMobile(){
-  const newMobile = (document.getElementById('cmNewMobile').value || '').trim();
-  const confirmMobile = (document.getElementById('cmConfirmMobile').value || '').trim();
+  const v = function(id){ const el = document.getElementById(id); return el ? el.value : ''; };
+  const newMobile = v('cmNewMobile').trim();
+  const confirmMobile = v('cmConfirmMobile').trim();
+  const newPassword = v('cmNewPassword');
+  const confirmPassword = v('cmConfirmPassword');
   hideChangeMobileError();
 
-  if(!/^[0-9]{10}$/.test(newMobile)){
-    showChangeMobileError('Please enter a valid 10-digit mobile number.');
+  if(!newMobile && !newPassword){
+    showChangeMobileError('Enter a new mobile number, a new password, or both.');
     return;
   }
-  if(newMobile !== confirmMobile){
-    showChangeMobileError('The mobile numbers entered do not match. Please check again.');
-    return;
+  if(newMobile){
+    if(!/^[0-9]{10}$/.test(newMobile)){
+      showChangeMobileError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    if(newMobile !== confirmMobile){
+      showChangeMobileError('The mobile numbers entered do not match. Please check again.');
+      return;
+    }
+    if(loggedInUser && newMobile === String(loggedInUser.mobile || '').replace(/\D/g,'').slice(-10)){
+      showChangeMobileError('This is your current mobile number. Please enter a new number.');
+      return;
+    }
   }
-  if(loggedInUser && newMobile === String(loggedInUser.mobile || '').replace(/\D/g,'').slice(-10)){
-    showChangeMobileError('This is your current mobile number. Please enter a new number.');
-    return;
+  if(newPassword){
+    if(newPassword.length < 6){
+      showChangeMobileError('The password must be at least 6 characters long.');
+      return;
+    }
+    if(newPassword !== confirmPassword){
+      showChangeMobileError('The passwords entered do not match. Please check again.');
+      return;
+    }
   }
   if(!AUTH_TOKEN){
     showChangeMobileError('❌ Session not found. Please log in again.');
@@ -3133,9 +3204,13 @@ async function submitChangeMobile(){
   if(btn){ btn.disabled = true; btn.textContent = 'Updating...'; }
 
   try{
-    await withTimeout(API.post('/material/change-mobile', { newMobile: newMobile }), 15000, 'Mobile number update');
+    const payload = {};
+    if(newMobile) payload.newMobile = newMobile;
+    if(newPassword) payload.newPassword = newPassword;
+    await withTimeout(API.post('/material/change-mobile', payload), 15000, 'Mobile / password update');
     closeChangeMobileModal();
-    alert('✅ Your mobile number has been updated successfully.\nPlease log in again with your new mobile number (' + newMobile + ').');
+    const what = (newMobile && newPassword) ? 'mobile number and password have' : (newMobile ? 'mobile number has' : 'password has');
+    alert('✅ Your ' + what + ' been updated successfully.\nPlease log in again' + (newMobile ? ' with your new mobile number (' + newMobile + ')' : ' with your new password') + '.');
     forceLogoutAfterMobileChange();
   }catch(err){
     showChangeMobileError('❌ ' + err.message);
@@ -3177,7 +3252,7 @@ function previewRegPhoto(input){
     const img = new Image();
     img.onload = function(){
       // बड़ी मोबाइल फोटो (कई MB) को छोटा करके ~150-200KB तक compress करते हैं,
-      // ताकि Firestore document limit (1MB) से बड़ी न हो और upload अटके नहीं।
+      // ताकि legacy DB document limit (1MB) से बड़ी न हो और upload अटके नहीं।
       const maxDim = 500;
       let w = img.width, h = img.height;
       if(w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
@@ -3298,7 +3373,7 @@ function withTimeout(promise, ms = 15000, label = 'Request'){
   return Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(
-      label + ' did not complete within 15 seconds — please check your internet connection or firewall (make sure firestore.googleapis.com is not blocked).'
+      label + ' did not complete within 15 seconds — please check your internet connection and try again.'
     )), ms))
   ]);
 }
@@ -3628,7 +3703,7 @@ async function attemptLogin(){
 
   try{
     // Login now goes through the same Cloud Run backend (MySQL) set in
-    // API_BASE above, instead of Firestore — /material/login route.
+    // API_BASE above, instead of legacy DB — /material/login route.
     const result = await withTimeout(API.post('/material/login', {
       userId: userId, secondFactor: secondFactor
     }), 15000, 'Login check');
@@ -3673,7 +3748,7 @@ async function attemptLogin(){
 }
 
 /* पेज लोड होते ही captcha तैयार करें, और अगर इसी टैब में पहले से लॉगिन है तो
-   Firestore से दोबारा (लाइव) status check करके सीधे अंदर जाने दें — ताकि बीच
+   legacy DB से दोबारा (लाइव) status check करके सीधे अंदर जाने दें — ताकि बीच
    में Block होने पर पुराना session काम न करे। */
 document.addEventListener('DOMContentLoaded', function(){
   refreshCaptcha();
