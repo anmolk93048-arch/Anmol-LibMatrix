@@ -15043,7 +15043,7 @@ function SAVE_CONTROL_USER(){
 
       <div class="sa-recovery-stage" id="sa-recovery-verify-stage" hidden>
         <label class="sa-recovery-label" for="sa-recovery-otp">One-time verification code</label>
-        <input class="sa-recovery-input" id="sa-recovery-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Enter the OTP you received">
+        <input class="sa-recovery-input" id="sa-recovery-otp" type="text" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" maxlength="6" placeholder="Enter 6-digit OTP" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
         <div id="sa-recovery-password-fields" hidden>
           <label class="sa-recovery-label" for="sa-recovery-new-password">New password</label>
           <input class="sa-recovery-input" id="sa-recovery-new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="At least 8 characters">
@@ -15178,9 +15178,9 @@ function SAVE_CONTROL_USER(){
   };
   window.COMPLETE_SUPER_RECOVERY=async function(){
     if(state.busy)return;
-    var contact=contactValue(),code=(byId('sa-recovery-otp').value||'').trim();
+    var contact=contactValue(),code=(byId('sa-recovery-otp').value||'').replace(/\D/g,'');
     if(!state.otpSent){message('Request a verification code first.','error');return;}
-    if(!code){message('Enter the verification code you received.','error');byId('sa-recovery-otp').focus();return;}
+    if(code.length!==6){message('Enter the complete 6-digit OTP you received on WhatsApp.','error');byId('sa-recovery-otp').focus();return;}
     var payload={role:'admin',accountType:'super_admin',method:state.method,contact:contact,code:code,otp:code};
     var paths;
     if(state.mode==='password'){
