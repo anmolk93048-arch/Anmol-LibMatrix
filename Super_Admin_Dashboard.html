@@ -2603,6 +2603,7 @@ html,body,#admin-app{width:100%;min-width:0;}
         <button class="nav-item" onclick="GOTO('website-live-dashboard')" data-tooltip="Live Dashboard"><span class="nav-icon">📊</span><span class="nav-text">Live Dashboard</span></button>
         <button class="nav-item" onclick="GOTO('website-latest-updates')" data-tooltip="Latest Updates"><span class="nav-icon">📰</span><span class="nav-text">Latest Updates</span></button>
         <button class="nav-item" onclick="GOTO('website-gallery')" data-tooltip="Gallery"><span class="nav-icon">🖼️</span><span class="nav-text">Gallery</span></button>
+        <button class="nav-item" onclick="GOTO('website-banners')" data-tooltip="Home Banners &amp; Images"><span class="nav-icon">🎞️</span><span class="nav-text">Home Banners &amp; Images</span></button>
         <button class="nav-item" onclick="GOTO('website-ekyc-performance')" data-tooltip="eKYC Performance Report"><span class="nav-icon">📈</span><span class="nav-text">eKYC Performance Report</span></button>
         <button class="nav-item" onclick="GOTO('website-login-center')" data-tooltip="Login Center"><span class="nav-icon">🔐</span><span class="nav-text">Login Center</span></button>
         <button class="nav-item" onclick="GOTO('website-mobile-apps-center')" data-tooltip="Mobile Apps Center"><span class="nav-icon">📱</span><span class="nav-text">Mobile Apps Center</span></button>
@@ -15982,7 +15983,7 @@ var ABOUT_FIELDS=[
  ['.app-card h2','Mobile app card — title','📱 Anmol LibMatrix Mobile App'],['.app-card p','Mobile app card — text','','area'],['.app-card .app-cta','Mobile app card — button','Get the App →'],
  ['#future .panel-head h2','Future — title','🚀 Digital Library for a Smart Future'],['#future .panel-head p','Future — text','','area'],
  ['#kyc-report .panel-head h2','KYC report — title','🔷 KYC Verification & Performance Report']];
-var TABS=[['home','🏠 Home'],['about','ℹ️ About'],['ticker','📰 Tickers'],['notices','🔔 Notices'],['theme','🎨 Theme'],['apps','📱 App Downloads'],['login','🔐 Login Menu'],['footer','🔻 Footer'],['dash','📊 Dashboard cards'],['gallery','🖼 Gallery']];
+var TABS=[['home','🏠 Home'],['about','ℹ️ About'],['ticker','📰 Tickers'],['notices','🔔 Notices'],['theme','🎨 Theme'],['apps','📱 App Downloads'],['login','🔐 Login Menu'],['footer','🔻 Footer'],['dash','📊 Dashboard cards'],['gallery','🖼 Gallery'],['banners','🖼 Home Banners']];
 var LIM=window.LIM={
   load:function(){
     $('lim-msg').textContent=''; var fr=$('lim-frame'); if(fr&&!fr.src) fr.src='/?t='+Date.now();
@@ -16048,6 +16049,88 @@ var LIM=window.LIM={
   },
   r_dash:function(b){var d=CMS.live_dashboard&&CMS.live_dashboard.cards?CMS.live_dashboard.cards:[];LIM.list(b,{get:function(){return d;},cols:'1.4fr 1fr .6fr 1.4fr',fields:[['label','Label'],['value','Value'],['prefix','Prefix'],['trend','Trend text']],blank:function(){return {label:'',value:'',prefix:'',trend:''};},keep:function(x){return x.label;},save:function(a){LIM.saveKey('live_dashboard',{cards:a});}});},
   r_gallery:function(b){var d=CMS.index_gallery&&CMS.index_gallery.photos?CMS.index_gallery.photos:[];LIM.list(b,{get:function(){return d;},cols:'3fr 2fr',fields:[['url','Image URL (https://…)'],['alt','Caption / alt text']],blank:function(){return {id:'p'+Date.now(),url:'',alt:''};},keep:function(x){return x.url;},save:function(a){a.forEach(function(x,i){if(!x.id)x.id='p'+i;});LIM.saveKey('index_gallery',{photos:a});}});},
+  /* 🖼 HOME BANNERS & IMAGES — hero slider, eKYC section, 3 feature cards. Saved as CMS key `home_banners`; index.html renders it live. */
+  r_banners:function(b){
+    var D=CMS.home_banners&&typeof CMS.home_banners==='object'?CMS.home_banners:{};
+    var ORIGIN=String(API_BASE).replace(/\/api\/?$/,'');
+    function abs(u){return /^\//.test(u||'')?ORIGIN+u:(u||'');}
+    function cp(a){return (Array.isArray(a)?a:[]).map(function(x){return {id:x.id||('b'+Math.random().toString(36).slice(2,9)),url:x.url||'',alt:x.alt||''};});}
+    var FEAT=[['Smart Library System','Card 1 — "Smart Library System"'],['Knowledge Builds Future','Card 2 — "Knowledge Builds Future"'],['Digital Learning Anytime, Anywhere','Card 3 — "Digital Learning Anytime, Anywhere"']];
+    var S={hero:cp(D.hero),ekyc:cp(D.ekyc),features:[0,1,2].map(function(i){var f=(D.features||[])[i]||{};return {url:f.url||'',alt:f.alt||''};})};
+    var oldSlugs=JSON.stringify(D).match(/home-banner-[a-f0-9]+/g)||[];
+    var busy=0;
+    function msg(ok,t){LIM.say(ok,t);}
+    function shrink(file){   // big photos are resized in the browser (max 2000 px) so the homepage stays fast
+      return new Promise(function(res){
+        if(file.size<2.5*1024*1024||/gif/i.test(file.type)||!window.createImageBitmap) return res(file);
+        createImageBitmap(file).then(function(bm){
+          var k=Math.min(1,2000/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);
+          c.getContext('2d').drawImage(bm,0,0,c.width,c.height);
+          c.toBlob(function(bl){res(bl&&bl.size<file.size?new File([bl],(file.name||'banner').replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'}):file);},'image/jpeg',0.87);
+        }).catch(function(){res(file);});
+      });
+    }
+    function upload(file){
+      if(!file) return Promise.reject(new Error('No file chosen.'));
+      if(!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) return Promise.reject(new Error('Only PNG, JPG, WEBP or GIF images are allowed.'));
+      return shrink(file).then(function(f){
+        if(f.size>6*1024*1024) throw new Error('Image is larger than 6 MB — please choose a smaller one.');
+        var fd=new FormData();fd.append('file',f);
+        var h={};if(AUTH_TOKEN)h['Authorization']='Bearer '+AUTH_TOKEN;
+        return fetch(API_BASE+'/admin/banners/upload',{method:'POST',headers:h,body:fd}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('Upload failed (HTTP '+r.status+')'));return d.url;});});
+      });
+    }
+    function pick(multiple,cb){
+      var i=document.createElement('input');i.type='file';i.accept='image/png,image/jpeg,image/webp,image/gif';i.multiple=!!multiple;
+      i.onchange=function(){var fs=[].slice.call(i.files||[]);if(fs.length)cb(fs);};i.click();
+    }
+    function thumb(u,h){return u?'<img src="'+esc(abs(u))+'" alt="" style="width:100%;height:'+h+'px;object-fit:cover;border-radius:8px;display:block;background:#e8eef7" onerror="this.style.opacity=.25">':'<div style="height:'+h+'px;border-radius:8px;background:repeating-linear-gradient(45deg,#eef3fa,#eef3fa 8px,#e3ebf6 8px,#e3ebf6 16px);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted)">Default image</div>';}
+    function listHtml(key,title,sub){
+      var a=S[key];
+      return '<div class="sa-card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start"><div><div style="font-weight:800;font-size:14px">'+title+'</div><div style="font-size:11px;color:var(--text-muted);margin:2px 0 10px;max-width:640px">'+sub+'</div></div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sa-btn" data-bn="add" data-k="'+key+'">⬆ Upload image(s)</button><button class="sa-btn gh" data-bn="addurl" data-k="'+key+'">🔗 Add by URL</button>'+(a.length?'<button class="sa-btn gh" data-bn="clear" data-k="'+key+'">↺ Use website default</button>':'')+'</div></div>'+
+        (a.length?a.map(function(x,i){return '<div class="sa-row" style="grid-template-columns:150px 1.6fr 1fr auto;align-items:center;gap:10px">'+
+          '<div>'+thumb(x.url,64)+'</div><input class="sa-in" data-bf="url" data-k="'+key+'" data-i="'+i+'" value="'+esc(x.url)+'" placeholder="https://… or uploaded image">'+
+          '<input class="sa-in" data-bf="alt" data-k="'+key+'" data-i="'+i+'" value="'+esc(x.alt)+'" placeholder="Caption / alt text">'+
+          '<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="sa-btn gh" title="Replace image" data-bn="rep" data-k="'+key+'" data-i="'+i+'">🔄</button><button class="sa-btn gh" title="Move up" data-bn="up" data-k="'+key+'" data-i="'+i+'">↑</button><button class="sa-btn gh" title="Move down" data-bn="dn" data-k="'+key+'" data-i="'+i+'">↓</button><button class="sa-btn rd" title="Delete" data-bn="del" data-k="'+key+'" data-i="'+i+'">🗑</button></div></div>';}).join('')
+          :'<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No custom images — the website shows its built-in default images. Upload one to replace them.</div>')+'</div>';
+    }
+    function draw(){
+      b.innerHTML='<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">PNG / JPG / WEBP / GIF up to 6 MB. Images are stored on the server (they survive redeploys). Changes go live on <b>index.html</b> after <b>Save &amp; publish</b>. A section with no custom images keeps the website default.</div>'+
+        listHtml('hero','🎞 Main Top Hero Slider','Full-width slides at the top of the homepage. Best size: 1920×600 px (wide). Slides rotate in this order.')+
+        listHtml('ekyc','🔷 eKYC &amp; Biometric Attendance banner','Images shown in the eKYC section slider. Best size: 1600×700 px.')+
+        '<div class="sa-card" style="margin-bottom:16px"><div style="font-weight:800;font-size:14px">🃏 Feature cards (3)</div><div style="font-size:11px;color:var(--text-muted);margin:2px 0 10px">Background photo of each card under “Our Key Features”. Best size: 900×300 px. Remove = back to the default look.</div>'+
+        '<div class="sa-grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">'+FEAT.map(function(f,i){var x=S.features[i];return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px"><div style="font-weight:700;font-size:12px;margin-bottom:6px">'+esc(f[1])+'</div>'+thumb(x.url,84)+
+          '<input class="sa-in" style="margin-top:8px" data-bf="url" data-k="features" data-i="'+i+'" value="'+esc(x.url)+'" placeholder="https://… or uploaded image"><div style="display:flex;gap:6px;margin-top:8px"><button class="sa-btn" data-bn="rep" data-k="features" data-i="'+i+'">'+(x.url?'🔄 Replace':'⬆ Upload')+'</button>'+(x.url?'<button class="sa-btn rd" data-bn="del" data-k="features" data-i="'+i+'">🗑 Remove</button>':'')+'</div></div>';}).join('')+'</div></div>'+
+        '<div><button class="sa-btn" data-bn="save">💾 Save &amp; publish</button></div>';
+    }
+    function setUrl(k,i,u){ if(k==='features') S.features[i].url=u; else S[k][i].url=u; }
+    b.oninput=function(e){var t=e.target;if(!t.dataset||!t.dataset.bf)return;var k=t.dataset.k,i=+t.dataset.i;(k==='features'?S.features[i]:S[k][i])[t.dataset.bf]=t.value;};
+    b.onchange=function(e){var t=e.target;if(t.dataset&&t.dataset.bf==='url')draw();};
+    b.onclick=function(e){
+      var t=e.target.closest&&e.target.closest('[data-bn]');if(!t)return;
+      var op=t.dataset.bn,k=t.dataset.k,i=+t.dataset.i;
+      if(busy&&op!=='save')return;
+      function work(p,okText){busy++;msg(true,'Uploading…');return p.then(function(){msg(true,okText||'Uploaded — click “Save & publish” to put it live.');}).catch(function(er){msg(false,'❌ '+er.message);}).then(function(){busy--;draw();});}
+      if(op==='add'){pick(true,function(fs){work(fs.reduce(function(pr,f){return pr.then(function(){return upload(f).then(function(u){S[k].push({id:'b'+Math.random().toString(36).slice(2,9),url:u,alt:''});});});},Promise.resolve()),fs.length+' image(s) uploaded — click “Save & publish” to put them live.');});}
+      else if(op==='addurl'){var u=prompt('Image URL (https://… or /path):');if(u&&u.trim()){S[k].push({id:'b'+Math.random().toString(36).slice(2,9),url:u.trim(),alt:''});draw();}}
+      else if(op==='rep'){pick(false,function(fs){work(upload(fs[0]).then(function(u){setUrl(k,i,u);}),'Image replaced — click “Save & publish” to put it live.');});}
+      else if(op==='del'){if(k==='features'){S.features[i]={url:'',alt:''};}else{if(!confirm('Delete this image from the list?'))return;S[k].splice(i,1);}draw();}
+      else if(op==='up'&&i>0){var a=S[k];a.splice(i-1,0,a.splice(i,1)[0]);draw();}
+      else if(op==='dn'&&i<S[k].length-1){var a2=S[k];a2.splice(i+1,0,a2.splice(i,1)[0]);draw();}
+      else if(op==='clear'){if(confirm('Remove all custom images in this section and use the website default?')){S[k]=[];draw();}}
+      else if(op==='save'){
+        var val={hero:S.hero.filter(function(x){return x.url.trim();}),ekyc:S.ekyc.filter(function(x){return x.url.trim();}),features:S.features.map(function(f){return {url:f.url.trim(),alt:f.alt||''};})};
+        LIM.saveKey('home_banners',val).then(function(){
+          if(CMS.home_banners!==val) return;
+          var used=JSON.stringify(val);   // uploaded files that are no longer used are deleted from the server
+          oldSlugs.concat(JSON.stringify(S).match(/home-banner-[a-f0-9]+/g)||[]).filter(function(s,j,a){return a.indexOf(s)===j&&used.indexOf(s)<0;}).forEach(function(s){apiFetch('/admin/banners/'+s,{method:'DELETE'}).catch(function(){});});
+          oldSlugs=used.match(/home-banner-[a-f0-9]+/g)||[];
+        });
+      }
+    };
+    draw();
+  },
   r_theme:function(b){
     var t=CMS.index_theme&&typeof CMS.index_theme==='object'?CMS.index_theme:{}; var v=t.vars||{};
     var VARS=[['--blue','Primary blue','#0b75df'],['--navy','Navy (top bar / footer)','#06306f'],['--orange','Accent orange','#ff8a00'],['--green','Green','#08aa67'],['--purple','Purple','#6d2fe0'],['--gold','Gold','#ffbd12'],['--bg','Page background','#f3f8fd']];
@@ -16067,7 +16150,7 @@ var LIM=window.LIM={
 
 /* GOTO hook: new pages + map the old placeholder pages to the real editors */
 var _GOTO=window.GOTO;
-var MAP={'website-home':'home','website-about':'about','website-contact':'footer','website-footer':'footer','website-latest-notifications':'notices','website-latest-updates':'ticker','website-live-dashboard':'dash','website-gallery':'gallery','website-login-center':'login','website-mobile-apps-center':'apps','website-future':'about','website-features':'about','website-navigation':'login','website-ekyc-performance':'home','website-faq':'about'};
+var MAP={'website-banners':'banners','website-home':'home','website-about':'about','website-contact':'footer','website-footer':'footer','website-latest-notifications':'notices','website-latest-updates':'ticker','website-live-dashboard':'dash','website-gallery':'gallery','website-login-center':'login','website-mobile-apps-center':'apps','website-future':'about','website-features':'about','website-navigation':'login','website-ekyc-performance':'home','website-faq':'about'};
 window.GOTO=function(page){
   if(MAP[page]){TAB=MAP[page];page='live-index-manager';}
   _GOTO(page);

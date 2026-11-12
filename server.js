@@ -8340,7 +8340,7 @@ app.get('/api/search/global', noStore, requireRole('admin', 'agent', 'staff'), a
 // ── LIVE CMS (Live Index Manager) ──
 // index.html public GET /api/site-data se padhta hai; Admin yahan se save karta hai.
 const CMS_KEYS = ['homepage', 'index_about', 'ticker', 'notices', 'latest_updates', 'index_theme', 'apps', 'login_options',
-    'index_overrides', 'live_dashboard', 'index_gallery', 'footer', 'stats', 'nav_buttons', 'kyc_performance_mode'];
+    'index_overrides', 'live_dashboard', 'index_gallery', 'footer', 'stats', 'nav_buttons', 'kyc_performance_mode', 'home_banners'];
 const THEME_VARS = ['--blue', '--blue2', '--navy', '--orange', '--bg', '--text'];
 const CMS_COLOR = /^#[0-9a-fA-F]{3,8}$|^rgba?\([\d\s.,%]+\)$/;
 function cmsSanitize(key, v) {
@@ -8351,6 +8351,13 @@ function cmsSanitize(key, v) {
         o.font = /^[A-Za-z0-9 ,'"-]{0,80}$/.test((v && v.font) || '') ? ((v && v.font) || '') : '';
         o.mode = (v && v.mode) === 'dark' ? 'dark' : '';
         return o;
+    }
+    if (key === 'home_banners') {
+        const okUrl = function (u) { u = String(u == null ? '' : u).trim(); return u.length <= 600 && /^(https?:\/\/[^\s"'<>\\]+|\/(?!\/)[A-Za-z0-9_\-.\/%?=&~+]+)$/.test(u) ? u : ''; };
+        const clean = function (x, i) { x = x || {}; return { id: String(x.id || ('b' + Date.now().toString(36) + i)).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), url: okUrl(x.url), alt: String(x.alt || '').replace(/[<>"]/g, '').slice(0, 120) }; };
+        const list = function (a, max) { return (Array.isArray(a) ? a : []).slice(0, max).map(clean).filter(function (x) { return x.url; }); };
+        const feats = []; for (let i = 0; i < 3; i++) { const f = clean(((v || {}).features || [])[i], i); feats.push({ url: f.url, alt: f.alt }); }
+        return { hero: list((v || {}).hero, 12), ekyc: list((v || {}).ekyc, 12), features: feats, updatedAt: new Date().toISOString() };
     }
     return v;
 }
@@ -8371,6 +8378,55 @@ app.put('/api/admin/cms/:key', noStore, requireRole('admin'), asyncRoute(async (
     if (s.length > 3000000) return res.status(413).json({ error: 'Content is too large.' });
     if (/["']\s*(javascript|vbscript):/i.test(s) || /"(href|url|link)"\s*:\s*"\s*(javascript|vbscript):/i.test(s)) return res.status(400).json({ error: 'Unsafe link (javascript:/data:) is not allowed.' });
     await cmsSave(key, cmsSanitize(key, v));
+    res.json({ success: true });
+}));
+
+// ── 🖼️ HOME BANNERS & IMAGES (Super Admin → Website / Index Control → Home Banners & Images) ───────────────────────────────
+//   CMS key `home_banners` = { hero:[{id,url,alt}], ekyc:[{id,url,alt}], features:[{url,alt},{url,alt},{url,alt}] }
+//   index.html reads it from the public GET /api/site-data/home_banners and renders it live (empty list / empty card = built-in default).
+//   Images uploaded here are stored in the DATABASE (site_files, folder 'home-banners'), so they survive Vercel / Render redeploys.
+const BANNER_FOLDER = 'home-banners';
+const BANNER_SLUG = /^home-banner-[a-f0-9]{12,32}$/;
+const bannerUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6 * 1024 * 1024, files: 1 } });
+function sniffImage(buf) {   // trust the BYTES, not the browser's mime type (no SVG: it can carry scripts)
+    if (!buf || buf.length < 12) return null;
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+    if (buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+    if (buf.slice(0, 4).toString('latin1') === 'GIF8') return 'image/gif';
+    return null;
+}
+app.post('/api/admin/banners/upload', noStore, requireRole('admin'), function (req, res, next) {
+    bannerUpload.single('file')(req, res, function (err) {
+        if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Image is too large (maximum 6 MB).' : 'Upload failed: ' + err.message });
+        next();
+    });
+}, function (req, res) {
+    if (!req.file) return res.status(400).json({ error: 'No image was received (form field name must be "file").' });
+    const mime = sniffImage(req.file.buffer);
+    if (!mime) return res.status(400).json({ error: 'Only PNG, JPG, WEBP or GIF images are allowed.' });
+    const slug = 'home-banner-' + crypto.randomBytes(8).toString('hex');   // new URL per upload → browsers/CDN can cache it forever, and a replace shows instantly
+    insertWithIdHeal(
+        'INSERT INTO site_files (slug, folder, name, mime, size, data) VALUES (?,?,?,?,?,?)',
+        [slug, BANNER_FOLDER, String(req.file.originalname || 'banner').slice(0, 120), mime, req.file.size, req.file.buffer],
+        'site_files',
+        function (err) {
+            if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
+            res.status(201).json({ success: true, url: '/api/site-images/' + slug, slug: slug, size: req.file.size, mime: mime });
+        }
+    );
+});
+app.get('/api/site-images/:slug', asyncRoute(async function (req, res) {
+    if (!BANNER_SLUG.test(req.params.slug)) return res.status(404).end();
+    const rows = await dbq('SELECT mime, data FROM site_files WHERE slug = ? AND folder = ?', [req.params.slug, BANNER_FOLDER]);
+    if (!rows || !rows.length) return res.status(404).end();
+    res.set({ 'Content-Type': rows[0].mime || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; img-src 'self' data:", 'Cross-Origin-Resource-Policy': 'cross-origin' });
+    res.send(rows[0].data);
+}));
+app.delete('/api/admin/banners/:slug', noStore, requireRole('admin'), asyncRoute(async function (req, res) {
+    if (!BANNER_SLUG.test(req.params.slug)) return res.status(400).json({ error: 'Invalid image id.' });
+    await dbq('DELETE FROM site_files WHERE slug = ? AND folder = ?', [req.params.slug, BANNER_FOLDER]);
     res.json({ success: true });
 }));
 

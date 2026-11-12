@@ -678,7 +678,8 @@ header{position:sticky;top:38px;z-index:90;}
 </script>
 <script>
 let current=0,timer;
-const slides=[...document.querySelectorAll('.slide')],dots=[...document.querySelectorAll('.dot')];
+let slides=[...document.querySelectorAll('.slide')],dots=[...document.querySelectorAll('.dot')];
+window.__rebuildHero=function(){slides=[...document.querySelectorAll('.hero-slider > article.slide')];dots=[...document.querySelectorAll('.hero-slider .dots .dot')];if(!slides.length)return;showSlide(0);restart();};
 function showSlide(n){current=(n+slides.length)%slides.length;slides.forEach((s,i)=>s.classList.toggle('active',i===current));dots.forEach((d,i)=>d.classList.toggle('active',i===current))}
 function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){showSlide(n);restart()} function restart(){clearInterval(timer);timer=setInterval(()=>showSlide(current+1),5000)} restart();
 </script>
@@ -930,6 +931,72 @@ refreshMetrics();setInterval(refreshMetrics,5000);
   }
   function load(){ fetch(SHDL_API_BASE+'/site-data/live_dashboard',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){ if(x&&x.value) applyLiveDashboard(x.value); }).catch(function(){}); }
   setTimeout(load,300); setInterval(load,5000);
+})();
+</script>
+<script id="home-banners-sync">
+/* 🖼️ HOME BANNERS & IMAGES — Super Admin → Website / Index Control → Home Banners & Images
+   Reads the public key  GET /api/site-data/home_banners  = { hero:[{url,alt}], ekyc:[{url,alt}], features:[{url,alt} x3] }
+   and renders it live (re-checked every 6 s and whenever the tab becomes visible again). An empty section keeps the built-in default. */
+(function(){
+  var BASE=String(window.SHDL_API_BASE||'/api'), ORIGIN=BASE.replace(/\/api\/?$/,'');
+  var last=null, def=null, custom={hero:false,ekyc:false};
+  function U(u){u=String(u||'').trim();if(/^https?:\/\//i.test(u))return u;if(/^\/(?!\/)/.test(u))return ORIGIN+u;return '';}
+  function esc(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function cssUrl(u){return 'url("'+u.replace(/["\\\n\r]/g,function(c){return encodeURIComponent(c);})+'")';}
+  function snap(){   // remember the built-in defaults once, so removing custom images brings them back
+    if(def)return def; var sl=document.querySelector('.hero-slider'), ky=document.getElementById('kycSlider');
+    def={hero:sl?[].map.call(sl.querySelectorAll(':scope > article.slide'),function(a){return a.outerHTML;}):[],
+         kyc:ky?ky.innerHTML:'', kycDots:(document.querySelector('.kyc-dots')||{}).innerHTML||'',
+         feats:[].map.call(document.querySelectorAll('#about .banner'),function(b){return b.getAttribute('style')||'';})};
+    return def;
+  }
+  function heroDots(n){var d=document.querySelector('.hero-slider .dots');if(!d)return;var h='';for(var i=0;i<n;i++)h+='<span class="dot'+(i?'':' active')+'" onclick="goSlide('+i+')"></span>';d.innerHTML=h;}
+  function setHero(list){
+    var sl=document.querySelector('.hero-slider'); if(!sl)return; snap();
+    var cur=[].slice.call(sl.querySelectorAll(':scope > article.slide'));
+    if(!list.length){ if(!custom.hero)return; custom.hero=false; cur.forEach(function(a){a.remove();}); def.hero.forEach(function(h){sl.insertAdjacentHTML('beforeend',h);}); }
+    else{
+      custom.hero=true; cur.forEach(function(a){a.remove();});
+      list.forEach(function(x,i){
+        var a=document.createElement('article'); a.className='slide'+(i?'':' active'); a.setAttribute('role','img'); a.setAttribute('aria-label',x.alt||'Anmol LibMatrix banner');
+        a.style.backgroundImage=cssUrl(x.u); a.innerHTML='<div class="slide-content"></div>'; sl.appendChild(a);
+        var im=new Image(); im.onerror=function(){ if(sl.querySelectorAll(':scope > article.slide').length>1){a.remove();heroDots(sl.querySelectorAll(':scope > article.slide').length);window.__rebuildHero&&window.__rebuildHero();} }; im.src=x.u;   // a broken image never leaves a blank slide
+      });
+    }
+    heroDots(sl.querySelectorAll(':scope > article.slide').length); window.__rebuildHero&&window.__rebuildHero();
+  }
+  function setKyc(list){
+    var ky=document.getElementById('kycSlider'); if(!ky)return; snap(); var dots=document.querySelector('.kyc-dots');
+    if(!list.length){ if(!custom.ekyc)return; custom.ekyc=false; ky.innerHTML=def.kyc; if(dots)dots.innerHTML=def.kycDots; }
+    else{
+      custom.ekyc=true;
+      ky.innerHTML=list.map(function(x,i){return '<div class="kyc-slide'+(i?'':' active')+'"><img alt="'+esc(x.alt||'eKYC and biometric attendance')+'" loading="'+(i?'lazy':'eager')+'" src="'+esc(x.u)+'" onerror="this.closest(\'.kyc-slide\').style.display=\'none\'"></div>';}).join('');
+      if(dots)dots.innerHTML=list.map(function(x,i){return '<button aria-label="eKYC image '+(i+1)+'" class="kyc-dot'+(i?'':' active')+'" onclick="goKycSlide('+i+')" type="button"></button>';}).join('');
+    }
+    if(typeof showKycSlide==='function'){try{showKycSlide(0);}catch(e){}}
+  }
+  function setFeats(f){
+    var bs=document.querySelectorAll('#about .banner'); snap();
+    [].forEach.call(bs,function(b,i){
+      var u=U(f&&f[i]&&f[i].url);
+      if(u){ b.style.backgroundImage='linear-gradient(90deg,rgba(3,36,85,.86),rgba(3,36,85,.2)),'+cssUrl(u); b.style.backgroundSize='cover'; b.style.backgroundPosition='center'; b.setAttribute('data-hb','1'); }
+      else if(b.getAttribute('data-hb')){ b.setAttribute('style',def.feats[i]||''); b.removeAttribute('data-hb'); }
+    });
+  }
+  function apply(v){
+    v=v&&typeof v==='object'?v:{};
+    function norm(a){return (Array.isArray(a)?a:[]).map(function(x){return {u:U(x&&x.url),alt:x&&x.alt};}).filter(function(x){return x.u;});}
+    setHero(norm(v.hero)); setKyc(norm(v.ekyc)); setFeats(v.features);
+  }
+  function load(){
+    fetch(BASE+'/site-data/home_banners',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(x){
+      var v=x&&x.value?x.value:null, sig=JSON.stringify(v||null);
+      if(sig===last)return; last=sig; apply(v);
+    }).catch(function(){});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load);else load();
+  setInterval(load,6000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)load();});
 })();
 </script>
 <script id="index-gallery-admin-sync">
