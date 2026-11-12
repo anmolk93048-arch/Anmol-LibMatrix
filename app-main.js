@@ -2116,7 +2116,7 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
             const credEnc = piiReady() ? piiEncrypt(plainPassword) : null;
             db.query("UPDATE material_user_requests SET status='approved', reviewed_at=CURRENT_TIMESTAMP, approved_userid=?, aadhaar_enc=NULL, aadhaar_hash=NULL, cred_enc=?, cred_at=?, cred_views=0 WHERE id = ?", [userId, credEnc, credEnc ? Date.now() : null, reqId], () => {
                 auditPii(req, 'material_approve', userId, 'request=' + reqId);
-                notifyAccount({ kind: 'credentials', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
+                notifyAccount({ kind: 'credentials', portal: 'invoice', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
                     res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '', notified: ch || null });
                 });
             });
@@ -2257,7 +2257,7 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-            notifyAccount({ kind: 'credentials', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp the moment Super Admin creates the user
+            notifyAccount({ kind: 'credentials', portal: 'invoice', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp the moment Super Admin creates the user
                 res.status(201).json({ success: true, userId, password: plainPassword, notified: ch || null });
             });
         }
@@ -3234,7 +3234,7 @@ app.post('/api/hr/registrations/:id/approve', (req, res) => {
                 if (sErr) return res.status(500).json({ error: 'DB error: ' + sErr.message });
                 hrSetBlob('hrms_pending_registrations', pending, (sErr2) => {
                     if (sErr2) return res.status(500).json({ error: 'DB error: ' + sErr2.message });
-                    notifyAccount({ kind: 'hr_approved', mobile: reg.phone, name: reg.name, userId: empId });   // 💬 WhatsApp the employee (Admin or Agent approval)
+                    notifyAccount({ kind: 'hr_approved', portal: 'hrms', mobile: reg.phone, name: reg.name, userId: empId });   // 💬 WhatsApp the employee (Admin or Agent approval)
                     res.json({ success: true, empId });
                 });
             });
@@ -3394,7 +3394,7 @@ app.post('/api/admin/pfms-users', requireRole('admin'), (req, res) => {
                 return res.status(500).json({ error: 'DB error: ' + err.message });
             }
             // 💬 PFMS users have no mobile column — if the admin form sends one, WhatsApp the login details
-            if ((req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || username, userId: username, password: password, link: portalLink(req) });
+            if ((req.body || {}).mobile) notifyAccount({ kind: 'credentials', portal: 'pfms', mobile: req.body.mobile, name: name || username, userId: username, password: password, link: portalLink(req) });
             res.status(201).json({ success: true, id: result.insertId });
         }
     );
@@ -3413,7 +3413,7 @@ app.put('/api/admin/pfms-users/:id', requireRole('admin'), (req, res) => {
     params.push(req.params.id);
     db.query(`UPDATE pfms_users SET ${sets.join(', ')} WHERE id=?`, params, (err) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (password && (req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || (req.body || {}).username, userId: (req.body || {}).username || String(req.params.id), password: password, link: portalLink(req) });
+        if (password && (req.body || {}).mobile) notifyAccount({ kind: 'credentials', portal: 'pfms', mobile: req.body.mobile, name: name || (req.body || {}).username, userId: (req.body || {}).username || String(req.params.id), password: password, link: portalLink(req) });
         res.json({ success: true });
     });
 });
@@ -4749,74 +4749,19 @@ function recoveryScope(req) { return /\/material\//.test(req.path) ? 'material' 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 // ══════════════════════════════════════════════════════════════════
-// 💬 WHATSAPP OTP — Meta WhatsApp Business Cloud API (AUTHENTICATION template)
-//   Secrets only from Render Environment (never in code / DB):
-//     WA_ACCESS_TOKEN      – permanent System-User token (whatsapp_business_messaging)
-//     WA_PHONE_NUMBER_ID   – sender Phone Number ID (not the phone number itself)
-//     WA_OTP_TEMPLATE      – approved template name            (default: libmatrix_login_otp)
-//     WA_TEMPLATE_LANG     – template language code            (default: en)
-//     WA_API_VERSION       – Graph API version                 (default: v21.0)
-//     WA_DEFAULT_CC        – country code for 10-digit numbers (default: 91)
-//     WA_OTP_ENABLED       – set "false" to force SMS only
-//   The one-tap-autofill app signature (Abc123Xyz99) and the 10-minute expiry live INSIDE the approved
-//   template (see setup-wa-template.js) — they are not part of the per-message payload.
-//   If WhatsApp is not configured or the send fails, the OTP is delivered by SMS (Fast2SMS gateway) instead.
+// 💬 WHATSAPP — centralised in ./whatsapp-service.js (Meta templates, 100% from Environment — see .env.example)
+//   Two core templates serve EVERY portal (Invoice, Agent, HRMS, Admin and any future one):
+//     WA_TEMPLATE_OTP   authentication template → 6-digit OTP
+//     WA_TEMPLATE_INFO  utility template        → User Name · User ID · Password · portal login link
+//   A new portal needs no new code: pass portal:'<name>' to notifyAccount() and set PORTAL_URL_<NAME> in Environment.
 // ══════════════════════════════════════════════════════════════════
-function waConfig() {
-    return {
-        token: process.env.WA_ACCESS_TOKEN || '',
-        phoneId: process.env.WA_PHONE_NUMBER_ID || '',
-        template: process.env.WA_OTP_TEMPLATE || 'libmatrix_login_otp',
-        lang: process.env.WA_TEMPLATE_LANG || 'en',
-        version: process.env.WA_API_VERSION || 'v21.0',
-        cc: String(process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91',
-        enabled: String(process.env.WA_OTP_ENABLED || 'true').toLowerCase() !== 'false'
-    };
-}
-function waConfigured() { const c = waConfig(); return c.enabled && !!(c.token && c.phoneId); }
-function httpsPostJson(urlStr, headers, body, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        const u = new URL(urlStr), payload = JSON.stringify(body);
-        const rq = require('https').request(u, { method: 'POST', timeout: timeoutMs || 12000, headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }, headers) }, (resp) => {
-            let data = '';
-            resp.on('data', (c) => { data += c; });
-            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
-        });
-        rq.on('timeout', () => rq.destroy(new Error('WhatsApp API timed out.')));
-        rq.on('error', reject);
-        rq.write(payload); rq.end();
-    });
-}
-// Generic template sender: bodyParams → {{1}}, {{2}} … of the body; urlButtonParam (optional) → the Copy-code / URL button.
-async function waSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
-    const c = waConfig();
-    if (!waConfigured()) throw new Error('WhatsApp is not configured (WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID).');
-    const num = String(mobile || '').replace(/\D/g, '').slice(-10);
-    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
-    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
-    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
-    const body = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: c.cc + num,
-        type: 'template',
-        template: { name: templateName, language: { code: c.lang }, components: components }
-    };
-    const r = await httpsPostJson('https://graph.facebook.com/' + c.version + '/' + encodeURIComponent(c.phoneId) + '/messages', { Authorization: 'Bearer ' + c.token }, body);
-    if (r.status < 200 || r.status >= 300 || !(r.json && r.json.messages && r.json.messages.length)) {
-        const e = (r.json && r.json.error) || {};
-        throw new Error('WhatsApp API ' + r.status + (e.code ? ' (code ' + e.code + ')' : '') + ': ' + (e.message || 'send failed'));   // the OTP / token are never logged
-    }
-    return r.json.messages[0].id;
-}
-function sendWhatsAppOtp(mobile, otp) { return waSendTemplate(mobile, waConfig().template, [otp], otp); }   // authentication template (+ Copy-code button)
+const wa = require('./whatsapp-service');
+function waConfigured() { return wa.isConfigured(); }
 
 // ── 🔔 Account notifications: login credentials / approvals / password changes ─────────────────────────────
-//   Templates (UTILITY category, approved in WhatsApp Manager — bodies are in setup-wa-template.js):
-//     CREDENTIALS_WA_TEMPLATE_NAME (default anmol_libmatrix_login_info; legacy WA_CRED_TEMPLATE still honoured)
-//                        {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link
-//                        sent via Fast2SMS WhatsApp first, then Meta Cloud API, then SMS
-//     WA_NOTICE_TEMPLATE (default libmatrix_account_notice) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link
+//   Templates (names come ONLY from Environment — see whatsapp-service.js / .env.example):
+//     WA_TEMPLATE_INFO   {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link   (registrations + password resets, all portals)
+//     WA_TEMPLATE_NOTICE (optional) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link     (password-less notices; without it → SMS)
 //   Every send is best-effort: WhatsApp first → SMS fallback → never throws, never blocks or fails the registration itself.
 const waTxt = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 500) || '-';
 const NOTICE_TEXT = {
@@ -4829,28 +4774,22 @@ async function _notifyAccountOnce(ev) {
     try {
         const mobile = last10(ev.mobile);
         if (mobile.length !== 10) return null;
-        const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId), link = waTxt(freshenLinks(ev.link) || liveBaseUrl());   // 🔗 never an old Render / Netlify address
-        let template, params, sms;
+        const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId);
+        let sms, send = null;
+        const portal = ev.portal || '';
+        const plink = waTxt(wa.portalLink(portal, freshenLinks(ev.link) || liveBaseUrl()) || '');   // PORTAL_URL_<PORTAL> wins, else the live domain
         if (ev.kind === 'credentials') {
-            // Credentials template (CREDENTIALS_WA_TEMPLATE_NAME = anmol_libmatrix_login_info):
-            // {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal link.
-            // Channel order: Fast2SMS WhatsApp → Meta Cloud API (same template name) → SMS.
-            template = credentialsWaTemplateName();
-            params = [name, uid, waTxt(ev.password), link];
-            if (await otpServiceConfigured()) {
-                try { await sendFast2SmsWhatsAppCredentials(mobile, name, uid, params[2], link); return 'whatsapp'; }
-                catch (e) { console.warn('Fast2SMS WhatsApp credentials failed' + (waConfigured() ? ', trying Meta Cloud API' : ', falling back to SMS') + ':', e.message); }
-            }
+            // INFO template (WA_TEMPLATE_INFO): {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal login link — same for every portal.
+            send = () => wa.sendLoginInfo(mobile, { name: name, userId: uid, password: ev.password, portal: portal, link: plink });
             const cfg = await loadSmsConfig();
-            sms = freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), link, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''));   // a saved SMS template may still hold the old link
+            sms = freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), plink, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''));   // a saved SMS template may still hold the old link
         } else {
             const text = NOTICE_TEXT[ev.kind] || String(ev.text || '');
-            template = process.env.WA_NOTICE_TEMPLATE || 'libmatrix_account_notice';
-            params = [name, waTxt(freshenLinks(text)), uid, link];
-            sms = 'Hello ' + name + ', ' + text + ' User ID: ' + uid + (link !== '-' ? ' Portal: ' + link : '');
+            if (wa.noticeEnabled()) send = () => wa.sendNotice(mobile, { name: name, text: waTxt(freshenLinks(text)), userId: uid, portal: portal, link: plink });   // optional WA_TEMPLATE_NOTICE
+            sms = 'Hello ' + name + ', ' + text + ' User ID: ' + uid + (plink !== '-' ? ' Portal: ' + plink : '');
         }
-        if (waConfigured()) {
-            try { await waSendTemplate(mobile, template, params); return 'whatsapp'; }
+        if (send && waConfigured()) {
+            try { await send(); return 'whatsapp'; }
             catch (e) { console.warn('WhatsApp notification (' + ev.kind + ') failed, falling back to SMS:', e.message); }
         }
         if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
@@ -4883,6 +4822,7 @@ async function notifyAccount(ev) {
 // Super Admin / Admin / Agent) gets its credentials on WhatsApp; a freshly approved agent whose own password is already hashed gets
 // an approval notice. HMAC marker `credWaSig` on the record prevents the same password from being sent twice.
 const WA_NOTIFY_ENTITIES = ['admins', 'agents', 'staff', 'students'];
+const ENTITY_PORTAL = { admins: 'admin', agents: 'agent', staff: 'hrms', students: 'student' };   // → PORTAL_URL_ADMIN / _AGENT / _HRMS / _STUDENT (any missing one falls back to the live domain)
 const credSig = (uid, pwd) => crypto.createHmac('sha256', JWT_SECRET).update(String(uid) + '|' + String(pwd)).digest('hex').slice(0, 24);
 async function autoNotifyEntityCredentials(key, incoming, existing, link) {
     if (!Array.isArray(incoming) || WA_NOTIFY_ENTITIES.indexOf(key) < 0) return;
@@ -4900,126 +4840,34 @@ async function autoNotifyEntityCredentials(key, incoming, existing, link) {
             const pwd = rec[pf], sig = credSig(uid, pwd);
             if (rec.credWaSig === sig) continue;
             if (old && rec.credSmsSentAt && !rec.credWaSig) { rec.credWaSig = sig; continue; }     // already SMSed by the older flow
-            jobs.push(notifyAccount({ kind: 'credentials', mobile: mobile, name: rec.name || rec.fullName || rec.studentName, userId: uid, password: pwd, link: link })
+            jobs.push(notifyAccount({ kind: 'credentials', portal: ENTITY_PORTAL[key] || key, mobile: mobile, name: rec.name || rec.fullName || rec.studentName, userId: uid, password: pwd, link: link })
                 .then(ch => { if (ch) { rec.credWaSig = sig; rec.credSmsSentAt = new Date().toISOString(); } }));
         } else if (key === 'agents' && !old && !rec.credWaSig && !rec.credSmsSentAt && PASSWORD_FIELD_NAMES.some(f => rec[f])) {
-            jobs.push(notifyAccount({ kind: 'approved', mobile: mobile, name: rec.name, userId: uid, link: link })
+            jobs.push(notifyAccount({ kind: 'approved', portal: ENTITY_PORTAL[key] || key, mobile: mobile, name: rec.name, userId: uid, link: link })
                 .then(ch => { if (ch) { rec.credWaSig = 'notice'; rec.credSmsSentAt = new Date().toISOString(); } }));
         }
     }
     await Promise.all(jobs);
 }
 // ══════════════════════════════════════════════════════════════════
-// 💬 FAST2SMS WHATSAPP — AUTHENTICATION-TEMPLATE OTP  (the ONLY OTP channel — no SMS, no bulkV2, so error 996 cannot occur)
-//   POST https://www.fast2sms.com/dev/whatsapp/v26.0/1419889517875516/messages
-//   Header   Authorization: <FAST2SMS_API_KEY>
-//   Body     Meta "authentication template" payload: the 6-digit OTP is sent in the message body AND the Copy-code / One-tap button.
-//   Render → Environment:
-//     FAST2SMS_API_KEY            – Fast2SMS → Dev API → API key (required)
-//     FAST2SMS_WA_TEMPLATE_NAME   – approved AUTHENTICATION template name (default: libmatrix_login_otp)
-//     FAST2SMS_WA_LANG            – template language code (default: en)
-//     FAST2SMS_WA_CC              – country code added to 10-digit numbers (default: 91)
-//   The endpoint version and Phone Number ID are fixed in the constants below. The OTP itself is never logged.
+// 💬 OTP DELIVERY — every portal's 6-digit OTP goes through wa.sendOtp() (WA_TEMPLATE_OTP). The OTP itself is never logged.
 // ══════════════════════════════════════════════════════════════════
-const F2S_WA_BASE_URL = 'https://www.fast2sms.com/dev/whatsapp';
-const F2S_WA_VERSION = 'v26.0';
-const F2S_WA_PHONE_NUMBER_ID = '1419889517875516';
-async function fast2smsKey() {   // stored Super Admin "SMS API" key / other env names (kept for the non-OTP features)
-    const c = await loadSmsConfig();
-    if (c.endpoint && !/fast2sms/i.test(c.endpoint)) return '';   // a different gateway is configured → use the generic sender
-    return c.key || '';
-}
-// OTP key: FAST2SMS_API_KEY from the environment wins; the stored key is only a fallback when that variable is empty.
-async function fast2smsOtpKey() { return String(process.env.FAST2SMS_API_KEY || '').trim() || String((await fast2smsKey()) || '').trim(); }
-function fast2smsWaConfig() {
-    return {
-        template: String(process.env.FAST2SMS_WA_TEMPLATE_NAME || process.env.WA_OTP_TEMPLATE || 'libmatrix_login_otp').trim(),
-        lang: String(process.env.FAST2SMS_WA_LANG || process.env.WA_TEMPLATE_LANG || 'en').trim(),
-        cc: String(process.env.FAST2SMS_WA_CC || process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91'
-    };
-}
-function fast2smsWaEndpoint() {   // FAST2SMS_WA_URL replaces only the scheme+host+/dev/whatsapp base and is meant for tests
-    return String(process.env.FAST2SMS_WA_URL || F2S_WA_BASE_URL).replace(/\/$/, '') + '/' + F2S_WA_VERSION + '/' + F2S_WA_PHONE_NUMBER_ID + '/messages';
-}
-function waError(msg, extra) { const e = new Error(msg); e.channel = 'whatsapp'; if (extra) Object.assign(e, extra); return e; }
-function fast2smsWaPost(urlObj, key, bodyObj, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        const lib = require(urlObj.protocol === 'http:' ? 'http' : 'https');
-        const payload = JSON.stringify(bodyObj);
-        const rq = lib.request(urlObj, { method: 'POST', timeout: timeoutMs, headers: { Authorization: key, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (resp) => {
-            let data = '';
-            resp.on('data', (c) => { data += c; });
-            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
-        });
-        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS WhatsApp request timed out after ' + timeoutMs + ' ms (the server cannot reach www.fast2sms.com).')));
-        rq.on('error', (e) => reject(new Error('Fast2SMS WhatsApp network error: ' + (e.code ? e.code + ' – ' : '') + e.message)));
-        rq.write(payload); rq.end();
-    });
-}
-// Generic Fast2SMS WhatsApp template sender (shared by the OTP template and the Credentials template).
-//   bodyParams      → {{1}}, {{2}} … of the template body
-//   urlButtonParam  → optional Copy-code / URL button parameter (authentication templates only)
-// Parameter VALUES (OTP / password) are never logged — only the template name and a masked mobile number.
-async function fast2smsWaSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
-    const key = await fast2smsOtpKey();
-    if (!key) throw waError('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
-    const num = last10(mobile);
-    if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
-    if (!templateName) throw waError('WhatsApp template name is not configured.');
-    const c = fast2smsWaConfig();
-    let u;
-    try { u = new URL(fast2smsWaEndpoint()); } catch (e) { throw waError('FAST2SMS_WA_URL is invalid.'); }
-    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
-    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
-    const body = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: c.cc + num,
-        type: 'template',
-        template: { name: templateName, language: { code: c.lang }, components: components }
-    };
-    console.log('[fast2sms-wa] → POST ' + u.pathname + ' template=' + templateName + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
-    let r;
-    try { r = await fast2smsWaPost(u, key, body, 12000); }
-    catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); e.channel = 'whatsapp'; throw e; }
-    const j = r.json || {};
-    console.log('[fast2sms-wa] ← HTTP ' + r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 300));   // the response never contains the OTP
-    const sent = r.status >= 200 && r.status < 300 && (j.status === true || j.status === 'true' || j.return === true || j.return === 'true' || (Array.isArray(j.messages) && j.messages.length > 0));
-    if (sent) return true;
-    const m = (j.error && (j.error.error_user_msg || j.error.message)) || (Array.isArray(j.message) ? j.message.join(' ') : j.message) || r.text || ('HTTP ' + r.status);
-    const code = Number(j.status_code || (j.error && j.error.code) || r.status) || 0;
-    const err = waError('Fast2SMS WhatsApp rejected the request (status ' + code + '): ' + String(m).slice(0, 200), { fast2smsCode: code });
-    console.error('[fast2sms-wa] FAILED:', err.message);
-    throw err;
-}
-// ── Template 1: OTP (authentication template). Env: FAST2SMS_WA_TEMPLATE_NAME ──
-//    The 6-digit OTP goes in the body {{1}} AND the Copy-code / One-tap button.
-function sendFast2SmsWhatsAppOtp(mobile, otp) {
-    return fast2smsWaSendTemplate(mobile, fast2smsWaConfig().template, [otp], otp);
-}
-// ── Template 2: Credentials (utility template). Env: CREDENTIALS_WA_TEMPLATE_NAME (value: anmol_libmatrix_login_info) ──
-//    Body: {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link.   No button.
-function credentialsWaTemplateName() {
-    return String(process.env.CREDENTIALS_WA_TEMPLATE_NAME || process.env.WA_CRED_TEMPLATE || 'anmol_libmatrix_login_info').trim();
-}
-function sendFast2SmsWhatsAppCredentials(mobile, name, userId, password, link) {
-    return fast2smsWaSendTemplate(mobile, credentialsWaTemplateName(), [name, userId, password, link]);
-}
+const OTP_NOT_CONFIGURED_MSG = 'The WhatsApp OTP service is not configured. Please contact the administrator.';
 // Any OTP-sending failure (wrong key, template not approved, wallet balance, timeout, network) becomes a friendly JSON answer —
 // never a crash and never a bare 502. The real reason goes to the server log only (OTP_DEBUG=true adds it to the reply).
 function otpSendFailed(res, e, where) {
     console.error('[' + (where || 'otp') + '] OTP could not be sent:', e && e.message);
     if (res.headersSent) return;
-    const message = 'The WhatsApp OTP could not be sent. Please check the Fast2SMS WhatsApp setup (API key, approved template, wallet balance).';
+    const message = 'The WhatsApp OTP could not be sent. Please check the WhatsApp setup (credentials, approved template, account balance).';
     const out = { success: false, message: message, error: message, code: 'WHATSAPP_GATEWAY_FAILED' };
-    if (e && e.fast2smsCode) out.gatewayCode = e.fast2smsCode;
+    if (e && e.gatewayCode) out.gatewayCode = e.gatewayCode;
     if (String(process.env.OTP_DEBUG || '').toLowerCase() === 'true') out.detail = String(e && e.message || e).slice(0, 300);
     res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
-async function otpServiceConfigured() { return !!(await fast2smsOtpKey()); }
-// Every OTP (Super Admin login + password recovery) goes through here → Fast2SMS WhatsApp authentication template ONLY.
+async function otpServiceConfigured() { return wa.isConfigured(); }
+// Every OTP (all portals: login + password recovery + forgot-username) goes through here → WhatsApp authentication template.
 async function sendOtpMessage(mobile, otp) {
-    await sendFast2SmsWhatsAppOtp(mobile, otp);
+    await wa.sendOtp(mobile, otp);
     return 'whatsapp';
 }
 
@@ -5043,7 +4891,7 @@ async function forgotPasswordCore(req, res) {
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const prev = await _otpStore.get(key);
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -5195,7 +5043,7 @@ async function verifyResetOtpHandler(req, res) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 🔐 SUPER ADMIN LOGIN — 6-digit OTP (Fast2SMS) + "Remember this device"
+// 🔐 SUPER ADMIN LOGIN — 6-digit WhatsApp OTP + "Remember this device"
 //   Step 1  POST /api/auth/admin-login-otp  {username, password, deviceToken?}
 //             · wrong credentials → 401 (no OTP is sent)
 //             · valid trusted-device token for this user → {skipped:true, trusted:true}  (no OTP)
@@ -5344,7 +5192,7 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     if (await isTrustedDeviceReq(req, a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
     const key = 'lotp|' + lc(a.id);
     const prev = await _otpStore.get(key);
     if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -5360,7 +5208,7 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
 app.post('/api/auth/admin-login-otp', noStore, adminLoginOtpHandler);   // kept for backward compatibility
 
 // ══════════════════════════════════════════════════════════════════
-// 📲 POST /api/send-otp — single entry point for the Super Admin 6-digit OTP (WhatsApp via Fast2SMS, SMS fallback)
+// 📲 POST /api/send-otp — single entry point for the Super Admin 6-digit OTP (WhatsApp template)
 //   {purpose:'login',    username, password, deviceToken?}   → verifies the credentials FIRST; a wrong password never triggers an OTP
 //   {purpose:'recovery', user, mobile|contact, email?}       → account must match the stored record (User ID + registered mobile)
 //   The OTP is ALWAYS sent to the mobile number stored on the account — never to a number supplied by the browser — and only a
@@ -5400,7 +5248,7 @@ app.post('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRou
 // 🧾 INVOICE / MATERIAL PORTAL LOGIN — 6-digit WhatsApp OTP on a NEW device + "remember this device"
 //   POST /api/material/login-otp/send    {userId, secondFactor, deviceToken?}
 //        wrong User ID / password → normal 401/404 (no OTP is sent) · OTP switched OFF or device already trusted → {skipped:true}
-//        otherwise a 6-digit OTP goes to the mobile number STORED on the account (never one supplied by the browser) via Fast2SMS WhatsApp
+//        otherwise a 6-digit OTP goes to the mobile number STORED on the account (never one supplied by the browser) via the WhatsApp OTP template
 //   POST /api/material/login-otp/verify  {userId, secondFactor, code, trustDevice?}  → {otpToken}  (single-use, 10 min)
 //   POST /api/material/login             {userId, secondFactor, otpToken? | deviceToken?}  → needs a valid otpToken or a trusted deviceToken
 //        (returns a deviceToken when the user kept "remember this device" on).  /api/auth/login-otp/* are aliases of the same handlers.
@@ -5427,7 +5275,7 @@ const materialLoginOtpSend = asyncRoute(async (req, res) => {
     if (await isTrustedDeviceReq(req, _matTd(m.user.userid), b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(m.user.mobile);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
     const key = 'lotp|mat|' + lc(m.user.userid);
     const prev = await _otpStore.get(key);
     if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -5540,7 +5388,7 @@ app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
     if (!(await loginOtpEnabled(portal))) return res.json({ success: true, skipped: true, otpDisabled: true });
     if (await isTrustedDeviceReq(req, portal + '|' + id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
     const key = 'lotp|' + portal + '|' + lc(id);
     const prev = await _otpStore.get(key);
     if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
@@ -5552,10 +5400,10 @@ app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
     res.json({ success: true, channel: channel, message: 'A ' + ADMIN_OTP_LEN + '-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
 }));
 // 🩺 OTP health check — GET /api/auth/otp-diagnostics with header  x-diag-secret: <OTP_DIAG_SECRET>  (route is disabled unless that env var is set).
-//    Shows whether the Fast2SMS key / database are reachable; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
+//    Shows whether the WhatsApp credentials / templates / database are configured; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
 app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
     if (!process.env.OTP_DIAG_SECRET || !security.safeEqual(String(req.headers['x-diag-secret'] || ''), process.env.OTP_DIAG_SECRET)) return res.status(404).json({ error: 'Not found' });
-    const out = { fast2smsKeyPresent: !!(await fast2smsOtpKey()), whatsappEndpoint: '/dev/whatsapp/' + F2S_WA_VERSION + '/' + F2S_WA_PHONE_NUMBER_ID + '/messages', template: fast2smsWaConfig().template, language: fast2smsWaConfig().lang, origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
+    const out = Object.assign({ origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null }, { whatsapp: wa.describe() });
     try { await ensureOtpTable(); out.otpTable = 'ok'; } catch (e) { out.otpTable = 'ERROR: ' + e.message; }
     if (req.query.send) { try { out.testSend = 'ok via ' + await sendOtpMessage(String(req.query.send), String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN))); } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
     res.json(out);

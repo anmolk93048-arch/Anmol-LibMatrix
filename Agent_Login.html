@@ -3128,7 +3128,7 @@ function DO_CHG_PASS() {
     if(USERS[i].user === uname){
       if(USERS[i].pass !== oldP){ showErr(err,'Invalid password. Please enter the correct password.'); return; }
       USERS[i].pass = newP;
-      SYNC_USERS_TO_FB();
+      SYNC_USERS_TO_BACKEND();
       found = true;
       break;
     }
@@ -3186,7 +3186,7 @@ window.ADMIN_STAFF_BY_USER = {};
 // 'shdl/agents' Admin Panel ka path hai (Naam/Mobile/Photo/Aadhar/Bank wala rich form) —
 // usko hum sirf PADHTE hain (read-only), kabhi overwrite nahi karte, taaki Admin Panel ka
 // data (photo, aadhar, bank details) kabhi delete/corrupt na ho.
-function SYNC_USERS_TO_FB(){
+function SYNC_USERS_TO_BACKEND(){
   API.post('/admin-entities/agent_logins', USERS).catch(function(e){ console.warn('agent_logins backend save error:', e); });
 }
 function MERGE_USER(merged, su){
@@ -3196,7 +3196,7 @@ function MERGE_USER(merged, su){
   else merged = merged.map(function(u){ return u.user.toLowerCase()===su.user.toLowerCase() ? su : u; });
   return merged;
 }
-(function LOAD_USERS_FROM_FB(){
+(function LOAD_USERS_FROM_BACKEND(){
   var merged = USERS.slice();
 
   // 1) Apna khud ka 'agent_logins' entity load karo
@@ -3204,7 +3204,7 @@ function MERGE_USER(merged, su){
     if(saved && saved.length){
       saved.forEach(function(su){ merged = MERGE_USER(merged, su); });
     } else {
-      SYNC_USERS_TO_FB(); // khaali hai to default push kar do
+      SYNC_USERS_TO_BACKEND(); // khaali hai to default push kar do
     }
     USERS = merged;
   }).catch(function(e){ console.warn('agent_logins load error:', e); });
@@ -4310,9 +4310,9 @@ function INI(n){var i="",p=n.split(" ");for(var j=0;j<p.length&&j<2;j++){if(p[j]
 // ══ ADMIN PANEL SE STUDENTS LOAD KARO (legacy DB + localStorage shdl_students se) ══
 function LOAD_ADMIN_STUDENTS() {
   // Pehle legacy DB se fresh data lo, phir render karo
-  AgentSync.pullStudents(function(fbStudents) {
+  AgentSync.pullStudents(function(backendStudents) {
    try {
-    var saved = fbStudents || (function(){
+    var saved = backendStudents || (function(){
       try { return JSON.parse(localStorage.getItem('shdl_students') || '[]'); } catch(e){ return []; }
     })();
     // ═ Poora dataset yahan store karo (source of truth) — chahe kitna bhi filter ho ═
@@ -7387,7 +7387,7 @@ function UPLOAD_MY_LOGO(input) {
       var idx = USERS.findIndex(function(u){ return u.user.toLowerCase() === currentUser.user.toLowerCase(); });
       if(idx !== -1){
         USERS[idx].photo = dataUrl;
-        SYNC_USERS_TO_FB();
+        SYNC_USERS_TO_BACKEND();
       }
     }
     input.value = '';
@@ -7618,7 +7618,7 @@ function DEL_USER(idx) {
   if(!u) return;
   if(!confirm(u.name+' ('+u.user+') — do you want to delete this record?')) return;
   USERS.splice(idx, 1);
-  SYNC_USERS_TO_FB();
+  SYNC_USERS_TO_BACKEND();
   LOAD_USERS_TABLE();
   alert(u.name+' has been deleted.');
 }
@@ -9399,7 +9399,7 @@ var HRMS_SALARY_VERIFY_SLIP_ID = null;
 var HRMS_SALARY_CLAIMS = []; // Employee self-generated salary claims (HRMS Portal "Vetan Banayein")
 
 // ══ BACKEND SYNC HELPER (localStorage cache + Postgres 'hrms_<key>' blobs) ══
-const HrmsFB = {
+const HrmsStore = {
   pull: function(key, cb){
     API.get('/blob/hrms_' + key).then(function(val){
       if (val !== null && val !== undefined) {
@@ -9421,12 +9421,12 @@ const HrmsFB = {
   pullAll: function(cb){
     var keys = ['employees','salary_slips','settings','attendance','leaves'];
     var done = 0;
-    keys.forEach(function(k){ HrmsFB.pull(k, function(){ done++; if (done === keys.length && cb) cb(); }); });
+    keys.forEach(function(k){ HrmsStore.pull(k, function(){ done++; if (done === keys.length && cb) cb(); }); });
   }
 };
 
 function HRMS_LOAD_ALL(cb){
-  HrmsFB.pullAll(function(){
+  HrmsStore.pullAll(function(){
     try { HRMS_EMPLOYEES = JSON.parse(localStorage.getItem('hrms_employees')) || []; } catch(e){ HRMS_EMPLOYEES=[]; }
     try {
       var rawSlips = JSON.parse(localStorage.getItem('hrms_salary_slips'));
@@ -9843,7 +9843,7 @@ function HRMS_DELETE_TODAY_PUNCH(empId){
   if (!rec) return;
   if (!confirm('Clear today punch record? The employee will immediately appear as "Absent" and can punch again.')) return;
   HRMS_ATTENDANCE = HRMS_ATTENDANCE.filter(function(a){ return !(a.empId===empId && a.date===today); });
-  HrmsFB.push('attendance', HRMS_ATTENDANCE);
+  HrmsStore.push('attendance', HRMS_ATTENDANCE);
   HRMS_RENDER_LIVE_ATTENDANCE();
   HRMS_SHOW_TOAST('🗑️ The punch record has been cleared.');
 }
@@ -10039,7 +10039,7 @@ function HRMS_DECIDE_LEAVE(id, decision){
   if (!l) return;
   l.status = decision;
   l.decidedOn = new Date().toLocaleString('en-IN');
-  HrmsFB.push('leaves', HRMS_LEAVES);
+  HrmsStore.push('leaves', HRMS_LEAVES);
   HRMS_RENDER_HR_LEAVES();
   HRMS_SHOW_TOAST(decision==='approved' ? 'The leave request has been approved.' : 'The leave request has been rejected.');
 }
@@ -10050,7 +10050,7 @@ function HRMS_DELETE_LEAVE(id){
   if (!l) return;
   if (!confirm(l.empName+' ('+l.empId+') — permanently delete the '+l.type+' leave ('+l.from+' to '+l.to+')?')) return;
   HRMS_LEAVES = HRMS_LEAVES.filter(function(x){ return x.id!==id; });
-  HrmsFB.push('leaves', HRMS_LEAVES);
+  HrmsStore.push('leaves', HRMS_LEAVES);
   HRMS_RENDER_HR_LEAVES();
   HRMS_SHOW_TOAST('🗑️ The leave application has been deleted.');
 }
@@ -10087,7 +10087,7 @@ function HRMS_SAVE_LEAVE_EDIT(){
   HRMS_LEAVES[idx].reason = reason;
   HRMS_LEAVES[idx].editedBy = 'Agent Login';
   HRMS_LEAVES[idx].editedOn = new Date().toLocaleString('en-IN');
-  HrmsFB.push('leaves', HRMS_LEAVES);
+  HrmsStore.push('leaves', HRMS_LEAVES);
   HRMS_CLOSE_MODAL('mo-hrms-leave-edit');
   HRMS_RENDER_HR_LEAVES();
   HRMS_SHOW_TOAST('✏️ The leave application has been updated.');
@@ -11465,7 +11465,7 @@ body.dark .agent-dashboard-title{color:#e5efff}body.dark .agent-dashboard-titleb
       renderProfile();
       notifyPhotoSync(dataUrl,false);
       var rec=savedUserRecord();
-      if(rec){rec.profilePhoto=dataUrl;try{if(typeof window.SYNC_USERS_TO_FB==='function')window.SYNC_USERS_TO_FB();}catch(syncErr){console.warn('Profile cloud sync unavailable:',syncErr);}}
+      if(rec){rec.profilePhoto=dataUrl;try{if(typeof window.SYNC_USERS_TO_BACKEND==='function')window.SYNC_USERS_TO_BACKEND();}catch(syncErr){console.warn('Profile cloud sync unavailable:',syncErr);}}
       // Prefer IndexedDB: it does not consume localStorage's small quota and is safer for photos.
       writePhotoDb(key,dataUrl).then(function(){
         try{localStorage.removeItem(key);}catch(cleanErr){}
@@ -11483,7 +11483,7 @@ body.dark .agent-dashboard-title{color:#e5efff}body.dark .agent-dashboard-titleb
     try{localStorage.removeItem(key);}catch(e){}
     deletePhotoDb(key).catch(function(e){console.warn('Could not remove saved profile photo from IndexedDB:',e);});
     if(window.currentUser)delete window.currentUser.profilePhoto;
-    var rec=savedUserRecord();if(rec){delete rec.profilePhoto;try{if(typeof window.SYNC_USERS_TO_FB==='function')window.SYNC_USERS_TO_FB();}catch(e){}}
+    var rec=savedUserRecord();if(rec){delete rec.profilePhoto;try{if(typeof window.SYNC_USERS_TO_BACKEND==='function')window.SYNC_USERS_TO_BACKEND();}catch(e){}}
     notifyPhotoSync('',true);renderProfile();setPhotoStatus('Profile photo removed. Initials are displayed instead.',true);
   };
   window.AGENT_SET_ANALYTICS_RANGE=function(value){
