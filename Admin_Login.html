@@ -2136,8 +2136,8 @@ html,body,#admin-app{width:100%;min-width:0;}
 #alm-recovery-modal .alm-recovery-back{display:block;margin:10px auto 0;border:0;background:transparent;color:#1769bd;font:800 11px 'Nunito','Hind',sans-serif;cursor:pointer;padding:7px 10px;}
 @media(max-width:560px){#alm-recovery-modal{padding:10px;align-items:center}#alm-recovery-modal .alm-recovery-card{max-height:96dvh;border-radius:16px}#alm-recovery-modal .alm-recovery-head{padding:17px 16px 15px}#alm-recovery-modal .alm-recovery-body{padding:18px 16px 20px}#alm-recovery-modal .alm-recovery-logo{width:165px;height:55px}#alm-recovery-modal .alm-recovery-title{font-size:21px}#alm-recovery-modal .alm-recovery-step{font-size:8px;padding:8px 5px;gap:5px}#alm-recovery-modal .alm-step-no{width:19px;height:19px;flex-basis:19px}}
 @media(max-width:360px){#alm-recovery-modal .alm-recovery-steps{gap:5px}#alm-recovery-modal .alm-recovery-step{font-size:7px;letter-spacing:-.02em}}
-/* ── Secondary 8-digit OTP (login) + recovery stepper states ── */
-/* ── Multi-step login: step 1 = credentials, step 2 = 8-digit OTP ── */
+/* ── Secondary 6-digit OTP (login) + recovery stepper states ── */
+/* ── Multi-step login: step 1 = credentials, step 2 = 6-digit OTP ── */
 #l-box[data-step="2"] .ls1{display:none!important}
 #l-box:not([data-step="2"]) .ls2{display:none!important}
 #l-box .otp-step{display:block;width:100%;min-width:0;box-sizing:border-box}
@@ -2196,7 +2196,7 @@ html,body,#admin-app{width:100%;min-width:0;}
 #alm-recovery-modal .alm-recovery-foot{margin-top:12px;padding-top:10px;}
 #alm-recovery-modal .alm-recovery-back{margin-top:8px;}
 @media(max-width:560px){#alm-recovery-modal{padding:8px}#alm-recovery-modal .alm-recovery-card{max-height:98dvh}#alm-recovery-modal .alm-recovery-head{padding:14px 16px 10px}#alm-recovery-modal .alm-recovery-body{padding:14px 16px 16px}#alm-recovery-modal .alm-recovery-title{font-size:18px}}
-/* "Remember this device" row on the 8-digit OTP step */
+/* "Remember this device" row on the 6-digit OTP step */
 #l-box .otp-trust{display:flex;align-items:flex-start;gap:8px;margin:10px 0 2px;font-size:12px;line-height:1.45;color:var(--login-muted,#557493);cursor:pointer}
 #l-box .otp-trust input{margin-top:2px;flex:0 0 auto;width:15px;height:15px;accent-color:#0d63c8}
 #l-box .otp-trust small{display:block;font-size:10.5px;opacity:.85}
@@ -2306,11 +2306,11 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="otp-step-title">Two-Step Verification</div>
           <p class="otp-step-info" id="l-otp-info" role="status" aria-live="polite"></p>
           <div class="fg">
-            <label class="fl" for="l-otp">Enter 8-Digit OTP / Secondary Verification Code</label>
+            <label class="fl" for="l-otp">Enter 6-Digit OTP / Secondary Verification Code</label>
             <div class="iw reference-input">
               <span class="input-icon">🔑</span>
               <div class="input-stack">
-                <input type="text" id="l-otp" placeholder="Enter 8-digit OTP" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" oninput="this.value=this.value.replace(/\D/g,'')" onkeydown="if(event.key==='Enter')VERIFY_LOGIN_OTP()">
+                <input type="text" id="l-otp" placeholder="Enter 6-digit OTP" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" oninput="this.value=this.value.replace(/\D/g,'')" onkeydown="if(event.key==='Enter')VERIFY_LOGIN_OTP()">
               </div>
             </div>
           </div>
@@ -2449,11 +2449,11 @@ function showErr(t){var e=$('l-err');e.textContent=t;e.style.display=t?'block':'
 function busy(on,txt){var b=document.querySelector('.btn-login');if(!b)return;if(on){b.disabled=true;}else{AnmolAuthUI.busy(b,false);b.disabled=false;}}
 
 /* ── Multi-step login ──
-   Step 1: User ID + password + captcha → server verifies them and sends an 8-digit OTP to the registered mobile.
+   Step 1: User ID + password + captcha → server verifies them and sends a 6-digit OTP to the registered mobile.
    Step 2: OTP box + Resend (60 s timer) → server verifies the OTP → role/location popup (dashboard route) opens. */
 var _cred=null,_otpTimer=null;
 /* ── Trusted device (OTP skip) ──
-   After one successful 8-digit OTP login the server returns a random device token. It is kept in this browser's
+   After one successful 6-digit OTP login the server returns a random device token. It is kept in this browser's
    localStorage (per username) and sent with the next login; the server skips the OTP only if the token is valid for that user. */
 var TD_KEY='shdl_trusted_devices_v1';
 function tdAll(){try{return JSON.parse(localStorage.getItem(TD_KEY)||'{}')||{};}catch(e){return {};}}
@@ -2482,7 +2482,7 @@ function startOtpTimer(sec){
   tick();_otpTimer=setInterval(tick,1000);
 }
 function showOtpStep(msg,sec){
-  showErr('');$('l-otp').value='';$('l-otp-info').textContent=msg||'An 8-digit code has been sent to your registered mobile number.';
+  showErr('');$('l-otp').value='';$('l-otp-info').textContent=msg||'A 6-digit code has been sent to your registered mobile number.';
   setStep(2);startOtpTimer(sec||60);setTimeout(function(){$('l-otp').focus();},40);
 }
 function resetToStep1(clearUser){
@@ -2522,7 +2522,7 @@ window.OTP_BACK=function(){resetToStep1(false);$('l-user').focus();};
 window.VERIFY_LOGIN_OTP=function(){
   if(!_cred)return resetToStep1();
   var otp=($('l-otp').value||'').replace(/\D/g,'');
-  if(otp.length!==8){showErr('Please enter the 8-digit OTP / Secondary Verification Code.');$('l-otp').focus();return;}
+  if(otp.length!==6){showErr('Please enter the 6-digit OTP / Secondary Verification Code.');$('l-otp').focus();return;}
   finishLogin(otp);
 };
 function finishLogin(otp){
@@ -2681,10 +2681,10 @@ resume();
           <button class="alm-recovery-primary" type="submit">Verify All 3 Details &amp; Continue&nbsp; →</button>
         </form>
         <form id="alm-otp-form" autocomplete="off" hidden>
-          <p class="alm-recovery-intro">आपके registered Mobile Number <strong id="alm-otp-mobile"></strong> पर <strong>8-digit OTP</strong> भेजा गया है। OTP verify होने के बाद ही नया password सेट कर पाएँगे।</p>
+          <p class="alm-recovery-intro">आपके registered Mobile Number <strong id="alm-otp-mobile"></strong> पर <strong>6-digit OTP</strong> भेजा गया है। OTP verify होने के बाद ही नया password सेट कर पाएँगे।</p>
           <div class="alm-recovery-field">
-            <label class="alm-recovery-label" for="alm-otp-code">Enter 8-Digit OTP</label>
-            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">🔑</span><input class="alm-recovery-input" id="alm-otp-code" name="otp" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" placeholder="Enter the 8-digit OTP" autocomplete="one-time-code" required></div>
+            <label class="alm-recovery-label" for="alm-otp-code">Enter 6-Digit OTP</label>
+            <div class="alm-recovery-input-wrap"><span class="alm-recovery-input-icon" aria-hidden="true">🔑</span><input class="alm-recovery-input" id="alm-otp-code" name="otp" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Enter the 6-digit OTP" autocomplete="one-time-code" required></div>
           </div>
           <div class="alm-recovery-alert" id="alm-otp-alert" role="status" aria-live="polite"></div>
           <button class="alm-recovery-primary" type="submit">Verify OTP &amp; Continue&nbsp; →</button>
@@ -2795,8 +2795,8 @@ if(!mobile&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))return say('alm-username-alert
 say('alm-username-alert','');lock(btn,true,'Sending OTP\u2026');
 post('',{contact:v,portal:'admin'}).then(function(x){
 lock(btn,false);if(!x.ok)return say('alm-username-alert',x.d.error||'Unable to send the OTP right now. Please try again.','err');
-ch=x.d;boxes(ch.otpLength||8);
-byId('alm-un-otp-text').textContent='Enter the '+(ch.otpLength||8)+'-digit OTP sent on WhatsApp to the mobile number ending '+String(ch.maskedMobile||'').slice(-4)+'.';
+ch=x.d;boxes(6);
+byId('alm-un-otp-text').textContent='Enter the 6-digit OTP sent on WhatsApp to the mobile number ending '+String(ch.maskedMobile||'').slice(-4)+'.';
 say('alm-un-otp-alert','');show(2);tick(ch.resendInSec||60);
 }).catch(function(){lock(btn,false);say('alm-username-alert','Unable to reach the server. Please check your connection and try again.','err');});
 });
@@ -2874,7 +2874,7 @@ return {reset:reset};
     byId('alm-otp-form').addEventListener('submit',function(e){
       e.preventDefault();if(!ctx)return;
       var code=byId('alm-otp-code').value.replace(/\D/g,''),btn=submitBtn(this);
-      if(code.length!==8){say('alm-otp-alert','Please enter the 8-digit OTP.','err');return;}
+      if(code.length!==6){say('alm-otp-alert','Please enter the 6-digit OTP.','err');return;}
       lock(btn,true);
       post('/auth/verify-reset-otp',{user:ctx.userId,contact:ctx.mobile,email:ctx.email,code:code}).then(function(x){
         lock(btn,false);

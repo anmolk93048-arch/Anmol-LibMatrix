@@ -8,6 +8,7 @@ try { require('dotenv').config(); } catch (e) { console.log('dotenv not installe
     alias('SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
     alias('SMS_API_KEY', 'APP2SMS_API_KEY');
     alias('PORTAL_URL', 'FRONTEND_URL');
+    alias('BASE_URL', 'PORTAL_URL', 'PUBLIC_URL');   // 🔗 optional manual override for the site's public link (normally NOT needed — the live domain is auto-detected)
 })();
 const express = require('express');
 const { Pool } = require('pg');
@@ -77,11 +78,8 @@ app.set('trust proxy', 1);
 // NOTE: agar future mein koi custom domain jodna ho, ya Netlify deploy-preview
 // URLs (jaise https://deploy-preview-3--digitallibraryanmollive.netlify.app)
 // bhi allow karne hon, to bas neeche is array mein add kar dein.
-const ALLOWED_ORIGINS = [
-    'https://digitallibraryanmollive.netlify.app',
-    'https://wondrous-jelly-3ffe47.netlify.app',
-    'https://anmol-libmatrix.onrender.com',
-]
+const ALLOWED_ORIGINS = []   // 🔗 no domain is hardcoded any more — everything comes from Environment (BASE_URL, FRONTEND_URL, NETLIFY_URL, EXTRA_CORS_ORIGINS, Vercel's own VERCEL_* vars)
+    .concat([process.env.BASE_URL, process.env.PUBLIC_URL].filter(Boolean).map(function (x) { return String(x).trim().replace(/\/$/, ''); }))
     // 🆕 Render ka apna (custom) domain + koi extra origin — Environment se, code badle bina:
     //   EXTRA_CORS_ORIGINS="https://mydomain.com,https://www.mydomain.com"
     
@@ -93,7 +91,7 @@ const ALLOWED_ORIGINS = [
     .concat(String(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(function (x) { return x.trim().replace(/\/$/, ''); }).filter(Boolean));
 // 🆕 Netlify deploy-preview / branch-deploy URLs (sirf isi site ke: <x>--digitallibraryanmollive.netlify.app)
 const NETLIFY_ANY_RE = /^https:\/\/[a-z0-9-]+\.netlify\.app$/;
-const NETLIFY_PREVIEW_RE = /^https:\/\/[a-z0-9-]+--digitallibraryanmollive\.netlify\.app$/;
+const NETLIFY_PREVIEW_RE = process.env.NETLIFY_SITE_NAME ? new RegExp('^https://[a-z0-9-]+--' + String(process.env.NETLIFY_SITE_NAME).replace(/[^a-z0-9-]/gi, '') + '\\.netlify\\.app$') : /$^/;   // optional: set NETLIFY_SITE_NAME to allow that site's deploy previews
 // 🆕 Local development (sirf production ke bahar)
 const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 // 🔒 CORS: STRICT by default. Only the allow-list above (+ FRONTEND_URL / NETLIFY_URL / EXTRA_CORS_ORIGINS and this
@@ -102,6 +100,9 @@ const LOCAL_DEV_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 function isOriginAllowed(origin) {
     if (!origin) return false;
     if (ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW_RE.test(origin)) return true;
+    // 🔗 ZERO-CONFIG: a request whose Origin is the very domain it was sent to (same-origin) is always fine. server.js publishes the
+    //    live origin of the request being handled via global.getLiveOrigin(); a cross-site attacker's Origin can never equal it.
+    try { const live = typeof global.getLiveOrigin === 'function' ? global.getLiveOrigin() : null; if (live && origin === live) return true; } catch (e) { /* ignore */ }
     return process.env.NODE_ENV !== 'production' && LOCAL_DEV_RE.test(origin);
 }
 const CORS_OPTIONS = {
@@ -152,7 +153,7 @@ dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAut
 // ▲ RENDER-URL REWRITE (safety net): any page/script served by THIS server that still contains the old Render origin
 //   (theme.js, config.js, portal pages ...) gets it replaced by the current site's own origin → every API call becomes
 //   same-origin (no CORS, no "Failed to fetch"). Fix the source files too; this keeps old copies working meanwhile.
-const OLD_RENDER_ORIGIN_RE = /https?:\/\/anmol-libmatrix\.onrender\.com/gi;
+const OLD_RENDER_ORIGIN_RE = /https?:\/\/[a-z0-9-]+\.onrender\.com/gi;   // any old Render host (no single domain hardcoded)
 app.use(function (req, res, next) {
     if (req.method !== 'GET' || req.path.startsWith('/api/') || req.path.startsWith('/img/')) return next();
     const origWrite = res.write, origEnd = res.end, chunks = [];
@@ -189,7 +190,7 @@ app.use(function (req, res, next) {
 //        • a link to another portal whose label says "login" opens in a NEW tab (dashboard stays open).
 //   3) Masked pages are never cached (no-store) → the Back button can not show a logged-out page again.
 // ══════════════════════════════════════════════════════════════════
-const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;window.__amBridge=1;var HOME='/',done=false,bc=null;" +
+const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;window.__amBridge=1;var HOME=(window.location.origin||'')+'/',done=false,bc=null;" +
     "try{bc=new BroadcastChannel('anmol-auth');}catch(e){}" +
     "function wipe(){var st=[window.localStorage,window.sessionStorage];for(var i=0;i<st.length;i++){try{var s=st[i],ks=[];for(var j=0;j<s.length;j++)ks.push(s.key(j));" +
     "ks.forEach(function(k){if(/token|jwt|bearer|auth|session/i.test(k))s.removeItem(k);});}catch(e){}}}" +
@@ -207,11 +208,157 @@ const AM_BRIDGE_JS = "(function(){'use strict';if(window.__amBridge)return;windo
     "var label=(a.textContent||'')+' '+(a.getAttribute('title')||'')+' '+(a.getAttribute('aria-label')||'');" +
     "if(/login/i.test(label)){a.setAttribute('target','_blank');a.setAttribute('rel','noopener noreferrer');}},true);})();";
 
+// 🖼️ Photos + logo are served BEFORE the route-mask guard so the guard can never 404 them (public/img/* and /anmol_libmatrix_logo.png).
+STATIC_DIRS.forEach(function (d) {
+    const imgDir = path.join(d, 'img');
+    try { if (fs.statSync(imgDir).isDirectory()) app.use('/img', express.static(imgDir, { dotfiles: 'ignore', index: false, redirect: false, maxAge: '7d' })); } catch (e) { /* no img folder here */ }
+});
+app.get('/anmol_libmatrix_logo.png', function (req, res, next) {
+    const f = findStaticFile('anmol_libmatrix_logo.png');
+    if (!f) return next();
+    res.set('Cache-Control', 'public, max-age=86400'); res.sendFile(f);
+});
+
 app.get('/_am/bridge.js', function (req, res) {
     res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
     res.send(AM_BRIDGE_JS);
 });
 
+// 🎚️ The OTP switches live ONLY inside the Super Admin dashboard (sidebar → "OTP Settings", per portal). The old script that injected a
+//    single "OTP Verification" box into every page with an admin token is retired: this route stays as an empty no-op so pages cached
+//    by a browser before the update do not 404.
+app.get('/_am/otp-toggle.js', function (req, res) {
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.send('/* retired: OTP switches are managed in Super Admin → OTP Settings */');
+});
+
+// 📲 6-digit OTP prompt for the Agent / HRMS login pages (injected only there, see the masked-page middleware).
+//    The page keeps calling its normal login API. When the server answers 401 OTP_REQUIRED (portal switch ON + unknown device) this script
+//    asks for the OTP (WhatsApp, sent only now), then repeats the SAME login with the code. A remembered device never reaches this code:
+//    the server recognises it by its HttpOnly cookie, so the user simply logs in with ID + password.
+function __amOtpFlow() {
+    'use strict';
+    if (window.__amOtpFlow) return; window.__amOtpFlow = 1;
+    var realFetch = window.fetch; if (!realFetch) return;
+    var LOGIN_RE = /\/(material\/login|auth\/login)(?:[?#]|$)/i;
+    function jsonResp(status, obj) { return new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } }); }
+    function post(url, body) {
+        return realFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
+            .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, status: r.status, data: d || {} }; }); });
+    }
+    function dtKey(kind, b) { return 'am_dt:' + (kind === 'material' ? 'mat|' + String(b.userId || '').toLowerCase() : String(b.role || '') + '|' + String(b.username || '').toLowerCase()); }
+    function modal(info) {
+        return new Promise(function (resolve) {
+            var ov = document.createElement('div');
+            ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+            ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,20,40,.62);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Segoe UI,Arial,sans-serif';
+            ov.innerHTML = '<div style="background:#fff;color:#12233f;width:100%;max-width:360px;border-radius:16px;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.35)">' +
+                '<div style="font-size:18px;font-weight:800;margin-bottom:4px">Verify your login</div>' +
+                '<div id="amo-msg" style="font-size:13px;line-height:1.45;color:#35547e;margin-bottom:12px"></div>' +
+                '<input id="amo-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Enter 6-digit OTP" style="width:100%;box-sizing:border-box;font-size:22px;letter-spacing:8px;text-align:center;padding:11px 8px;border:1.5px solid #b8c6dd;border-radius:10px;outline:none">' +
+                '<label style="display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-size:13px;cursor:pointer"><input id="amo-trust" type="checkbox" checked style="width:17px;height:17px"> Remember this device (no OTP next time)</label>' +
+                '<div id="amo-err" style="min-height:18px;margin:6px 0;font-size:12.5px;color:#c0392b"></div>' +
+                '<button id="amo-ok" type="button" style="width:100%;padding:12px;border:0;border-radius:10px;background:#1a3a6b;color:#fff;font-size:15px;font-weight:700;cursor:pointer">Verify &amp; Login</button>' +
+                '<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px"><button id="amo-resend" type="button" style="background:none;border:0;color:#1a3a6b;font-weight:600;cursor:pointer;padding:4px 0" disabled>Resend OTP</button><button id="amo-cancel" type="button" style="background:none;border:0;color:#64748b;cursor:pointer;padding:4px 0">Cancel</button></div></div>';
+            document.body.appendChild(ov);
+            var code = ov.querySelector('#amo-code'), err = ov.querySelector('#amo-err'), ok = ov.querySelector('#amo-ok'), rs = ov.querySelector('#amo-resend'), t = null, left = 0;
+            ov.querySelector('#amo-msg').textContent = info.message || 'Enter the 6-digit OTP sent to your registered WhatsApp number.';
+            function tick() { if (left > 0) { rs.disabled = true; rs.textContent = 'Resend OTP in ' + left + 's'; left--; } else { rs.disabled = false; rs.textContent = 'Resend OTP'; clearInterval(t); } }
+            function startCount(sec) { clearInterval(t); left = sec || 60; tick(); t = setInterval(tick, 1000); }
+            function close(v) { clearInterval(t); ov.remove(); resolve(v); }
+            startCount(info.resendInSec);
+            code.addEventListener('input', function () { code.value = code.value.replace(/\D/g, '').slice(0, 6); err.textContent = ''; });
+            code.addEventListener('keydown', function (e) { if (e.key === 'Enter') ok.click(); });
+            ov.querySelector('#amo-cancel').addEventListener('click', function () { close(null); });
+            rs.addEventListener('click', function () {
+                rs.disabled = true; err.textContent = '';
+                info.resend().then(function (r) { if (r.ok) startCount((r.data && r.data.resendInSec) || 60); else { err.textContent = r.data.error || 'Could not resend the OTP.'; startCount(r.data && r.data.resendInSec); } });
+            });
+            ok.addEventListener('click', function () {
+                if (code.value.length !== 6) { err.textContent = 'Enter the 6-digit OTP.'; code.focus(); return; }
+                ok.disabled = true; ok.textContent = 'Verifying…'; err.textContent = '';
+                info.verify(code.value, ov.querySelector('#amo-trust').checked).then(function (res) {
+                    ok.disabled = false; ok.textContent = 'Verify & Login';
+                    if (res.retry) { err.textContent = res.error || 'Invalid or expired OTP.'; code.select(); } else close(res.response);
+                });
+            });
+            setTimeout(function () { code.focus(); }, 50);
+        });
+    }
+    function run(url, init, original) {
+        var b; try { b = JSON.parse(init.body); } catch (e) { return Promise.resolve(original); }
+        var kind = /\/material\/login/i.test(url) ? 'material' : 'auth';
+        if (kind === 'auth' && ['agent', 'employee'].indexOf(String(b.role).toLowerCase()) < 0) return Promise.resolve(original);
+        var base = url.replace(/\/(material|auth)\/login.*$/i, '');
+        var sendUrl = kind === 'material' ? base + '/material/login-otp/send' : base + '/auth/portal-otp/send';
+        var sendBody = kind === 'material' ? { userId: b.userId, secondFactor: b.secondFactor } : { role: b.role, username: b.username, password: b.password, mobile: b.mobile };
+        function retry(extra) { return realFetch(url, Object.assign({}, init, { body: JSON.stringify(Object.assign({}, b, extra)) })); }
+        return post(sendUrl, sendBody).then(function (s) {
+            if (s.data && s.data.skipped) return retry({});                       // switch turned OFF meanwhile / device trusted
+            if (!s.ok) return jsonResp(s.status, s.data);                          // wrong credentials, service down … → the page shows the server's message
+            return modal({
+                message: s.data.message, resendInSec: s.data.resendInSec,
+                resend: function () { return post(sendUrl, sendBody); },
+                verify: function (code, trust) {
+                    if (kind === 'material') {
+                        return post(base + '/material/login-otp/verify', { userId: b.userId, secondFactor: b.secondFactor, code: code, trustDevice: trust }).then(function (v) {
+                            if (!v.ok) return { retry: true, error: v.data.error };
+                            return retry({ otpToken: v.data.otpToken, trustDevice: trust }).then(function (r) { return { response: r }; });
+                        });
+                    }
+                    return retry({ otp: code, trustDevice: trust }).then(function (r) {
+                        if (r.status === 401) return r.clone().json().catch(function () { return {}; }).then(function (d) { return d && (d.code === 'INVALID_OTP' || d.code === 'OTP_REQUIRED') ? { retry: true, error: d.error } : { response: r }; });
+                        return { response: r };
+                    });
+                }
+            }).then(function (r) {
+                if (!r) return jsonResp(401, { error: 'OTP verification was cancelled.', code: 'OTP_CANCELLED' });
+                if (r.ok) { try { r.clone().json().then(function (d) { if (d && d.deviceToken) localStorage.setItem(dtKey(kind, b), d.deviceToken); }); } catch (e) {} }
+                return r;
+            });
+        }).catch(function () { return original; });
+    }
+    window.fetch = function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        var isLogin = method === 'POST' && LOGIN_RE.test(url) && init && typeof init.body === 'string';
+        if (isLogin) {                                                              // older browsers / cross-origin API: send a stored device token too
+            try { var b0 = JSON.parse(init.body), kind0 = /\/material\/login/i.test(url) ? 'material' : 'auth', tk = localStorage.getItem(dtKey(kind0, b0)); if (tk && !b0.deviceToken) { b0.deviceToken = tk; init = Object.assign({}, init, { body: JSON.stringify(b0) }); } } catch (e) {}
+        }
+        var p = realFetch.call(this, input, init);
+        if (!isLogin) return p;
+        return p.then(function (res) {
+            if (res.ok) {   // remember the device token a successful OTP login returned
+                return res.clone().json().then(function (d) { try { var b1 = JSON.parse(init.body); if (d && d.deviceToken) localStorage.setItem(dtKey(/\/material\/login/i.test(url) ? 'material' : 'auth', b1), d.deviceToken); } catch (e) {} return res; }).catch(function () { return res; });
+            }
+            if (res.status !== 401) return res;
+            return res.clone().json().catch(function () { return null; }).then(function (d) {
+                if (!d || d.code !== 'OTP_REQUIRED') return res;
+                return run(url, init, res);
+            });
+        });
+    };
+}
+const AM_OTP_FLOW_JS = '(' + __amOtpFlow.toString() + ')();';
+app.get('/_am/otp-flow.js', function (req, res) {
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    res.send(AM_OTP_FLOW_JS);
+});
+
+// 🏠 LIVE HOME URL — the main page of the domain the user is on RIGHT NOW (auto-detected, nothing hardcoded).
+//    Used after logout from the Admin / Agent / HRMS / Student / Material portals. Falls back to '/', which the browser
+//    also resolves against the current domain, so a logout can never land on an old or wrong site.
+function liveHomeUrl(req) {
+    try {
+        const h = String((req && typeof req.get === 'function' && (req.get('x-forwarded-host') || req.get('host'))) || '').split(',')[0].trim().toLowerCase();
+        if (h && /^[a-z0-9.\-]+(:\d{1,5})?$/.test(h) && !_isLocalHost(h)) {
+            const proto = IS_VERCEL ? 'https' : (String(req.protocol || 'https').toLowerCase() === 'http' ? 'http' : 'https');
+            return proto + '://' + h + '/';
+        }
+    } catch (e) { /* fall through */ }
+    const base = (typeof liveBaseUrl === 'function') ? liveBaseUrl(req) : '';
+    return base ? base + '/' : '/';
+}
 function clearSessionCookies(req, res) {
     // security.clearSessionCookie's signature lives in security.js — try both common forms; a wrong form just throws and is ignored.
     try { security.clearSessionCookie(res); } catch (e) { try { security.clearSessionCookie(req, res); } catch (e2) { /* nothing to clear */ } }
@@ -219,7 +366,7 @@ function clearSessionCookies(req, res) {
 app.get('/logout', function (req, res) {
     clearSessionCookies(req, res);
     res.set({ 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache' });
-    res.redirect(303, '/');
+    res.redirect(303, liveHomeUrl(req));   // 🏠 straight to the home page of the current live domain
 });
 
 // Inject the bridge into masked HTML pages and make them uncacheable.
@@ -246,7 +393,9 @@ app.use(function (req, res, next) {
         res.setHeader('Cache-Control', 'no-store, max-age=0'); res.setHeader('Pragma', 'no-cache');
         if (!chunks.length) return origEnd.call(res, done);
         let out = Buffer.concat(chunks).toString('utf8');
-        const tag = '<script src="/_am/bridge.js" defer></script>';
+        let tag = '<script src="/_am/bridge.js" defer></script>';
+        // 6-digit OTP prompt for the portals that have no OTP screen of their own (Agent / HRMS). Admin and Invoice have their own OTP screens.
+        if (/__ANMOL_PAGE=("|')(agent_login|hrms_login)\.html\1/.test(out)) tag += '<script src="/_am/otp-flow.js" defer></script>';
         out = /<\/body>/i.test(out) ? out.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + '</body>') : out + tag;
         res.removeHeader('Content-Length'); res.removeHeader('ETag');
         return origEnd.call(res, out, 'utf8', done);
@@ -1035,7 +1184,8 @@ const JWT_SECRET = (function () {
         console.warn('⚠️ JWT_SECRET missing/short — using a temporary random secret (local development only).');
         return require('crypto').randomBytes(48).toString('hex');
     }
-    console.error('❌ FATAL: JWT_SECRET is not set (or shorter than 32 characters). Set it in Render → Environment and redeploy.');
+    console.error('❌ FATAL: JWT_SECRET is not set (or shorter than 32 characters). Set it in Render / Vercel → Environment and redeploy.');
+    if (IS_VERCEL) throw new Error('JWT_SECRET is not set or is shorter than 32 characters (Vercel → Settings → Environment Variables, then Redeploy).');   // ▲ throw, never process.exit(), on Vercel → server.js keeps the page up and shows this reason at /api/boot-status
     process.exit(1);
 })();
 
@@ -1966,7 +2116,7 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
             const credEnc = piiReady() ? piiEncrypt(plainPassword) : null;
             db.query("UPDATE material_user_requests SET status='approved', reviewed_at=CURRENT_TIMESTAMP, approved_userid=?, aadhaar_enc=NULL, aadhaar_hash=NULL, cred_enc=?, cred_at=?, cred_views=0 WHERE id = ?", [userId, credEnc, credEnc ? Date.now() : null, reqId], () => {
                 auditPii(req, 'material_approve', userId, 'request=' + reqId);
-                notifyAccount({ kind: 'credentials', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
+                notifyAccount({ kind: 'credentials', portal: 'invoice', mobile: r.mobile, name: r.name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp (Meta Cloud API) the moment Super Admin approves
                     res.json({ success: true, userId, password: plainPassword, mobile: r.mobile, name: r.name, village: r.village, photo: r.photo || '', notified: ch || null });
                 });
             });
@@ -2107,7 +2257,7 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
         }),
         (insErr, result, userId) => {
             if (insErr) return res.status(500).json({ error: 'DB error: ' + insErr.message });
-            notifyAccount({ kind: 'credentials', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp the moment Super Admin creates the user
+            notifyAccount({ kind: 'credentials', portal: 'invoice', mobile: mobile, name: name, userId: userId, password: plainPassword, link: portalLink(req) }).then(function (ch) {   // automatic WhatsApp the moment Super Admin creates the user
                 res.status(201).json({ success: true, userId, password: plainPassword, notified: ch || null });
             });
         }
@@ -2207,14 +2357,21 @@ app.post('/api/material/login', (req, res) => {
                 // hamesha skip ho jaata tha (blocked user bhi login ke baad kaam
                 // karta rehta tha), aur "मोबाइल नंबर बदलें" route bhi हमेशा
                 // "Yeh User ID nahi mila" error deta tha.
-                const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
-                // never send the password hash or the encrypted Aadhaar data to the browser
-                const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
-                userSafe._docId = String(u.id);
-                userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
-                userSafe.invoiceVersion = dvInvoice.normVersion(u.invoice_version);
-                delete userSafe.invoice_version;
-                res.json({ user: userSafe, token, invoiceVersion: userSafe.invoiceVersion, redirectTo: userSafe.invoiceVersion === 'B' ? '/dv-invoice' : null });
+                // 🔐 6-digit WhatsApp OTP on a NEW device (skipped for a trusted device or while the Super Admin switch is OFF)
+                materialOtpGate(req, u.userid).then((gate) => {
+                    if (!gate.ok) return res.status(gate.status).json(gate.body);
+                    const token = jwt.sign({ userId: u.userid, role: 'material_user' }, JWT_SECRET, { expiresIn: '7d' });
+                    // never send the password hash or the encrypted Aadhaar data to the browser
+                    const { password_hash, aadhaar_enc, aadhaar_hash, ...userSafe } = u;
+                    userSafe._docId = String(u.id);
+                    userSafe.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
+                    userSafe.invoiceVersion = dvInvoice.normVersion(u.invoice_version);
+                    delete userSafe.invoice_version;
+                    res.json({ user: userSafe, token, invoiceVersion: userSafe.invoiceVersion, redirectTo: userSafe.invoiceVersion === 'B' ? '/dv-invoice' : null, deviceToken: gate.deviceToken });
+                }).catch((gateErr) => {
+                    console.error('❌ /material/login OTP gate error:', gateErr.message);
+                    if (!res.headersSent) res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' });
+                });
             } catch (innerErr) {
                 console.error('❌ /material/login inner error:', innerErr.message);
                 res.status(500).json({ error: 'An error occurred during login: ' + innerErr.message });
@@ -2434,9 +2591,12 @@ app.post('/api/auth/login', (req, res) => {
             if (emp.status && emp.status !== 'active') {
                 return res.status(403).json({ error: 'Your admin verification is still pending. You can log in only after verification.' });
             }
-            const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
-            logLoginEvent('employee', username); // 🆕 real-time login count ke liye
-            res.json({ token });
+            adminSecondFactor(req, String(username).toUpperCase(), 'hrms').then(r => {   // 🔐 HRMS OTP only while its switch is ON
+                if (!r.ok) return res.status(r.status).json(r.body);
+                const token = jwt.sign({ role: 'employee', username: String(username).toUpperCase() }, JWT_SECRET, { expiresIn: '7d' });
+                logLoginEvent('employee', username); // 🆕 real-time login count ke liye
+                res.json(r.deviceToken ? { token, deviceToken: r.deviceToken } : { token });
+            }).catch(e => { console.error('hrms second factor error:', e.message); res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' }); });
         });
         return;
     }
@@ -2499,9 +2659,10 @@ app.post('/api/auth/login', (req, res) => {
             logLoginEvent(roleKey, user.username || username); // 🆕 real-time login count ke liye
             res.json(Object.assign({ token }, extra || {}));
         };
-        if (!_isAdminLogin) return _issue();
-        // 🔐 Super Admin: 6-digit OTP, skipped only for a trusted device (see "SUPER ADMIN LOGIN" block)
-        adminSecondFactor(req, String(user.username || username)).then(r => {
+        const _otpPortal = _isAdminLogin ? 'admin' : (roleKey === 'agent' ? 'agent' : null);
+        if (!_otpPortal) return _issue();
+        // 🔐 Admin / Agent: 6-digit OTP only while that portal's switch is ON, skipped for a trusted device (see "SUPER ADMIN LOGIN" block)
+        adminSecondFactor(req, String(user.username || username), _otpPortal).then(r => {
             if (!r.ok) return res.status(r.status).json(r.body);
             _issue(r.deviceToken ? { deviceToken: r.deviceToken } : null);
         }).catch(e => { console.error('admin second factor error:', e.message); res.status(500).json({ error: 'Unable to verify the login right now. Please try again.' }); });
@@ -2557,7 +2718,7 @@ app.post('/api/security/verify-admin', noStore, asyncRoute(async (req, res) => {
 app.post('/api/auth/logout', noStore, (req, res) => {
     const auth = getAuthUser(req); // galat/expired token ho tab bhi null milega, error nahi
     clearSessionCookies(req, res); // ▲ the HTTP-only session cookie is removed on the server, not only the localStorage token
-    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null, redirect: '/' });
+    res.json({ success: true, message: 'Logged out successfully.', role: auth ? auth.role : null, redirect: liveHomeUrl(req) });
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -2676,7 +2837,7 @@ function kvSetCore(table, key, value, res) {
                 // New account created / password set or reset by Super Admin, Admin or an Agent (admins / agents / staff / students):
                 // WhatsApp the User ID, password and portal link (SMS fallback, best effort, bounded to 9 s).
                 const t = new Promise(r => setTimeout(r, 9000));
-                return Promise.race([autoNotifyEntityCredentials(key, merged, prevList, process.env.PORTAL_URL || process.env.FRONTEND_URL || ''), t]).catch(() => {}).then(() => finishRaw(merged));
+                return Promise.race([autoNotifyEntityCredentials(key, merged, prevList, portalLink(req)), t]).catch(() => {}).then(() => finishRaw(merged));
             }
             finishRaw(merged);
         });
@@ -3073,7 +3234,7 @@ app.post('/api/hr/registrations/:id/approve', (req, res) => {
                 if (sErr) return res.status(500).json({ error: 'DB error: ' + sErr.message });
                 hrSetBlob('hrms_pending_registrations', pending, (sErr2) => {
                     if (sErr2) return res.status(500).json({ error: 'DB error: ' + sErr2.message });
-                    notifyAccount({ kind: 'hr_approved', mobile: reg.phone, name: reg.name, userId: empId });   // 💬 WhatsApp the employee (Admin or Agent approval)
+                    notifyAccount({ kind: 'hr_approved', portal: 'hrms', mobile: reg.phone, name: reg.name, userId: empId });   // 💬 WhatsApp the employee (Admin or Agent approval)
                     res.json({ success: true, empId });
                 });
             });
@@ -3233,7 +3394,7 @@ app.post('/api/admin/pfms-users', requireRole('admin'), (req, res) => {
                 return res.status(500).json({ error: 'DB error: ' + err.message });
             }
             // 💬 PFMS users have no mobile column — if the admin form sends one, WhatsApp the login details
-            if ((req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || username, userId: username, password: password, link: portalLink(req) });
+            if ((req.body || {}).mobile) notifyAccount({ kind: 'credentials', portal: 'pfms', mobile: req.body.mobile, name: name || username, userId: username, password: password, link: portalLink(req) });
             res.status(201).json({ success: true, id: result.insertId });
         }
     );
@@ -3252,7 +3413,7 @@ app.put('/api/admin/pfms-users/:id', requireRole('admin'), (req, res) => {
     params.push(req.params.id);
     db.query(`UPDATE pfms_users SET ${sets.join(', ')} WHERE id=?`, params, (err) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        if (password && (req.body || {}).mobile) notifyAccount({ kind: 'credentials', mobile: req.body.mobile, name: name || (req.body || {}).username, userId: (req.body || {}).username || String(req.params.id), password: password, link: portalLink(req) });
+        if (password && (req.body || {}).mobile) notifyAccount({ kind: 'credentials', portal: 'pfms', mobile: req.body.mobile, name: name || (req.body || {}).username, userId: (req.body || {}).username || String(req.params.id), password: password, link: portalLink(req) });
         res.json({ success: true });
     });
 });
@@ -4495,12 +4656,12 @@ app.post('/api/admin/agent-registrations/:id/decision', requireRole('admin'), as
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🔐 CREDENTIAL RECOVERY (6-digit OTP via WhatsApp or SMS) + AGENT CREDENTIAL SMS + ANNOUNCEMENTS
+// 🔐 CREDENTIAL RECOVERY (6-digit OTP via WhatsApp) + AGENT CREDENTIAL SMS + ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════
+const OTP_LENGTH = 6;                          // 🔢 EVERY OTP in this project (login, recovery, forgot-username) is exactly 6 digits
 const OTP_TTL_MS = 10 * 60 * 1000;            // 📲 OTP validity — 10 minutes (must match the WhatsApp template's code_expiration_minutes)
 const OTP_RESEND_MS = 60 * 1000;               // minimum gap between two OTP requests for the same account
 const OTP_MAX_TRIES = 5;
-const OTP_LENGTH = 6;                          // 🔢 EVERY OTP in this project (login, recovery, forgot-username) is exactly 6 digits
 // OTP store lives in the database so it works on serverless (no shared memory between instances).
 let _otpTableReady = null;
 function ensureOtpTable() {
@@ -4513,9 +4674,47 @@ const _otpStore = {
     async delete(k) { await ensureOtpTable(); await dbq('DELETE FROM otp_codes WHERE "key" = ?', [k]); }
 };
 const lc = (v) => String(v == null ? '' : v).trim().toLowerCase();
-function portalLink(req) {
-    return (process.env.PORTAL_URL || process.env.FRONTEND_URL || (req && req.headers && req.headers.origin) || '').replace(/\/$/, '');
+// 🔗 LIVE LINK — every WhatsApp / SMS / notification that carries a portal link points to the CURRENT live domain.
+//    Nothing is hardcoded. Detection order:
+//      1) the domain of the request being served right now (x-forwarded-host / Host — works automatically on Vercel)
+//      2) the last live domain seen by this server instance
+//      3) Vercel's own env: VERCEL_PROJECT_PRODUCTION_URL → VERCEL_URL
+//      4) LAST resort only (no request, no history): BASE_URL / PORTAL_URL / FRONTEND_URL / PUBLIC_URL if set
+//    Change the domain tomorrow → nothing to edit (just remove/update BASE_URL if you had set it).
+//    Any old host (onrender.com / netlify.app / *.vercel.app) found inside a stored link or SMS template is rewritten to the live one.
+const STALE_LINK_HOST_RE = /https?:\/\/[^\/\s"'<>]*\.(?:onrender\.com|netlify\.app|vercel\.app)(?=[\/:?#\s"'<>]|$)/gi;
+let _lastLiveOrigin = '';
+function _isLocalHost(h) { return /^(localhost|127\.|0\.0\.0\.0|\[::1\])/i.test(h); }
+function requestOrigin(req) {   // origin of THIS request (never throws, '' if unknown or local)
+    try {
+        if (!req || typeof req.get !== 'function') return '';
+        const h = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+        if (!h || _isLocalHost(h) || !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i.test(h)) return '';   // malformed / spoofed Host → ignore
+        return 'https://' + h;
+    } catch (e) { return ''; }
 }
+app.use(function (req, res, next) {
+    try {
+        const o = requestOrigin(req);
+        if (o && !/\.onrender\.com$/i.test(o)) _lastLiveOrigin = o;
+    } catch (e) { /* never block a request */ }
+    next();
+});
+function liveBaseUrl(req) {
+    const clean = (u) => String(u || '').trim().replace(/\/+$/, '');
+    const good = (u) => /^https?:\/\/[^\s]+$/i.test(u);
+    const list = [requestOrigin(req), _lastLiveOrigin,   // 1) the live domain of THIS request (zero-config)  2) last live domain seen
+        process.env.VERCEL_PROJECT_PRODUCTION_URL && 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL,
+        process.env.VERCEL_URL && 'https://' + process.env.VERCEL_URL,
+        process.env.BASE_URL, process.env.PORTAL_URL, process.env.FRONTEND_URL, process.env.PUBLIC_URL];   // env = last-resort fallback only (e.g. background jobs with no request)
+    for (const c of list) { const u = clean(c); if (u && good(u)) return u; }
+    return '';
+}
+function freshenLinks(text, req) {
+    const base = liveBaseUrl(req);
+    return base ? String(text == null ? '' : text).replace(STALE_LINK_HOST_RE, base) : String(text == null ? '' : text);
+}
+function portalLink(req) { return liveBaseUrl(req); }
 async function readEntity(key) {
     const r = await dbq('SELECT value FROM kv_admin_entities WHERE `key` = ?', [key]);
     try { const l = JSON.parse(r[0] && r[0].value); return Array.isArray(l) ? l : []; } catch (e) { return []; }
@@ -4550,74 +4749,19 @@ function recoveryScope(req) { return /\/material\//.test(req.path) ? 'material' 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 // ══════════════════════════════════════════════════════════════════
-// 💬 WHATSAPP OTP — Meta WhatsApp Business Cloud API (AUTHENTICATION template)
-//   Secrets only from Render Environment (never in code / DB):
-//     WA_ACCESS_TOKEN      – permanent System-User token (whatsapp_business_messaging)
-//     WA_PHONE_NUMBER_ID   – sender Phone Number ID (not the phone number itself)
-//     WA_OTP_TEMPLATE      – approved template name            (default: libmatrix_login_otp)
-//     WA_TEMPLATE_LANG     – template language code            (default: en)
-//     WA_API_VERSION       – Graph API version                 (default: v21.0)
-//     WA_DEFAULT_CC        – country code for 10-digit numbers (default: 91)
-//     WA_OTP_ENABLED       – set "false" to force SMS only
-//   The one-tap-autofill app signature (Abc123Xyz99) and the 10-minute expiry live INSIDE the approved
-//   template (see setup-wa-template.js) — they are not part of the per-message payload.
-//   If WhatsApp is not configured or the send fails, the OTP is delivered by SMS (Fast2SMS gateway) instead.
+// 💬 WHATSAPP — centralised in ./whatsapp-service.js (Meta templates, 100% from Environment — see .env.example)
+//   Two core templates serve EVERY portal (Invoice, Agent, HRMS, Admin and any future one):
+//     WA_TEMPLATE_OTP   authentication template → 6-digit OTP
+//     WA_TEMPLATE_INFO  utility template        → User Name · User ID · Password · portal login link
+//   A new portal needs no new code: pass portal:'<name>' to notifyAccount() and set PORTAL_URL_<NAME> in Environment.
 // ══════════════════════════════════════════════════════════════════
-function waConfig() {
-    return {
-        token: process.env.WA_ACCESS_TOKEN || '',
-        phoneId: process.env.WA_PHONE_NUMBER_ID || '',
-        template: process.env.WA_OTP_TEMPLATE || 'libmatrix_login_otp',
-        lang: process.env.WA_TEMPLATE_LANG || 'en',
-        version: process.env.WA_API_VERSION || 'v21.0',
-        cc: String(process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91',
-        enabled: String(process.env.WA_OTP_ENABLED || 'true').toLowerCase() !== 'false'
-    };
-}
-function waConfigured() { const c = waConfig(); return c.enabled && !!(c.token && c.phoneId); }
-function httpsPostJson(urlStr, headers, body, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        const u = new URL(urlStr), payload = JSON.stringify(body);
-        const rq = require('https').request(u, { method: 'POST', timeout: timeoutMs || 12000, headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }, headers) }, (resp) => {
-            let data = '';
-            resp.on('data', (c) => { data += c; });
-            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
-        });
-        rq.on('timeout', () => rq.destroy(new Error('WhatsApp API timed out.')));
-        rq.on('error', reject);
-        rq.write(payload); rq.end();
-    });
-}
-// Generic template sender: bodyParams → {{1}}, {{2}} … of the body; urlButtonParam (optional) → the Copy-code / URL button.
-async function waSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
-    const c = waConfig();
-    if (!waConfigured()) throw new Error('WhatsApp is not configured (WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID).');
-    const num = String(mobile || '').replace(/\D/g, '').slice(-10);
-    if (num.length !== 10) throw new Error('A valid 10-digit mobile number is required.');
-    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
-    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
-    const body = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: c.cc + num,
-        type: 'template',
-        template: { name: templateName, language: { code: c.lang }, components: components }
-    };
-    const r = await httpsPostJson('https://graph.facebook.com/' + c.version + '/' + encodeURIComponent(c.phoneId) + '/messages', { Authorization: 'Bearer ' + c.token }, body);
-    if (r.status < 200 || r.status >= 300 || !(r.json && r.json.messages && r.json.messages.length)) {
-        const e = (r.json && r.json.error) || {};
-        throw new Error('WhatsApp API ' + r.status + (e.code ? ' (code ' + e.code + ')' : '') + ': ' + (e.message || 'send failed'));   // the OTP / token are never logged
-    }
-    return r.json.messages[0].id;
-}
-function sendWhatsAppOtp(mobile, otp) { return waSendTemplate(mobile, waConfig().template, [otp], otp); }   // authentication template (+ Copy-code button)
+const wa = require('./whatsapp-service');
+function waConfigured() { return wa.isConfigured(); }
 
 // ── 🔔 Account notifications: login credentials / approvals / password changes ─────────────────────────────
-//   Templates (UTILITY category, approved in WhatsApp Manager — bodies are in setup-wa-template.js):
-//     CREDENTIALS_WA_TEMPLATE_NAME (default anmol_libmatrix_login_info; legacy WA_CRED_TEMPLATE still honoured)
-//                        {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link
-//                        sent via Fast2SMS WhatsApp first, then Meta Cloud API, then SMS
-//     WA_NOTICE_TEMPLATE (default libmatrix_account_notice) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link
+//   Templates (names come ONLY from Environment — see whatsapp-service.js / .env.example):
+//     WA_TEMPLATE_INFO   {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link   (registrations + password resets, all portals)
+//     WA_TEMPLATE_NOTICE (optional) {{1}} name · {{2}} message · {{3}} User ID · {{4}} portal link     (password-less notices; without it → SMS)
 //   Every send is best-effort: WhatsApp first → SMS fallback → never throws, never blocks or fails the registration itself.
 const waTxt = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 500) || '-';
 const NOTICE_TEXT = {
@@ -4630,28 +4774,22 @@ async function _notifyAccountOnce(ev) {
     try {
         const mobile = last10(ev.mobile);
         if (mobile.length !== 10) return null;
-        const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId), link = waTxt(ev.link || process.env.PORTAL_URL || process.env.FRONTEND_URL || '');
-        let template, params, sms;
+        const name = waTxt(ev.name || 'User'), uid = waTxt(ev.userId);
+        let sms, send = null;
+        const portal = ev.portal || '';
+        const plink = waTxt(wa.portalLink(portal, freshenLinks(ev.link) || liveBaseUrl()) || '');   // PORTAL_URL_<PORTAL> wins, else the live domain
         if (ev.kind === 'credentials') {
-            // Credentials template (CREDENTIALS_WA_TEMPLATE_NAME = anmol_libmatrix_login_info):
-            // {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal link.
-            // Channel order: Fast2SMS WhatsApp → Meta Cloud API (same template name) → SMS.
-            template = credentialsWaTemplateName();
-            params = [name, uid, waTxt(ev.password), link];
-            if (await otpServiceConfigured()) {
-                try { await sendFast2SmsWhatsAppCredentials(mobile, name, uid, params[2], link); return 'whatsapp'; }
-                catch (e) { console.warn('Fast2SMS WhatsApp credentials failed' + (waConfigured() ? ', trying Meta Cloud API' : ', falling back to SMS') + ':', e.message); }
-            }
+            // INFO template (WA_TEMPLATE_INFO): {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal login link — same for every portal.
+            send = () => wa.sendLoginInfo(mobile, { name: name, userId: uid, password: ev.password, portal: portal, link: plink });
             const cfg = await loadSmsConfig();
-            sms = buildCredentialsMessage(name, uid, String(ev.password), link, cfg.template && /\{pass\}/.test(cfg.template) ? cfg.template : '');
+            sms = freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), plink, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''));   // a saved SMS template may still hold the old link
         } else {
             const text = NOTICE_TEXT[ev.kind] || String(ev.text || '');
-            template = process.env.WA_NOTICE_TEMPLATE || 'libmatrix_account_notice';
-            params = [name, waTxt(text), uid, link];
-            sms = 'Hello ' + name + ', ' + text + ' User ID: ' + uid + (link !== '-' ? ' Portal: ' + link : '');
+            if (wa.noticeEnabled()) send = () => wa.sendNotice(mobile, { name: name, text: waTxt(freshenLinks(text)), userId: uid, portal: portal, link: plink });   // optional WA_TEMPLATE_NOTICE
+            sms = 'Hello ' + name + ', ' + text + ' User ID: ' + uid + (plink !== '-' ? ' Portal: ' + plink : '');
         }
-        if (waConfigured()) {
-            try { await waSendTemplate(mobile, template, params); return 'whatsapp'; }
+        if (send && waConfigured()) {
+            try { await send(); return 'whatsapp'; }
             catch (e) { console.warn('WhatsApp notification (' + ev.kind + ') failed, falling back to SMS:', e.message); }
         }
         if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
@@ -4684,6 +4822,7 @@ async function notifyAccount(ev) {
 // Super Admin / Admin / Agent) gets its credentials on WhatsApp; a freshly approved agent whose own password is already hashed gets
 // an approval notice. HMAC marker `credWaSig` on the record prevents the same password from being sent twice.
 const WA_NOTIFY_ENTITIES = ['admins', 'agents', 'staff', 'students'];
+const ENTITY_PORTAL = { admins: 'admin', agents: 'agent', staff: 'hrms', students: 'student' };   // → PORTAL_URL_ADMIN / _AGENT / _HRMS / _STUDENT (any missing one falls back to the live domain)
 const credSig = (uid, pwd) => crypto.createHmac('sha256', JWT_SECRET).update(String(uid) + '|' + String(pwd)).digest('hex').slice(0, 24);
 async function autoNotifyEntityCredentials(key, incoming, existing, link) {
     if (!Array.isArray(incoming) || WA_NOTIFY_ENTITIES.indexOf(key) < 0) return;
@@ -4701,126 +4840,34 @@ async function autoNotifyEntityCredentials(key, incoming, existing, link) {
             const pwd = rec[pf], sig = credSig(uid, pwd);
             if (rec.credWaSig === sig) continue;
             if (old && rec.credSmsSentAt && !rec.credWaSig) { rec.credWaSig = sig; continue; }     // already SMSed by the older flow
-            jobs.push(notifyAccount({ kind: 'credentials', mobile: mobile, name: rec.name || rec.fullName || rec.studentName, userId: uid, password: pwd, link: link })
+            jobs.push(notifyAccount({ kind: 'credentials', portal: ENTITY_PORTAL[key] || key, mobile: mobile, name: rec.name || rec.fullName || rec.studentName, userId: uid, password: pwd, link: link })
                 .then(ch => { if (ch) { rec.credWaSig = sig; rec.credSmsSentAt = new Date().toISOString(); } }));
         } else if (key === 'agents' && !old && !rec.credWaSig && !rec.credSmsSentAt && PASSWORD_FIELD_NAMES.some(f => rec[f])) {
-            jobs.push(notifyAccount({ kind: 'approved', mobile: mobile, name: rec.name, userId: uid, link: link })
+            jobs.push(notifyAccount({ kind: 'approved', portal: ENTITY_PORTAL[key] || key, mobile: mobile, name: rec.name, userId: uid, link: link })
                 .then(ch => { if (ch) { rec.credWaSig = 'notice'; rec.credSmsSentAt = new Date().toISOString(); } }));
         }
     }
     await Promise.all(jobs);
 }
 // ══════════════════════════════════════════════════════════════════
-// 💬 FAST2SMS WHATSAPP — AUTHENTICATION-TEMPLATE OTP  (the ONLY OTP channel — no SMS, no bulkV2, so error 996 cannot occur)
-//   POST https://www.fast2sms.com/dev/whatsapp/v26.0/1419889517875516/messages
-//   Header   Authorization: <FAST2SMS_API_KEY>
-//   Body     Meta "authentication template" payload: the 6-digit OTP is sent in the message body AND the Copy-code / One-tap button.
-//   Render → Environment:
-//     FAST2SMS_API_KEY            – Fast2SMS → Dev API → API key (required)
-//     FAST2SMS_WA_TEMPLATE_NAME   – approved AUTHENTICATION template name (default: libmatrix_login_otp)
-//     FAST2SMS_WA_LANG            – template language code (default: en)
-//     FAST2SMS_WA_CC              – country code added to 10-digit numbers (default: 91)
-//   The endpoint version and Phone Number ID are fixed in the constants below. The OTP itself is never logged.
+// 💬 OTP DELIVERY — every portal's 6-digit OTP goes through wa.sendOtp() (WA_TEMPLATE_OTP). The OTP itself is never logged.
 // ══════════════════════════════════════════════════════════════════
-const F2S_WA_BASE_URL = 'https://www.fast2sms.com/dev/whatsapp';
-const F2S_WA_VERSION = 'v26.0';
-const F2S_WA_PHONE_NUMBER_ID = '1419889517875516';
-async function fast2smsKey() {   // stored Super Admin "SMS API" key / other env names (kept for the non-OTP features)
-    const c = await loadSmsConfig();
-    if (c.endpoint && !/fast2sms/i.test(c.endpoint)) return '';   // a different gateway is configured → use the generic sender
-    return c.key || '';
-}
-// OTP key: FAST2SMS_API_KEY from the environment wins; the stored key is only a fallback when that variable is empty.
-async function fast2smsOtpKey() { return String(process.env.FAST2SMS_API_KEY || '').trim() || String((await fast2smsKey()) || '').trim(); }
-function fast2smsWaConfig() {
-    return {
-        template: String(process.env.FAST2SMS_WA_TEMPLATE_NAME || process.env.WA_OTP_TEMPLATE || 'libmatrix_login_otp').trim(),
-        lang: String(process.env.FAST2SMS_WA_LANG || process.env.WA_TEMPLATE_LANG || 'en').trim(),
-        cc: String(process.env.FAST2SMS_WA_CC || process.env.WA_DEFAULT_CC || '91').replace(/\D/g, '') || '91'
-    };
-}
-function fast2smsWaEndpoint() {   // FAST2SMS_WA_URL replaces only the scheme+host+/dev/whatsapp base and is meant for tests
-    return String(process.env.FAST2SMS_WA_URL || F2S_WA_BASE_URL).replace(/\/$/, '') + '/' + F2S_WA_VERSION + '/' + F2S_WA_PHONE_NUMBER_ID + '/messages';
-}
-function waError(msg, extra) { const e = new Error(msg); e.channel = 'whatsapp'; if (extra) Object.assign(e, extra); return e; }
-function fast2smsWaPost(urlObj, key, bodyObj, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        const lib = require(urlObj.protocol === 'http:' ? 'http' : 'https');
-        const payload = JSON.stringify(bodyObj);
-        const rq = lib.request(urlObj, { method: 'POST', timeout: timeoutMs, headers: { Authorization: key, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, (resp) => {
-            let data = '';
-            resp.on('data', (c) => { data += c; });
-            resp.on('end', () => { let j = null; try { j = JSON.parse(data); } catch (e) {} resolve({ status: resp.statusCode, json: j, text: data }); });
-        });
-        rq.on('timeout', () => rq.destroy(new Error('Fast2SMS WhatsApp request timed out after ' + timeoutMs + ' ms (the server cannot reach www.fast2sms.com).')));
-        rq.on('error', (e) => reject(new Error('Fast2SMS WhatsApp network error: ' + (e.code ? e.code + ' – ' : '') + e.message)));
-        rq.write(payload); rq.end();
-    });
-}
-// Generic Fast2SMS WhatsApp template sender (shared by the OTP template and the Credentials template).
-//   bodyParams      → {{1}}, {{2}} … of the template body
-//   urlButtonParam  → optional Copy-code / URL button parameter (authentication templates only)
-// Parameter VALUES (OTP / password) are never logged — only the template name and a masked mobile number.
-async function fast2smsWaSendTemplate(mobile, templateName, bodyParams, urlButtonParam) {
-    const key = await fast2smsOtpKey();
-    if (!key) throw waError('Fast2SMS is not configured (FAST2SMS_API_KEY is empty).');
-    const num = last10(mobile);
-    if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
-    if (!templateName) throw waError('WhatsApp template name is not configured.');
-    const c = fast2smsWaConfig();
-    let u;
-    try { u = new URL(fast2smsWaEndpoint()); } catch (e) { throw waError('FAST2SMS_WA_URL is invalid.'); }
-    const components = [{ type: 'body', parameters: bodyParams.map(function (p) { return { type: 'text', text: String(p) }; }) }];
-    if (urlButtonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(urlButtonParam) }] });
-    const body = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: c.cc + num,
-        type: 'template',
-        template: { name: templateName, language: { code: c.lang }, components: components }
-    };
-    console.log('[fast2sms-wa] → POST ' + u.pathname + ' template=' + templateName + ' mobile=XXXXXX' + num.slice(-4) + ' key=…' + key.slice(-4));
-    let r;
-    try { r = await fast2smsWaPost(u, key, body, 12000); }
-    catch (e) { console.error('[fast2sms-wa] FAILED (no response):', e.message); e.channel = 'whatsapp'; throw e; }
-    const j = r.json || {};
-    console.log('[fast2sms-wa] ← HTTP ' + r.status + ' ' + String(r.text || '').replace(/\s+/g, ' ').slice(0, 300));   // the response never contains the OTP
-    const sent = r.status >= 200 && r.status < 300 && (j.status === true || j.status === 'true' || j.return === true || j.return === 'true' || (Array.isArray(j.messages) && j.messages.length > 0));
-    if (sent) return true;
-    const m = (j.error && (j.error.error_user_msg || j.error.message)) || (Array.isArray(j.message) ? j.message.join(' ') : j.message) || r.text || ('HTTP ' + r.status);
-    const code = Number(j.status_code || (j.error && j.error.code) || r.status) || 0;
-    const err = waError('Fast2SMS WhatsApp rejected the request (status ' + code + '): ' + String(m).slice(0, 200), { fast2smsCode: code });
-    console.error('[fast2sms-wa] FAILED:', err.message);
-    throw err;
-}
-// ── Template 1: OTP (authentication template). Env: FAST2SMS_WA_TEMPLATE_NAME ──
-//    The 6-digit OTP goes in the body {{1}} AND the Copy-code / One-tap button.
-function sendFast2SmsWhatsAppOtp(mobile, otp) {
-    return fast2smsWaSendTemplate(mobile, fast2smsWaConfig().template, [otp], otp);
-}
-// ── Template 2: Credentials (utility template). Env: CREDENTIALS_WA_TEMPLATE_NAME (value: anmol_libmatrix_login_info) ──
-//    Body: {{1}} User Name · {{2}} User ID · {{3}} Password · {{4}} Portal Login Link.   No button.
-function credentialsWaTemplateName() {
-    return String(process.env.CREDENTIALS_WA_TEMPLATE_NAME || process.env.WA_CRED_TEMPLATE || 'anmol_libmatrix_login_info').trim();
-}
-function sendFast2SmsWhatsAppCredentials(mobile, name, userId, password, link) {
-    return fast2smsWaSendTemplate(mobile, credentialsWaTemplateName(), [name, userId, password, link]);
-}
+const OTP_NOT_CONFIGURED_MSG = 'The WhatsApp OTP service is not configured. Please contact the administrator.';
 // Any OTP-sending failure (wrong key, template not approved, wallet balance, timeout, network) becomes a friendly JSON answer —
 // never a crash and never a bare 502. The real reason goes to the server log only (OTP_DEBUG=true adds it to the reply).
 function otpSendFailed(res, e, where) {
     console.error('[' + (where || 'otp') + '] OTP could not be sent:', e && e.message);
     if (res.headersSent) return;
-    const message = 'The WhatsApp OTP could not be sent. Please check the Fast2SMS WhatsApp setup (API key, approved template, wallet balance).';
+    const message = 'The WhatsApp OTP could not be sent. Please check the WhatsApp setup (credentials, approved template, account balance).';
     const out = { success: false, message: message, error: message, code: 'WHATSAPP_GATEWAY_FAILED' };
-    if (e && e.fast2smsCode) out.gatewayCode = e.fast2smsCode;
+    if (e && e.gatewayCode) out.gatewayCode = e.gatewayCode;
     if (String(process.env.OTP_DEBUG || '').toLowerCase() === 'true') out.detail = String(e && e.message || e).slice(0, 300);
     res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
-async function otpServiceConfigured() { return !!(await fast2smsOtpKey()); }
-// Every OTP (Super Admin login + password recovery) goes through here → Fast2SMS WhatsApp authentication template ONLY.
+async function otpServiceConfigured() { return wa.isConfigured(); }
+// Every OTP (all portals: login + password recovery + forgot-username) goes through here → WhatsApp authentication template.
 async function sendOtpMessage(mobile, otp) {
-    await sendFast2SmsWhatsAppOtp(mobile, otp);
+    await wa.sendOtp(mobile, otp);
     return 'whatsapp';
 }
 
@@ -4844,7 +4891,7 @@ async function forgotPasswordCore(req, res) {
         const acc = await findRecoveryAccount(userId, contact, recoveryScope(req));
         if (!acc || !recoveryExtraOk(acc, b)) return res.status(404).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
         if (acc.mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+        if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
         const key = lc(acc.userId) + '|' + acc.kind;
         const prev = await _otpStore.get(key);
         if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -4857,7 +4904,7 @@ async function forgotPasswordCore(req, res) {
         catch (e) { return otpSendFailed(res, e, 'forgot-password'); }
         await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         const m = acc.mobile;
-        res.json({ success: true, channel: channel, message: 'A ' + OTP_LENGTH + '-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+        res.json({ success: true, channel: channel, message: 'A ' + otpLen + '-digit OTP has been sent on ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to the registered mobile number ending ' + m.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
     } catch (e) {
         console.error('[forgot-password] FAILED:', e && (e.stack || e.message));
         if (res.headersSent) return;
@@ -4930,7 +4977,7 @@ async function forgotUsernameHandler(req, res) {
             await _otpStore.set('fu|' + id, { hash: sha(otp), userId: acc.userId, mobile: acc.mobile, name: acc.rec && (acc.rec.name || acc.rec.fullName) || '', sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
         }
         res.json({ success: true, challengeId: id, otpLength: FU_LEN, maskedMobile: 'XXXXXX' + m4, expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000),
-            message: 'If this number is registered, a ' + FU_LEN + '-digit OTP has been sent on WhatsApp to the number ending ' + m4 + '.' });
+            message: 'If this number is registered, an ' + FU_LEN + '-digit OTP has been sent on WhatsApp to the number ending ' + m4 + '.' });
     } catch (e) { console.error('[forgot-username] failed:', e && e.message); if (!res.headersSent) res.status(502).json({ error: 'Unable to process the request right now. Please try again.' }); }
 }
 async function forgotUsernameResendHandler(req, res) {
@@ -4996,37 +5043,135 @@ async function verifyResetOtpHandler(req, res) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 🔐 SUPER ADMIN LOGIN — 6-digit OTP (Fast2SMS) + "Remember this device"
+// 🔐 SUPER ADMIN LOGIN — 6-digit WhatsApp OTP + "Remember this device"
 //   Step 1  POST /api/auth/admin-login-otp  {username, password, deviceToken?}
 //             · wrong credentials → 401 (no OTP is sent)
 //             · valid trusted-device token for this user → {skipped:true, trusted:true}  (no OTP)
-//             · otherwise an 6-digit OTP is sent to the admin's registered mobile
+//             · otherwise a 6-digit OTP is sent to the admin's registered mobile
 //   Step 2  POST /api/auth/login  {role:'admin', username, password, otp, trustDevice}
 //             · correct OTP → JWT (+ a random deviceToken when trustDevice is true; the browser keeps it)
 //             · no OTP → accepted only with a valid deviceToken, else 401 OTP_REQUIRED
 //   Trusted devices are stored hashed (sha256) in the otp_codes table, expire after TRUSTED_DEVICE_DAYS (default 90) and are
-//   all revoked when the password is reset. ADMIN_LOGIN_OTP=off turns the OTP requirement off (emergency switch).
+//   all revoked when the password is reset. Per-portal ON/OFF switches: see OTP_PORTAL_REGISTRY below (ADMIN_LOGIN_OTP=off = break-glass override).
 // ══════════════════════════════════════════════════════════════════
 const ADMIN_OTP_LEN = OTP_LENGTH;
-const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS || '90', 10) || 90) * 24 * 60 * 60 * 1000;
-function adminOtpEnabled() { return String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() !== 'off'; }
+const TRUSTED_DEVICE_MS = Math.max(1, parseInt(process.env.TRUSTED_DEVICE_DAYS || '365', 10) || 365) * 24 * 60 * 60 * 1000;
+// 🎚️ PER-PORTAL OTP SWITCHES (Super Admin → sidebar → "OTP Settings")
+//    ONE registry (OTP_PORTAL_REGISTRY) is the single source of truth for "which portals exist". The dashboard builds its switch list from
+//    GET /api/admin/login-otp-setting, so a new portal appears there automatically after ONE call:
+//        registerOtpPortal({ id: 'vendor', label: 'Vendor portal', icon: '🏭', description: '…', roles: ['vendor'] });
+//    and its login route only has to call  adminSecondFactor(req, userId, 'vendor').
+//    ON  → the portal enforces the 6-digit WhatsApp/SMS OTP (on a device that is not yet trusted).
+//    OFF → Emergency Mode: that portal alone skips the OTP completely — ID + password only, no message is sent.
+//    State is stored in the database (key cfg|login_otp → { portals:{ <id>: true|false }, by, at }) so it survives restarts and works on
+//    serverless. Nothing is kept in the browser. A portal with no saved value uses its registered default; if the setting cannot be read the registered
+//    defaults apply (a failed read never switches a protected portal OFF).
+//    ADMIN_LOGIN_OTP=off in the environment is kept only as a break-glass override for the case where nobody can log in to flip a switch.
+const OTP_PORTAL_REGISTRY = [];
+function registerOtpPortal(def) {
+    const id = lc(def && def.id).replace(/[^a-z0-9_-]/g, '');
+    if (!id) throw new Error('registerOtpPortal: a portal id (letters, digits, - or _) is required');
+    if (OTP_PORTAL_REGISTRY.some(p => p.id === id)) return id;   // registering twice is harmless
+    OTP_PORTAL_REGISTRY.push({
+        id: id,
+        label: String((def && def.label) || id),
+        icon: String((def && def.icon) || '🔐'),
+        description: String((def && def.description) || ''),
+        defaultOn: !(def && def.defaultOn === false),            // a new portal is protected (ON) unless it says otherwise
+        roles: ((def && def.roles) || []).map(lc)                // login "role" values that belong to this portal (used by /auth/portal-otp/send)
+    });
+    return id;
+}
+// Order here = order of the switches in the dashboard.
+registerOtpPortal({ id: 'invoice', label: 'Invoice portal', icon: '🧾', description: 'Invoice / material users — OTP on a new device only.', defaultOn: true });
+registerOtpPortal({ id: 'agent', label: 'Agent portal', icon: '♟', description: 'Agent logins. (Staff users are not affected.)', defaultOn: false, roles: ['agent'] });
+registerOtpPortal({ id: 'hrms', label: 'HRMS portal', icon: '👥', description: 'Employee (HRMS) logins.', defaultOn: false, roles: ['employee', 'hrms'] });
+registerOtpPortal({ id: 'admin', label: 'Admin portal', icon: '🛡', description: 'Super Admin login.', defaultOn: true });
+const otpPortalById = (id) => OTP_PORTAL_REGISTRY.find(p => p.id === lc(id)) || null;
+const otpPortalByRole = (role) => OTP_PORTAL_REGISTRY.find(p => p.roles.indexOf(lc(role)) >= 0) || null;
+const _otpForcedOff = () => String(process.env.ADMIN_LOGIN_OTP || 'on').toLowerCase() === 'off';
+let _otpCfgCache = { v: null, t: 0 };
+async function _otpCfgRecord(fresh) {
+    if (!fresh && _otpCfgCache.v !== null && Date.now() - _otpCfgCache.t < 2000) return _otpCfgCache.v;   // short cache: an emergency OFF reaches every instance within ~2 s
+    let r = null;
+    try { r = (await _otpStore.get('cfg|login_otp')) || null; } catch (e) { r = null; }   // unreadable → registered defaults (never "everything OFF")
+    _otpCfgCache = { v: r, t: Date.now() };
+    return r;
+}
+function _otpPortalValue(cfg, portal) {
+    if (cfg && cfg.portals && typeof cfg.portals[portal.id] === 'boolean') return cfg.portals[portal.id];
+    return portal.defaultOn;
+}
+// Everything the dashboard needs, one entry per registered portal.
+async function loginOtpPortalList(fresh) {
+    const cfg = await _otpCfgRecord(fresh), forced = _otpForcedOff();
+    return OTP_PORTAL_REGISTRY.map(p => {
+        const enabled = _otpPortalValue(cfg, p);
+        return { id: p.id, label: p.label, icon: p.icon, description: p.description, enabled: enabled, effective: enabled && !forced };
+    });
+}
+async function loginOtpEnabled(portalId) {
+    const portal = otpPortalById(portalId);
+    if (!portal) { console.warn('[otp] unknown portal "' + portalId + '" — OTP stays ON. Register it with registerOtpPortal().'); return true; }
+    if (_otpForcedOff()) return false;
+    return _otpPortalValue(await _otpCfgRecord(), portal);
+}
+// patch = { <portalId>: true|false, … }  → returns the updated list. Unknown ids are rejected by the caller before this runs.
+async function setLoginOtpPortals(patch, by) {
+    const cfg = await _otpCfgRecord(true), portals = {};   // read fresh so two quick changes never overwrite each other
+    OTP_PORTAL_REGISTRY.forEach(p => { portals[p.id] = typeof patch[p.id] === 'boolean' ? patch[p.id] : _otpPortalValue(cfg, p); });
+    const rec = { portals: portals, by: String(by || ''), at: Date.now(), exp: Date.now() + 3650 * 24 * 60 * 60 * 1000 };
+    await _otpStore.set('cfg|login_otp', rec);
+    _otpCfgCache = { v: rec, t: Date.now() };
+    return loginOtpPortalList(true);
+}
+// ── 📱 DEVICE TRUST ──────────────────────────────────────────────────────────────────────────────────────────────
+//    After one successful OTP the device gets a random token. The server stores only its sha256 and ALSO hands it to the browser as a
+//    long-lived HttpOnly cookie (am_dt_<hash of the user key>, TRUSTED_DEVICE_DAYS, default 365). The cookie survives logout,
+//    localStorage.clear() / sessionStorage.clear() and the bridge's token wipe, which is what used to throw the token away and ask for
+//    a fresh (paid) OTP on every login. The body field `deviceToken` is still accepted for older front-ends.
 const _tdKey = (user, token) => 'td|' + lc(user) + '|' + sha(String(token));
+const _tdCookie = (user) => 'am_dt_' + sha('dtc|' + lc(user)).slice(0, 16);
+function _readCookie(req, name) {
+    const h = String((req && req.headers && req.headers.cookie) || '');
+    const parts = h.split(';');
+    for (let i = 0; i < parts.length; i++) {
+        const k = parts[i].indexOf('=');
+        if (k > 0 && parts[i].slice(0, k).trim() === name) { try { return decodeURIComponent(parts[i].slice(k + 1).trim()); } catch (e) { return ''; } }
+    }
+    return '';
+}
+function _setDeviceCookie(req, user, token) {
+    try {
+        const res = req && req.res; if (!res || res.headersSent) return;
+        const secure = IS_VERCEL || req.secure || /https/i.test(String((req.headers && req.headers['x-forwarded-proto']) || ''));
+        res.append('Set-Cookie', _tdCookie(user) + '=' + token + '; Path=/; Max-Age=' + Math.floor(TRUSTED_DEVICE_MS / 1000) + '; HttpOnly; SameSite=Lax' + (secure ? '; Secure' : ''));
+    } catch (e) { /* cookie is a bonus — the body token still works */ }
+}
 async function isTrustedDevice(user, token) {
     token = String(token || '');
     if (!/^[0-9a-f]{64}$/.test(token)) return false;
     const r = await _otpStore.get(_tdKey(user, token));
     return !!(r && r.exp > Date.now());
 }
+// request-aware check: the cookie first, then the token the front-end may still send in the body
+async function isTrustedDeviceReq(req, user, bodyToken) {
+    const c = _readCookie(req, _tdCookie(user));
+    if (c && await isTrustedDevice(user, c)) return true;
+    return isTrustedDevice(user, bodyToken);
+}
 async function issueTrustedDevice(user, req) {
     const token = crypto.randomBytes(32).toString('hex');
     await _otpStore.set(_tdKey(user, token), { createdAt: Date.now(), exp: Date.now() + TRUSTED_DEVICE_MS, ua: String((req.headers && req.headers['user-agent']) || '').slice(0, 160) });
+    _setDeviceCookie(req, user, token);
     return token;
 }
 async function revokeTrustedDevices(user) {
-    try { await ensureOtpTable(); await dbq('DELETE FROM otp_codes WHERE "key" LIKE ?', ['td|' + lc(user).replace(/[%_\\]/g, '') + '|%']); } catch (e) { console.warn('revokeTrustedDevices:', e.message); }
+    const u = lc(user).replace(/[%_\\]/g, '');
+    try { await ensureOtpTable(); for (const ns of [u, 'agent|' + u, 'hrms|' + u, 'mat|' + u]) await dbq('DELETE FROM otp_codes WHERE "key" LIKE ?', ['td|' + ns + '|%']); } catch (e) { console.warn('revokeTrustedDevices:', e.message); }
 }
-async function findAdminByCredentials(username, password) {
-    const list = parseEntityList(await readKv('kv_admin_entities', 'admins'));
+async function findAdminByCredentials(username, password, entity) {
+    const list = parseEntityList(await readKv('kv_admin_entities', entity || 'admins'));
     const want = lc(username);
     const user = list.find(u => u && [u.username, u.email, u.id].some(f => f && lc(f) === want));
     if (!user) return { status: 401, error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
@@ -5043,11 +5188,11 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
     if (hitRateLimit('aotp:' + (req.ip || ''), 20, 10 * 60 * 1000) || hitRateLimit('aotpu:' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const a = await findAdminByCredentials(username, password);
     if (a.error) return res.status(a.status).json({ error: a.error, code: a.code });
-    if (!adminOtpEnabled()) return res.json({ success: true, skipped: true });
-    if (await isTrustedDevice(a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    if (!(await loginOtpEnabled('admin'))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, a.id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
     const mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
     if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
-    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured (FAST2SMS_API_KEY). Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
     const key = 'lotp|' + lc(a.id);
     const prev = await _otpStore.get(key);
     if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
@@ -5063,7 +5208,7 @@ const adminLoginOtpHandler = asyncRoute(async (req, res) => {
 app.post('/api/auth/admin-login-otp', noStore, adminLoginOtpHandler);   // kept for backward compatibility
 
 // ══════════════════════════════════════════════════════════════════
-// 📲 POST /api/send-otp — single entry point for the Super Admin 6-digit OTP (WhatsApp via Fast2SMS, SMS fallback)
+// 📲 POST /api/send-otp — single entry point for the Super Admin 6-digit OTP (WhatsApp template)
 //   {purpose:'login',    username, password, deviceToken?}   → verifies the credentials FIRST; a wrong password never triggers an OTP
 //   {purpose:'recovery', user, mobile|contact, email?}       → account must match the stored record (User ID + registered mobile)
 //   The OTP is ALWAYS sent to the mobile number stored on the account — never to a number supplied by the browser — and only a
@@ -5077,17 +5222,129 @@ app.post('/api/send-otp', noStore, (req, res, next) => {
     if (purpose === 'recovery' || purpose === 'forgot-password') { req.otpLen = ADMIN_OTP_LEN; return forgotPasswordHandler(req, res); }
     return res.status(400).json({ error: 'Invalid request. purpose must be "login" or "recovery".' });
 });
+// Public status: a login page may ask whether ITS portal needs an OTP step → GET /api/auth/otp-status?portal=invoice
+app.get('/api/auth/otp-status', noStore, asyncRoute(async (req, res) => {
+    const portal = otpPortalById(req.query && req.query.portal);
+    if (!portal) return res.status(404).json({ error: 'Unknown portal.', portals: OTP_PORTAL_REGISTRY.map(p => p.id) });
+    res.json({ enabled: await loginOtpEnabled(portal.id), portal: portal.id, length: OTP_LENGTH });
+}));
+const _otpSettingsPayload = async (fresh) => ({ portals: await loginOtpPortalList(fresh), forcedOff: _otpForcedOff(), length: OTP_LENGTH });
+// Super Admin: GET → the full, registry-driven list.   POST { portal:'invoice', enabled:false }  or  { portals:{ invoice:false, agent:true } }
+app.get('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => { res.json(await _otpSettingsPayload(true)); }));
+app.post('/api/admin/login-otp-setting', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {}, patch = {}, valid = OTP_PORTAL_REGISTRY.map(p => p.id);
+    const put = (id, v) => { const p = otpPortalById(id); if (!p || typeof v !== 'boolean') return false; patch[p.id] = v; return true; };
+    if (b.portals && typeof b.portals === 'object' && !Array.isArray(b.portals)) {
+        for (const id of Object.keys(b.portals)) if (!put(id, b.portals[id])) return res.status(400).json({ error: 'Unknown portal "' + id + '" or a value that is not true/false. Valid portals: ' + valid.join(', ') + '.' });
+    } else if (typeof b.portal === 'string') {
+        if (!put(b.portal, b.enabled)) return res.status(400).json({ error: 'portal must be one of: ' + valid.join(', ') + ' and enabled must be true or false.' });
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change. Send { portal, enabled } or { portals:{…} }.' });
+    const list = await setLoginOtpPortals(patch, req.authUser && (req.authUser.username || req.authUser.via));
+    console.log('[otp-setting] ' + JSON.stringify(patch) + ' by ' + (req.authUser && req.authUser.username));
+    res.json({ success: true, portals: list, forcedOff: _otpForcedOff(), length: OTP_LENGTH });
+}));
+// ══════════════════════════════════════════════════════════════════
+// 🧾 INVOICE / MATERIAL PORTAL LOGIN — 6-digit WhatsApp OTP on a NEW device + "remember this device"
+//   POST /api/material/login-otp/send    {userId, secondFactor, deviceToken?}
+//        wrong User ID / password → normal 401/404 (no OTP is sent) · OTP switched OFF or device already trusted → {skipped:true}
+//        otherwise a 6-digit OTP goes to the mobile number STORED on the account (never one supplied by the browser) via the WhatsApp OTP template
+//   POST /api/material/login-otp/verify  {userId, secondFactor, code, trustDevice?}  → {otpToken}  (single-use, 10 min)
+//   POST /api/material/login             {userId, secondFactor, otpToken? | deviceToken?}  → needs a valid otpToken or a trusted deviceToken
+//        (returns a deviceToken when the user kept "remember this device" on).  /api/auth/login-otp/* are aliases of the same handlers.
+// ══════════════════════════════════════════════════════════════════
+async function findMaterialLoginUser(userId, secondFactor) {
+    const rows = await dbq('SELECT * FROM material_users WHERE userid = ?', [String(userId)]);
+    if (!rows || !rows.length) return { status: 404, error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' };
+    const u = rows[0];
+    const mobileMatches = last10(u.mobile) === last10(secondFactor);
+    const passwordMatches = (u.password_hash && typeof u.password_hash === 'string') ? bcrypt.compareSync(secondFactor, u.password_hash) : false;
+    if (!mobileMatches && !passwordMatches) return { status: 401, error: AUTH_MSG.BAD_PASS, code: 'INVALID_PASSWORD' };
+    if (u.status === 'blocked') return { status: 403, error: 'This ID has been blocked by the administrator.', code: 'BLOCKED' };
+    return { user: u };
+}
+const _matTd = (userid) => 'mat|' + lc(userid);   // trusted-device namespace for material users
+const materialLoginOtpSend = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const userId = String(b.userId || '').trim(), secondFactor = b.secondFactor != null ? String(b.secondFactor) : '';
+    if (!userId || !secondFactor) return res.status(400).json({ error: 'User ID and Mobile/Password are both required.' });
+    if (hitRateLimit('motp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('motpu:' + lc(userId), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const m = await findMaterialLoginUser(userId, secondFactor);
+    if (m.error) return res.status(m.status).json({ error: m.error, code: m.code });
+    if (!(await loginOtpEnabled('invoice'))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, _matTd(m.user.userid), b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    const mobile = last10(m.user.mobile);
+    if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
+    const key = 'lotp|mat|' + lc(m.user.userid);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) {
+        return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    }
+    const otp = String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH));
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { return otpSendFailed(res, e, 'material-login-otp'); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'A ' + OTP_LENGTH + '-digit OTP has been sent on WhatsApp to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+});
+const materialLoginOtpVerify = asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const userId = String(b.userId || '').trim(), secondFactor = b.secondFactor != null ? String(b.secondFactor) : '';
+    const code = String(b.code || b.otp || '').replace(/\D/g, '');
+    if (!userId || !secondFactor) return res.status(400).json({ error: 'User ID and Mobile/Password are both required.' });
+    if (hitRateLimit('motpv:' + (req.ip || ''), 40, 10 * 60 * 1000) || hitRateLimit('motpvu:' + lc(userId), 15, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const m = await findMaterialLoginUser(userId, secondFactor);
+    if (m.error) return res.status(m.status).json({ error: m.error, code: m.code });
+    const bad = { error: 'Invalid or expired OTP. Please try again.', code: 'INVALID_OTP' };
+    const key = 'lotp|mat|' + lc(m.user.userid);
+    const o = await _otpStore.get(key);
+    if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return res.status(401).json(bad); }
+    o.tries++;
+    await _otpStore.set(key, o);
+    if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return res.status(401).json(bad); }
+    if (code.length !== OTP_LENGTH || !security.safeEqual(o.hash, sha(code))) return res.status(401).json(bad);
+    await _otpStore.delete(key);   // one-time use
+    const jti = crypto.randomBytes(16).toString('hex');
+    await _otpStore.set('mjti|' + jti, { exp: Date.now() + 10 * 60 * 1000 });
+    const trust = !(b.trustDevice === false || b.trustDevice === 'false' || b.trustDevice === 0 || b.trustDevice === '0');
+    const otpToken = jwt.sign({ purpose: 'material-login-otp', u: String(m.user.userid), jti: jti, trust: trust }, JWT_SECRET, { expiresIn: '10m' });
+    res.json({ success: true, otpToken: otpToken });
+});
+['/api/material/login-otp', '/api/auth/login-otp'].forEach(base => {
+    app.post(base + '/send', noStore, materialLoginOtpSend);
+    app.post(base + '/verify', noStore, materialLoginOtpVerify);
+});
+// Second factor for POST /api/material/login → {ok:true, deviceToken?} or {status, body}
+async function materialOtpGate(req, userid) {
+    if (!(await loginOtpEnabled('invoice'))) return { ok: true };
+    const b = req.body || {};
+    if (b.otpToken) {
+        try {
+            const d = jwt.verify(String(b.otpToken), JWT_SECRET);
+            if (d && d.purpose === 'material-login-otp' && lc(d.u) === lc(userid) && d.jti && await _otpStore.get('mjti|' + d.jti)) {
+                await _otpStore.delete('mjti|' + d.jti);   // single use
+                return { ok: true, deviceToken: d.trust ? await issueTrustedDevice(_matTd(userid), req) : undefined };
+            }
+        } catch (e) { /* fall through */ }
+        return { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
+    }
+    if (await isTrustedDeviceReq(req, _matTd(userid), b.deviceToken)) return { ok: true };
+    return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
+}
 // Called by /api/auth/login (admin role): returns null when the login may continue, otherwise {status, body}.
-async function adminSecondFactor(req, userId) {
-    if (!adminOtpEnabled()) return { ok: true };
+async function adminSecondFactor(req, userId, portal) {
+    portal = portal || 'admin';
+    if (!(await loginOtpEnabled(portal))) return { ok: true };            // switch OFF for this portal → ID + password only, no WhatsApp message
+    const ns = portal === 'admin' ? userId : portal + '|' + userId;       // trusted-device namespace (admin keeps its original one)
     const b = req.body || {};
     const otp = String(b.otp || '').replace(/\D/g, '');
     if (!otp) {
-        if (await isTrustedDevice(userId, b.deviceToken)) return { ok: true };
+        if (await isTrustedDeviceReq(req, ns, b.deviceToken)) return { ok: true };
         return { status: 401, body: { error: 'OTP verification is required on this device.', code: 'OTP_REQUIRED' } };
     }
-    if (hitRateLimit('aotpv:' + lc(userId), 15, 10 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Please try again later.' } };
-    const key = 'lotp|' + lc(userId);
+    if (hitRateLimit('aotpv:' + portal + ':' + lc(userId), 15, 10 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Please try again later.' } };
+    const key = portal === 'admin' ? 'lotp|' + lc(userId) : 'lotp|' + portal + '|' + lc(userId);
     const o = await _otpStore.get(key);
     const bad = { status: 401, body: { error: 'Invalid or expired verification code. Please try again.', code: 'INVALID_OTP' } };
     if (!o || Date.now() > o.exp) { await _otpStore.delete(key); return bad; }
@@ -5096,13 +5353,57 @@ async function adminSecondFactor(req, userId) {
     if (o.tries > OTP_MAX_TRIES) { await _otpStore.delete(key); return bad; }
     if (otp.length !== ADMIN_OTP_LEN || !security.safeEqual(o.hash, sha(otp))) return bad;
     await _otpStore.delete(key);   // one-time use
-    return { ok: true, deviceToken: b.trustDevice ? await issueTrustedDevice(userId, req) : undefined };
+    // 📱 a device that passed the OTP is remembered by default (the 'Remember this device' box can opt out with trustDevice:false)
+    const remember = !(b.trustDevice === false || b.trustDevice === 'false' || b.trustDevice === 0 || b.trustDevice === '0');
+    return { ok: true, deviceToken: remember ? await issueTrustedDevice(ns, req) : undefined };
 }
+// 📲 Agent / HRMS login OTP — POST /api/auth/portal-otp/send {role:'agent'|'employee', username, password | mobile}
+//    Wrong credentials → normal 401 (no OTP). Switch OFF for that portal, or a trusted device → {skipped:true} (nothing is sent).
+app.post('/api/auth/portal-otp/send', noStore, asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const roleKey = lc(b.role);
+    const portalDef = otpPortalByRole(roleKey), portal = portalDef ? portalDef.id : null;   // agent → agent, employee/hrms → hrms (registry)
+    const username = String(b.username || '').trim();
+    // this endpoint knows how to look up Agent and HRMS accounts only; another portal needs its own send route (see registerOtpPortal)
+    if (!portal || (portal !== 'agent' && portal !== 'hrms') || !username) return res.status(400).json({ error: 'Role and User ID are required.' });
+    if (hitRateLimit('potp:' + (req.ip || ''), 25, 10 * 60 * 1000) || hitRateLimit('potpu:' + portal + ':' + lc(username), 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    let id, mobile;
+    if (portal === 'agent') {
+        const password = String(b.password || '');
+        if (!password) return res.status(400).json({ error: 'Password is required.' });
+        const a = await findAdminByCredentials(username, password, 'agents');
+        if (a.error) return res.status(a.status).json({ error: a.error, code: a.code });
+        id = a.id; mobile = last10(a.user.mobile || a.user.phone || a.user.contact || a.user.whatsapp);
+    } else {
+        const list = await readKv('kv_blob', 'hrms_employees');
+        const emp = (Array.isArray(list) ? list : []).find(e => e && String(e.empId || '').toUpperCase() === username.toUpperCase());
+        if (!emp) return res.status(401).json({ error: AUTH_MSG.NO_USER, code: 'USER_NOT_FOUND' });
+        const empMobile = last10(emp.phone || emp.mobile);
+        if (!empMobile) return res.status(401).json({ error: AUTH_MSG.NO_MOBILE, code: 'NO_MOBILE' });
+        if (empMobile !== last10(b.mobile)) return res.status(401).json({ error: AUTH_MSG.BAD_MOBILE, code: 'INVALID_MOBILE' });
+        if (emp.status === 'inactive' || emp.status === 'blocked') return res.status(403).json({ error: 'This Employee ID is blocked or inactive. Please contact the administrator.' });
+        if (emp.status && emp.status !== 'active') return res.status(403).json({ error: 'Your admin verification is still pending. You can log in only after verification.' });
+        id = username.toUpperCase(); mobile = empMobile;
+    }
+    if (!(await loginOtpEnabled(portal))) return res.json({ success: true, skipped: true, otpDisabled: true });
+    if (await isTrustedDeviceReq(req, portal + '|' + id, b.deviceToken)) return res.json({ success: true, skipped: true, trusted: true });
+    if (mobile.length !== 10) return res.status(422).json({ error: 'No registered mobile number is available for this account. Please contact the administrator.' });
+    if (!(await otpServiceConfigured())) return res.status(501).json({ error: 'The WhatsApp OTP service is not configured. Please contact the administrator.' });
+    const key = 'lotp|' + portal + '|' + lc(id);
+    const prev = await _otpStore.get(key);
+    if (prev && Date.now() - prev.sentAt < OTP_RESEND_MS) return res.status(429).json({ error: 'Please wait before requesting a new OTP.', resendInSec: Math.ceil((OTP_RESEND_MS - (Date.now() - prev.sentAt)) / 1000) });
+    const otp = String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN));
+    let channel;
+    try { channel = await sendOtpMessage(mobile, otp); }
+    catch (e) { return otpSendFailed(res, e, portal + '-login-otp'); }
+    await _otpStore.set(key, { hash: sha(otp), sentAt: Date.now(), exp: Date.now() + OTP_TTL_MS, tries: 0 });
+    res.json({ success: true, channel: channel, message: 'A ' + ADMIN_OTP_LEN + '-digit OTP has been sent by ' + (channel === 'whatsapp' ? 'WhatsApp' : 'SMS') + ' to your registered mobile number ending ' + mobile.slice(-4) + '.', expiresInSec: Math.round(OTP_TTL_MS / 1000), resendInSec: Math.round(OTP_RESEND_MS / 1000) });
+}));
 // 🩺 OTP health check — GET /api/auth/otp-diagnostics with header  x-diag-secret: <OTP_DIAG_SECRET>  (route is disabled unless that env var is set).
-//    Shows whether the Fast2SMS key / database are reachable; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
+//    Shows whether the WhatsApp credentials / templates / database are configured; never returns any secret. Add  &send=9XXXXXXXXX  to send a real test OTP.
 app.get('/api/auth/otp-diagnostics', noStore, asyncRoute(async (req, res) => {
     if (!process.env.OTP_DIAG_SECRET || !security.safeEqual(String(req.headers['x-diag-secret'] || ''), process.env.OTP_DIAG_SECRET)) return res.status(404).json({ error: 'Not found' });
-    const out = { fast2smsKeyPresent: !!(await fast2smsOtpKey()), whatsappEndpoint: '/dev/whatsapp/' + F2S_WA_VERSION + '/' + F2S_WA_PHONE_NUMBER_ID + '/messages', template: fast2smsWaConfig().template, language: fast2smsWaConfig().lang, origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null };
+    const out = Object.assign({ origin: req.headers.origin || null, originAllowed: req.headers.origin ? isOriginAllowed(req.headers.origin) : null, nodeEnv: process.env.NODE_ENV || null }, { whatsapp: wa.describe() });
     try { await ensureOtpTable(); out.otpTable = 'ok'; } catch (e) { out.otpTable = 'ERROR: ' + e.message; }
     if (req.query.send) { try { out.testSend = 'ok via ' + await sendOtpMessage(String(req.query.send), String(crypto.randomInt(10 ** (ADMIN_OTP_LEN - 1), 10 ** ADMIN_OTP_LEN))); } catch (e) { out.testSend = 'ERROR: ' + e.message; } }
     res.json(out);
@@ -8246,11 +8547,12 @@ app.use((err, req, res, next) => {
 //   yeh env var kisi wajah se na mile, to neeche wala fallback URL
 //   (ALLOWED_ORIGINS wala apna hi backend domain) use hota hai.
 // ══════════════════════════════════════════════════════════════════
-const SELF_PING_URL = process.env.RENDER_EXTERNAL_URL || 'https://anmol-libmatrix.onrender.com';
+const SELF_PING_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || '';   // no hardcoded fallback; empty → ping is skipped
 const SELF_PING_INTERVAL_MS = 10 * 60 * 1000; // 10 minute (15 minute wali sleep-limit se kam)
 
 function selfPing() {
     try {
+        if (!SELF_PING_URL) return;   // nothing to ping (e.g. local / Vercel)
         const url = SELF_PING_URL.replace(/\/$/, '') + '/api/health';
         const lib = url.startsWith('https') ? require('https') : require('http');
         const req = lib.get(url, { timeout: 15000 }, (res) => {
@@ -8266,14 +8568,15 @@ function selfPing() {
     }
 }
 // Server start hone ke thodi der baad pehla ping, fir har 10 minute mein.
-if (!IS_VERCEL) {   // ▲ Vercel functions sleep by themselves — a self-ping timer is useless there
+const RUN_STANDALONE = !IS_VERCEL && (require.main === module || process.env.AM_STANDALONE === '1');   // ▲ true only when started with `node server.js` (Render / local); false on Vercel
+if (RUN_STANDALONE) {   // ▲ Vercel functions sleep by themselves — a self-ping timer is useless there
     setTimeout(selfPing, 30 * 1000);
     setInterval(selfPing, SELF_PING_INTERVAL_MS);
 }
 
 // Start Server
 // ▲ On Vercel the platform calls the exported app per request; app.listen() is only for Render/local.
-const server = IS_VERCEL ? null : app.listen(PORT, () => {
+const server = !RUN_STANDALONE ? null : app.listen(PORT, () => {
     console.log(`🚀 Server started on port ${PORT}`);
     console.log(`📁 Static: ${PUBLIC_DIR ? 'public/ + safe root files' : 'safe root files (public/ folder not found)'}`);
     // 🆕 Deploy ke waqt turant dikh jaaye ki "/" par kaunsi index.html serve hogi (ya nahi mili).
@@ -8297,7 +8600,7 @@ function gracefulShutdown(sig) {
     if (!server) return process.exit(0);
     server.close(() => { Promise.resolve(db.end()).catch(() => {}).then(() => process.exit(0)); });
 }
-if (!IS_VERCEL) {
+if (RUN_STANDALONE) {
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
