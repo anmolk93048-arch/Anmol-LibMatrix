@@ -1,5 +1,5 @@
 /* ============================================================================
-   dv-invoice-module.js  —  "Option B" (DV Enterprises custom GST invoice)
+   dv-invoice-module.js  —  "Invoice Session B" (custom GST invoice, Session-A look & feel)
    ----------------------------------------------------------------------------
    Self-contained backend module. It does NOT touch any Option A (wallet /
    Razorpay) route. server.js only needs the 3 tiny hooks described in
@@ -15,7 +15,7 @@
 
 /* ─────────────────────────── 1. DATABASE SCHEMA ─────────────────────────── */
 const SCHEMA_SQL = [
-    // (1) Super-Admin mapping: which invoice system a user gets. 'A' = legacy wallet system (default), 'B' = DV Enterprises
+    // (1) Super-Admin mapping: which invoice session a user gets. 'A' = standard Invoice Session A (default), 'B' = Invoice Session B
     "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS invoice_version VARCHAR(1) NOT NULL DEFAULT 'A'",
     // (2) Company / bank / tax presets owned by the Super Admin (single JSON row)
     `CREATE TABLE IF NOT EXISTS dv_settings (
@@ -63,6 +63,7 @@ const DEFAULT_SETTINGS = {
     cgstPct: 2.5,
     sgstPct: 2.5,
     roundOff: true,
+    userEditable: true,          // true = users may change company / bank / tax-rate fields on their own bill (these values are the defaults)
     defaultCustomer: '',
     defaultBlock: '',
     defaultDistrict: ''
@@ -84,12 +85,14 @@ function sanitizeSettings(b, base) {
         cgstPct: b.cgstPct != null && b.cgstPct !== '' ? Number(b.cgstPct) : Number(cur.cgstPct),
         sgstPct: b.sgstPct != null && b.sgstPct !== '' ? Number(b.sgstPct) : Number(cur.sgstPct),
         roundOff: b.roundOff != null ? (b.roundOff === true || b.roundOff === 'true' || b.roundOff === 1 || b.roundOff === '1') : !!cur.roundOff,
+        userEditable: b.userEditable != null ? (b.userEditable === true || b.userEditable === 'true' || b.userEditable === 1 || b.userEditable === '1') : (cur.userEditable !== false),
         defaultCustomer: txt(b.defaultCustomer != null ? b.defaultCustomer : cur.defaultCustomer, 255),
         defaultBlock: txt(b.defaultBlock != null ? b.defaultBlock : cur.defaultBlock, 120),
         defaultDistrict: txt(b.defaultDistrict != null ? b.defaultDistrict : cur.defaultDistrict, 120)
     };
     if (!out.companyName) return { error: 'Company name is required.' };
     if (!out.address) return { error: 'Address is required.' };
+    if (out.gstin && !/^[0-9A-Z]{10,15}$/.test(out.gstin)) return { error: 'GSTIN must be 10–15 letters/digits (e.g. 10ABCDE1234F1Z5).' };
     if (out.ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(out.ifsc)) return { error: 'IFSC must look like UCBA0001199 (4 letters, a zero, 6 letters/digits).' };
     if (out.accountNo && !/^[0-9]{6,25}$/.test(out.accountNo)) return { error: 'Account number must be 6–25 digits.' };
     for (const k of ['cgstPct', 'sgstPct']) {
@@ -107,13 +110,15 @@ const fromPaise = (p) => p / 100;
 function calc(items, cgstPct, sgstPct, roundOff) {
     let taxP = 0, cgP = 0, sgP = 0;
     const rows = items.map((it) => {
-        const t = toPaise(it.qty * it.rate);                 // taxable amount
-        const c = Math.round(t * cgstPct / 100);             // CGST amount
-        const s = Math.round(t * sgstPct / 100);             // SGST amount
+        const t = toPaise(it.qty * it.rate);                 // taxable amount = qty × rate
+        // a row may carry its own GST slab (it.gst = total %, split equally into CGST + SGST); otherwise the invoice rates apply
+        const rc = it.gst != null ? it.gst / 2 : cgstPct, rs = it.gst != null ? it.gst / 2 : sgstPct;
+        const c = Math.round(t * rc / 100);                  // CGST amount
+        const s = Math.round(t * rs / 100);                  // SGST amount
         taxP += t; cgP += c; sgP += s;
         return Object.assign({}, it, {
-            taxable: fromPaise(t), cgstPct: cgstPct, cgstAmt: fromPaise(c),
-            sgstPct: sgstPct, sgstAmt: fromPaise(s), total: fromPaise(t + c + s)
+            taxable: fromPaise(t), cgstPct: rc, cgstAmt: fromPaise(c),
+            sgstPct: rs, sgstAmt: fromPaise(s), total: fromPaise(t + c + s)
         });
     });
     const totalP = taxP + cgP + sgP;
@@ -173,17 +178,31 @@ function parseInvoiceBody(b, settings) {
         if (!name) return { error: 'Row ' + (i + 1) + ': material name is required.' };
         if (!isFinite(qty) || qty <= 0 || qty > 1e7) return { error: 'Row ' + (i + 1) + ': quantity must be greater than 0.' };
         if (!isFinite(rate) || rate < 0 || rate > 1e8) return { error: 'Row ' + (i + 1) + ': rate must be 0 or more.' };
-        items.push({ name: name, qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20), rate: Math.round(rate * 100) / 100 });
+        const item = { name: name, qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20), rate: Math.round(rate * 100) / 100 };
+        if (settings.userEditable !== false && r.gst !== '' && r.gst != null) {
+            const g = Number(r.gst);
+            if (!isFinite(g) || g < 0 || g > 100) return { error: 'Row ' + (i + 1) + ': GST % must be between 0 and 100.' };
+            item.gst = Math.round(g * 100) / 100;
+        }
+        items.push(item);
     }
     if (!items.length) return { error: 'Add at least one material row.' };
-    const c = calc(items, settings.cgstPct, settings.sgstPct, settings.roundOff);
+    // Company / bank / tax-rate fields: the Super-Admin presets are the defaults; when the Super Admin allows it, the user's own entries win.
+    let company = settings;
+    if (settings.userEditable !== false && b.company && typeof b.company === 'object') {
+        const merged = sanitizeSettings(b.company, settings);
+        if (merged.error) return { error: merged.error };
+        company = merged.value;
+        company.roundOff = settings.roundOff;                // rounding stays an admin decision
+    }
+    const c = calc(items, company.cgstPct, company.sgstPct, company.roundOff);
     if (c.grandTotal > 99999999999) return { error: 'Invoice total is too large.' };
     return {
         value: {
             billNo: billNo, date: date,
             customer: cleanText(b.customer, 255), block: cleanText(b.block, 120), district: cleanText(b.district, 120),
             transport: cleanText(b.transport, 120), vehicle: cleanText(b.vehicle, 60),
-            calc: c, words: amountInWords(c.grandTotal)
+            company: company, calc: c, words: amountInWords(c.grandTotal)
         }
     };
 }
@@ -239,14 +258,14 @@ function install(app, ctx) {
         if (!auth || auth.role !== 'material_user' || !auth.userId) {
             return res.status(401).json({ error: 'Login is required — your session may have expired. Please log in again.' });
         }
-        const rows = await dbq('SELECT userid, name, village, mobile, status, invoice_version FROM material_users WHERE userid = ?', [String(auth.userId)]);
+        const rows = await dbq('SELECT userid, name, village, mobile, photo, status, invoice_version FROM material_users WHERE userid = ?', [String(auth.userId)]);
         if (!rows.length) return res.status(401).json({ error: 'This account no longer exists. Please contact the administrator.', accountDeleted: true });
         const u = rows[0];
         if (u.status === 'blocked') return res.status(403).json({ error: 'This ID has been blocked by the administrator.' });
         if (String(u.invoice_version || 'A') !== 'B') {
-            return res.status(403).json({ error: 'This account is not enabled for the DV Enterprises invoice format.', code: 'NOT_OPTION_B' });
+            return res.status(403).json({ error: 'This account is not mapped to Invoice Session B.', code: 'NOT_OPTION_B' });
         }
-        req.dvUser = { userId: u.userid, name: u.name, village: u.village, mobile: u.mobile };
+        req.dvUser = { userId: u.userid, name: u.name, village: u.village, mobile: u.mobile, photo: u.photo || '' };
         next();
     });
 
@@ -276,8 +295,8 @@ function install(app, ctx) {
     const insertSql = `INSERT INTO dv_invoices (owner_user_id, bill_no, invoice_date, customer_name, block_name, district_name, transport_mode, vehicle_no,
                        items, taxable_total, cgst_total, sgst_total, round_off, grand_total, amount_words, company_snapshot)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`;
-    const insertParams = (owner, v, settings) => [owner, v.billNo, v.date, v.customer, v.block, v.district, v.transport, v.vehicle,
-        JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal, v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(settings)];
+    const insertParams = (owner, v) => [owner, v.billNo, v.date, v.customer, v.block, v.district, v.transport, v.vehicle,
+        JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal, v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company)];
 
     // ── SAVE (new). Never overwrites: a Bill No. that already exists is refused with 409.
     app.post('/api/dv/invoices', dvUser, asyncRoute(async (req, res) => {
@@ -285,7 +304,7 @@ function install(app, ctx) {
         const p = parseInvoiceBody(req.body, settings);
         if (p.error) return res.status(400).json({ error: p.error });
         try {
-            const r = await dbq(insertSql, insertParams(req.dvUser.userId, p.value, settings));
+            const r = await dbq(insertSql, insertParams(req.dvUser.userId, p.value));
             return res.status(201).json({ success: true, mode: 'created', id: r[0].id, billNo: p.value.billNo });
         } catch (e) {
             if (isDup(e)) return res.status(409).json({ error: 'Bill No. ' + p.value.billNo + ' is already saved. Open it from the list to edit it, or use a different Bill No.', code: 'DUPLICATE_BILL' });
@@ -306,7 +325,7 @@ function install(app, ctx) {
         const sameNo = String(cur[0].bill_no).toLowerCase() === p.value.billNo.toLowerCase();
         try {
             if (!sameNo) {
-                const r = await dbq(insertSql, insertParams(req.dvUser.userId, p.value, settings));
+                const r = await dbq(insertSql, insertParams(req.dvUser.userId, p.value));
                 audit(req, 'dv_invoice_fork', req.dvUser.userId, 'from=' + cur[0].bill_no + ' to=' + p.value.billNo);
                 return res.status(201).json({ success: true, mode: 'created', id: r[0].id, billNo: p.value.billNo, previousBillNo: cur[0].bill_no });
             }
@@ -315,7 +334,7 @@ function install(app, ctx) {
                        items=?, taxable_total=?, cgst_total=?, sgst_total=?, round_off=?, grand_total=?, amount_words=?, company_snapshot=?, updated_at=CURRENT_TIMESTAMP
                        WHERE id=? AND owner_user_id=?`,
                 [v.billNo, v.date, v.customer, v.block, v.district, v.transport, v.vehicle, JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal,
-                 v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(settings), id, req.dvUser.userId]);
+                 v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company), id, req.dvUser.userId]);
             return res.json({ success: true, mode: 'updated', id: id, billNo: v.billNo });
         } catch (e) {
             if (isDup(e)) return res.status(409).json({ error: 'Bill No. ' + p.value.billNo + ' is already saved. Choose a different Bill No. — the original bill ' + cur[0].bill_no + ' is untouched.', code: 'DUPLICATE_BILL' });
@@ -328,6 +347,33 @@ function install(app, ctx) {
         if (!r.length) return res.status(404).json({ error: 'Invoice not found.' });
         audit(req, 'dv_invoice_delete', req.dvUser.userId, 'bill=' + r[0].bill_no);
         res.json({ success: true, billNo: r[0].bill_no });
+    }));
+
+    // ── Super Admin: Session A / Session B mapping (list + bulk map by User ID)
+    app.get('/api/admin/dv-mapping', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+        const users = await dbq("SELECT userid, name, village, mobile, status, invoice_version FROM material_users ORDER BY id DESC", []);
+        const counts = await dbq("SELECT owner_user_id, COUNT(*) AS n FROM dv_invoices GROUP BY owner_user_id", []);
+        const cnt = {}; counts.forEach(r => { cnt[String(r.owner_user_id).toLowerCase()] = Number(r.n); });
+        res.json(users.map(u => ({
+            userId: u.userid, name: u.name || '', village: u.village || '', mobile: u.mobile || '', status: u.status || 'active',
+            session: normVersion(u.invoice_version), invoices: cnt[String(u.userid).toLowerCase()] || 0
+        })));
+    }));
+    // body: { userIds: ['MAT001', ...], session: 'A' | 'B' }  → { updated: [...], notFound: [...] }
+    app.put('/api/admin/dv-mapping', requireRole('admin'), asyncRoute(async (req, res) => {
+        const b = req.body || {};
+        const session = normVersion(b.session);
+        const raw = Array.isArray(b.userIds) ? b.userIds : String(b.userIds || '').split(/[\s,;]+/);
+        const ids = Array.from(new Set(raw.map(x => cleanText(x, 50)).filter(Boolean)));
+        if (!ids.length) return res.status(400).json({ error: 'Enter at least one User ID.' });
+        if (ids.length > 500) return res.status(400).json({ error: 'You can map at most 500 User IDs at a time.' });
+        const updated = [], notFound = [];
+        for (const id of ids) {
+            const r = await dbq('UPDATE material_users SET invoice_version = ? WHERE LOWER(userid) = LOWER(?) RETURNING userid', [session, id]);
+            if (r.length) updated.push(r[0].userid); else notFound.push(id);
+        }
+        audit(req, 'dv_mapping_set', 'dv_mapping', 'session=' + session + ' count=' + updated.length);
+        res.json({ success: true, session: session, updated: updated, notFound: notFound });
     }));
 
     // ── Super Admin: company / GST / bank presets
