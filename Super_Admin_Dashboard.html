@@ -3551,7 +3551,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="page-header">
             <div>
               <div class="page-title">🧱 Material Master</div>
-              <div class="page-sub">Add, update or delete material names, codes, units, GST % and default prices. Changes reach the invoice portal after you click Save All.</div>
+              <div class="page-sub">Add, update or delete material names, codes, HSN / SAC, units, GST % and default prices. A material with the same name in another category auto-fills its Unit, GST % and HSN; editing them and saving updates every matching entry. Changes reach the invoice portal after you click Save All.</div>
             </div>
             <div class="actions-row">
               <button class="btn btn-ghost" onclick="MM_RESET_DEFAULTS()">↺ Load Default Lists</button>
@@ -3568,7 +3568,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             </div>
             <div id="mm-msg" class="sa-msg"></div>
             <div class="tbl-wrap"><table>
-              <thead><tr><th>#</th><th>Code</th><th>Material Name</th><th>Unit</th><th>GST %</th><th>Default Price (₹)</th><th></th></tr></thead>
+              <thead><tr><th>#</th><th>Code</th><th>Material Name</th><th>HSN / SAC</th><th>Unit</th><th>GST %</th><th>Default Price (₹)</th><th></th></tr></thead>
               <tbody id="mm-tbody"></tbody>
             </table></div>
           </div>
@@ -3603,66 +3603,19 @@ html,body,#admin-app{width:100%;min-width:0;}
           <!-- ═══ Pending Self-Registration Requests (yeh users portal se khud aaye hain) ═══ -->
           <div class="sa-card" id="hsna-card" style="margin-top:0;margin-bottom:14px">
             <h3>🔢 HSN / SAC Column — Invoice Session A</h3>
-            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Adds an editable <b>HSN / SAC</b> column after <i>Particulars</i> on the Session&nbsp;A bill form and on the printed invoice. The code fills in from the <b>HSN / SAC Master</b> below, and the user can still type over it on the invoice. This setting affects <b>Session&nbsp;A only</b>.</div>
-            <div class="sa-grid" style="grid-template-columns:minmax(220px,320px) 1fr;align-items:end">
+            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Adds an editable <b>HSN / SAC</b> column after <i>Particulars</i> on the Session&nbsp;A bill form and on the printed invoice. Users type the code themselves. This setting affects <b>Session&nbsp;A only</b>.</div>
+            <div class="sa-grid" style="grid-template-columns:minmax(220px,320px) 1fr">
               <div><label class="sa-lbl">Show the column for</label>
                 <select class="sa-in" id="hsna-mode" onchange="HSNA.sync()">
                   <option value="all">All Session A users</option>
-                  <option value="selected">Only the users I tick below</option>
+                  <option value="selected">Only the User IDs listed →</option>
                   <option value="off">Nobody (column hidden)</option>
                 </select></div>
-              <div id="hsna-summary" style="font-size:12px;color:var(--text-muted);padding-bottom:8px"></div>
+              <div id="hsna-ids-wrap"><label class="sa-lbl">User IDs (comma, space or new line)</label>
+                <textarea class="sa-in" id="hsna-ids" rows="2" placeholder="e.g. INV001, INV002" style="resize:vertical"></textarea></div>
             </div>
-            <div style="margin-top:12px;border:1px solid var(--border,#dce6f1);border-radius:10px;overflow:hidden">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border,#dce6f1)">
-                <div class="search-bar" style="min-width:200px"><span style="color:var(--text-muted);font-size:13px">🔍</span><input type="text" id="hsna-search" placeholder="User ID, name, village, mobile…" oninput="HSNA.render()"></div>
-                <select class="form-input form-select" id="hsna-filter" style="width:auto;padding:6px 8px;font-size:12px" onchange="HSNA.render()">
-                  <option value="all">All Session A users</option><option value="on">Ticked only</option><option value="off">Not ticked</option>
-                </select>
-                <span style="flex:1"></span>
-                <button class="btn btn-ghost btn-sm" type="button" id="hsna-btn-all" onclick="HSNA.selectShown()">☑ Tick all shown</button>
-                <button class="btn btn-ghost btn-sm" type="button" id="hsna-btn-none" onclick="HSNA.clearShown()">☐ Untick all shown</button>
-              </div>
-              <div class="tbl-wrap" style="max-height:340px;overflow:auto"><table>
-                <thead><tr>
-                  <th style="width:34px;position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)"><input type="checkbox" id="hsna-all" title="Tick / untick every user shown" onchange="HSNA.toggleShown(this.checked)"></th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff);color:#c9a227">🪪 User ID</th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)">Name</th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)">Village</th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)">Mobile</th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)">Status</th>
-                  <th style="position:sticky;top:0;z-index:1;background:var(--card-bg,#fff)">HSN / SAC column</th>
-                </tr></thead>
-                <tbody id="hsna-body"></tbody>
-              </table></div>
-            </div>
-            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <button class="btn btn-gold btn-sm" type="button" onclick="HSNA.save()">💾 Save HSN / SAC setting</button>
-              <span id="hsna-dirty" style="display:none;font-size:12px;color:#c9a227;font-weight:700">● Unsaved changes</span>
-            </div>
+            <div style="margin-top:10px"><button class="btn btn-gold btn-sm" type="button" onclick="HSNA.save()">💾 Save HSN / SAC setting</button></div>
             <div id="hsna-msg" class="sa-msg"></div>
-          </div>
-
-          <div class="sa-card" id="hsnm-card" style="margin-top:0;margin-bottom:14px">
-            <h3>📚 HSN / SAC Master — Work Criteria / Material Types</h3>
-            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Pre-define the default HSN / SAC code for each type of work or material (Plant, Display Board, Bamboo …). On the Session&nbsp;A bill form the code fills in by itself when a matching item is chosen, and the user can still type a different code on that invoice. An invoice item matches a row when its name contains the criteria name or one of the extra words (whole words only). Applies to <b>Session&nbsp;A only</b>.</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-              <button class="btn btn-gold btn-sm" type="button" onclick="HSNM.add()">+ Add work criteria</button>
-              <button class="btn btn-ghost btn-sm" type="button" onclick="HSNM.starter()" title="Adds common examples you can edit — nothing is saved until you click Save">✨ Add starter examples</button>
-              <span style="flex:1"></span>
-              <label class="sa-lbl" style="margin:0" for="hsnm-test">🔎 Test an item name</label>
-              <input class="sa-in" id="hsnm-test" style="width:220px" placeholder="e.g. Cost of plants from forest dept." oninput="HSNM.test()">
-              <span id="hsnm-test-out" style="font-size:12px;min-width:140px"></span>
-            </div>
-            <div class="tbl-wrap"><table>
-              <thead><tr><th style="width:34px">#</th><th>Work Criteria / Material Type</th><th>Also match these words <span style="font-weight:400;opacity:.7">(optional, comma separated)</span></th><th>HSN / SAC</th><th>Work Category</th><th>Matches</th><th style="text-align:center">Active</th><th></th></tr></thead>
-              <tbody id="hsnm-body"><tr><td colspan="8" style="text-align:center;padding:22px;color:var(--text-muted)">Loading…</td></tr></tbody>
-            </table></div>
-            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <button class="btn btn-gold btn-sm" type="button" onclick="HSNM.save()">💾 Save HSN / SAC Master</button>
-              <span id="hsnm-dirty" style="display:none;font-size:12px;color:#c9a227;font-weight:700">● Unsaved changes</span>
-            </div>
-            <div id="hsnm-msg" class="sa-msg"></div>
           </div>
 
           <div class="card" id="mu-pending-card" style="display:none;margin-bottom:16px;border:1.5px solid rgba(201,162,39,.4)">
@@ -10743,7 +10696,7 @@ function MAT_NUM_WORDS(n){
 }
 function MAT_INVOICE_HTML(b){
   var f=function(v){ return (Number(v)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-  var rows='', taxable=0, gstTotal=0, hasHsn=(b.materials||[]).some(function(m){return m&&String(m.hsn||'').trim();});
+  var rows='', taxable=0, gstTotal=0, hasHsn=b.includeHsn!==false&&(b.materials||[]).some(function(m){var h=m&&String(m.hsn||'').trim();return /^[0-9]{2,8}$/.test(h)&&!/^0+$/.test(h);});
   (b.materials||[]).forEach(function(m,i){
     var price=parseFloat(m.price)||0, qty=parseFloat(m.qty)||0, gst=parseFloat(m.gst)||0;
     var amt=price*qty, half=gst/2, tax=amt*half/100; taxable+=amt; gstTotal+=amt*gst/100;
@@ -16496,187 +16449,29 @@ window.GLOBAL_SEARCH=function(value){
 
 
 
-/* 🔢 HSN / SAC for Invoice Session A
-   (1) HSNA — which User IDs get the HSN / SAC column (selectable list of Session A users)
-   (2) HSNM — HSN / SAC Master: work criteria / material type → default code that auto-fills on the Session A bill form
-   Session B is not touched by anything here. */
+/* 🔢 HSN / SAC column switch for Invoice Session A (Invoice Material List page) */
 (function(){
   function $(i){return document.getElementById(i);}
-  function esc(v){return MAT_ESC(v);}
-  function bc(){try{var c=new BroadcastChannel('anmol-hsn-master');c.postMessage({t:Date.now()});c.close();}catch(e){}}
-  function cache(){return (typeof materialUsersCache!=='undefined'&&materialUsersCache)||[];}   // 'let' global of the Material Users script
-  function natural(a,b){return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:'base'});}
-
-  /* ═══ (1) User ID list ═══ */
-  var mode='all', sel={}, savedSig='', loaded=false;
-  function msgA(t,ok){var m=$('hsna-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  function usersA(){
-    return cache().filter(function(u){return u&&u.userId&&u.invoiceVersion!=='B';})
-      .sort(function(x,y){return natural(x.userId,y.userId);});
-  }
-  function sig(){return mode+'|'+Object.keys(sel).map(function(k){return k.toLowerCase();}).sort().join(',');}
-  function isOn(id){
-    if(mode==='all')return true;
-    if(mode==='off')return false;
-    return !!sel[id];
-  }
-  function shown(){
-    var q=($('hsna-search').value||'').toLowerCase().trim(),f=$('hsna-filter').value;
-    return usersA().filter(function(u){
-      if(f==='on'&&!sel[u.userId])return false;
-      if(f==='off'&&sel[u.userId])return false;
-      return !q||[u.userId,u.name,u.village,u.mobile].join(' ').toLowerCase().indexOf(q)>-1;
-    });
-  }
+  function msg(t,ok){var m=$('hsna-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
   window.HSNA={
-    sync:function(){mode=$('hsna-mode').value;HSNA.render();},
-    render:function(){
-      var body=$('hsna-body');if(!body)return;
-      var all=usersA(),list=shown(),editable=mode==='selected';
-      body.innerHTML=list.length?list.map(function(u){
-        var blocked=u.status==='blocked',on=isOn(u.userId);
-        return '<tr'+(editable?'':' style="opacity:.65"')+'><td><input type="checkbox" data-id="'+esc(u.userId)+'" '+(sel[u.userId]?'checked ':'')+(editable?'':'disabled ')+'onchange="HSNA.pick(this.getAttribute(\'data-id\'),this.checked)"></td>'
-          +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+esc(u.userId)+'</td>'
-          +'<td>'+esc(u.name||'—')+'</td><td>'+esc(u.village||'—')+'</td><td>'+esc(u.mobile||'—')+'</td>'
-          +'<td><span class="badge '+(blocked?'inactive':'active')+'">'+(blocked?'🚫 Blocked':'✅ Active')+'</span></td>'
-          +'<td><span class="badge '+(on?'active':'inactive')+'" style="'+(on?'':'background:rgba(120,130,150,.18);color:var(--text-muted)')+'">'+(on?'Shown':'Hidden')+'</span></td></tr>';
-      }).join(''):'<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">'+(all.length?'No users match this search / filter.':(cache().length?'No Session A users yet.':'Loading users…'))+'</td></tr>';
-      // header tick box + buttons
-      var chk=$('hsna-all');
-      if(chk){var n=list.filter(function(u){return sel[u.userId];}).length;chk.checked=list.length>0&&n===list.length;chk.indeterminate=n>0&&n<list.length;chk.disabled=!editable;}
-      ['hsna-btn-all','hsna-btn-none'].forEach(function(i){var b=$(i);if(b)b.disabled=!editable;});
-      // summary line
-      var ids=Object.keys(sel),inList={};all.forEach(function(u){inList[u.userId.toLowerCase()]=1;});
-      var hidden=ids.filter(function(k){return !inList[k.toLowerCase()];}).length;
-      var t=mode==='all'?'Every Session A user ('+all.length+') sees the HSN / SAC column.'
-        :mode==='off'?'The HSN / SAC column is hidden for everyone.'
-        :ids.length+' of '+all.length+' Session A user(s) ticked — only they see the column.'+(hidden?' ('+hidden+' saved ID(s) are not in this list, e.g. now on Session B; they are kept.)':'');
-      if($('hsna-summary'))$('hsna-summary').textContent=t+(editable?'':'  Choose “Only the users I tick below” to pick users.');
-      var d=$('hsna-dirty');if(d)d.style.display=(loaded&&sig()!==savedSig)?'':'none';
-    },
-    pick:function(id,on){if(on)sel[id]=1;else delete sel[id];HSNA.render();},
-    toggleShown:function(on){shown().forEach(function(u){if(on)sel[u.userId]=1;else delete sel[u.userId];});HSNA.render();},
-    selectShown:function(){HSNA.toggleShown(true);},
-    clearShown:function(){HSNA.toggleShown(false);},
+    sync:function(){var w=$('hsna-ids-wrap');if(w)w.style.display=$('hsna-mode').value==='selected'?'':'none';},
     load:function(){
-      if(window.MAT_REFRESH&&!cache().length)MAT_REFRESH();
       return apiFetch('/admin/invoice-a-options').then(function(c){
-        mode=c.hsnMode||'all';$('hsna-mode').value=mode;
-        sel={};(c.hsnUserIds||[]).forEach(function(id){sel[id]=1;});
-        savedSig=sig();loaded=true;HSNA.render();
-      }).catch(function(e){msgA(e.message||'Could not load the HSN / SAC setting.');});
+        $('hsna-mode').value=c.hsnMode||'all';$('hsna-ids').value=(c.hsnUserIds||[]).join(', ');HSNA.sync();
+      }).catch(function(e){msg(e.message||'Could not load the HSN / SAC setting.');});
     },
     save:function(){
-      mode=$('hsna-mode').value;
-      var ids=Object.keys(sel);
-      if(mode==='selected'&&!ids.length){msgA('Tick at least one user, or choose “All Session A users” / “Nobody”.');return;}
-      apiFetch('/admin/invoice-a-options',{method:'PUT',body:JSON.stringify({hsnMode:mode,hsnUserIds:ids})}).then(function(r){
-        sel={};(r.hsnUserIds||[]).forEach(function(id){sel[id]=1;});
-        savedSig=sig();HSNA.render();bc();
+      var mode=$('hsna-mode').value;
+      apiFetch('/admin/invoice-a-options',{method:'PUT',body:JSON.stringify({hsnMode:mode,hsnUserIds:$('hsna-ids').value})}).then(function(r){
+        $('hsna-ids').value=(r.hsnUserIds||[]).join(', ');
         var t='Saved — '+(mode==='all'?'HSN / SAC is shown to all Session A users.':mode==='off'?'HSN / SAC is hidden for everyone.':'HSN / SAC is shown to '+r.hsnUserIds.length+' selected user(s).');
         if(r.unknown&&r.unknown.length)t+=' Not found (ignored): '+r.unknown.join(', ')+'.';
-        msgA(t,!(r.unknown&&r.unknown.length));SHOW_TOAST('✅ HSN / SAC setting saved');
-      }).catch(function(e){msgA(e.message);});
+        msg(t,!(r.unknown&&r.unknown.length));SHOW_TOAST('✅ HSN / SAC setting saved');
+      }).catch(function(e){msg(e.message);});
     }
   };
-
-  /* ═══ (2) HSN / SAC Master ═══ */
-  var rows=[], savedRows='', mLoaded=false;
-  var STARTER=[
-    {name:'Plant',keywords:'sapling, seedling',hsn:'0602'},
-    {name:'Bamboo',keywords:'',hsn:'1401'},
-    {name:'Display Board',keywords:'CIB',hsn:''},
-    {name:'Cement',keywords:'',hsn:'2523'},
-    {name:'Sand',keywords:'',hsn:'2505'},
-    {name:'Stone Aggregate',keywords:'aggregate, gravel',hsn:'2517'},
-    {name:'TMT Bar',keywords:'TMTC, steel bar',hsn:'7214'},
-    {name:'Binding wire',keywords:'',hsn:'7217'},
-    {name:'Barbed wire',keywords:'',hsn:'7313'}
-  ];
-  function msgM(t,ok){var m=$('hsnm-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  function cats(){return (typeof MM_CATS!=='undefined'&&MM_CATS)?MM_CATS:null;}
-  function rx(kw){var t=String(kw||'').trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');return t?new RegExp('(^|[^a-z0-9])'+t+'(s|es)?($|[^a-z0-9])','i'):null;}
-  function words(r){return String(r.keywords||'').split(/[,;\n]+/).concat([r.name]);}
-  function itemLabel(it){var c=it.code?String(it.code).trim():'',n=String(it.name||'');return (c&&n.indexOf(c)!==0)?c+'-'+n:n;}
-  function score(r,lab){var best=-1;words(r).forEach(function(w){var x=rx(w);if(x&&x.test(lab)){var v=String(w).trim().length+(r.categoryId?1000:0);if(v>best)best=v;}});return best;}
-  function validCode(r){return /^\d{4,8}$/.test(String(r.hsn||''));}
-  function dirtyM(){var d=$('hsnm-dirty');if(d)d.style.display=(mLoaded&&JSON.stringify(rows)!==savedRows)?'':'none';}
-  function catOptions(cur){
-    var c=cats()||[],h='<option value="">All work categories</option>',seen=!cur;
-    c.forEach(function(x){h+='<option value="'+esc(x.id)+'"'+(x.id===cur?' selected':'')+'>'+esc(x.name)+'</option>';if(x.id===cur)seen=true;});
-    if(!seen)h+='<option value="'+esc(cur)+'" selected>'+esc(cur)+' (removed category)</option>';
-    return h;
-  }
-  function paintMatch(i){
-    var td=$('hsnm-m-'+i),r=rows[i];if(!td||!r)return;
-    var c=cats();if(!c){td.textContent='—';return;}
-    var names=[];
-    c.forEach(function(cat){
-      if(r.categoryId&&cat.id!==r.categoryId)return;
-      (cat.items||[]).forEach(function(it){var l=itemLabel(it);if(score(r,l.toLowerCase())>=0&&names.indexOf(l)<0)names.push(l);});
-    });
-    td.innerHTML=names.length?'<span title="'+esc(names.slice(0,15).join('\n')+(names.length>15?'\n…':''))+'" style="cursor:help">'+names.length+' item'+(names.length>1?'s':'')+'</span>':'<span style="opacity:.6">none yet</span>';
-  }
-  window.HSNM={
-    render:function(){
-      var body=$('hsnm-body');if(!body)return;
-      body.innerHTML=rows.length?rows.map(function(r,i){
-        return '<tr>'
-          +'<td>'+(i+1)+'</td>'
-          +'<td><input class="sa-in" style="min-width:170px" maxlength="80" placeholder="e.g. Plant" value="'+esc(r.name)+'" oninput="HSNM.set('+i+',\'name\',this.value)"></td>'
-          +'<td><input class="sa-in" style="min-width:190px" maxlength="300" placeholder="defaults to the name" value="'+esc(r.keywords)+'" oninput="HSNM.set('+i+',\'keywords\',this.value)"></td>'
-          +'<td><input class="sa-in" style="width:112px;font-family:\'JetBrains Mono\',monospace" inputmode="numeric" maxlength="8" placeholder="HSN / SAC" value="'+esc(r.hsn)+'" oninput="HSNM.hsn('+i+',this)"></td>'
-          +'<td><select class="sa-in" style="min-width:150px" onchange="HSNM.set('+i+',\'categoryId\',this.value)">'+catOptions(r.categoryId)+'</select></td>'
-          +'<td id="hsnm-m-'+i+'" style="font-size:11px;color:var(--text-muted);white-space:nowrap"></td>'
-          +'<td style="text-align:center"><input type="checkbox" '+(r.active!==false?'checked ':'')+'onchange="HSNM.set('+i+',\'active\',this.checked)"></td>'
-          +'<td><button class="btn-icon" type="button" title="Remove this row" style="color:#c0262d" onclick="HSNM.del('+i+')">🗑️</button></td></tr>';
-      }).join(''):'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No work criteria yet — click “+ Add work criteria” (or “Add starter examples”).</td></tr>';
-      rows.forEach(function(r,i){paintMatch(i);});
-      dirtyM();HSNM.test();
-    },
-    set:function(i,f,v){if(!rows[i])return;rows[i][f]=v;if(f==='name'||f==='keywords'||f==='categoryId')paintMatch(i);dirtyM();HSNM.test();},
-    hsn:function(i,el){el.value=String(el.value).replace(/\D/g,'').slice(0,8);if(rows[i]){rows[i].hsn=el.value;dirtyM();HSNM.test();}},
-    add:function(){rows.push({id:'',name:'',keywords:'',hsn:'',categoryId:'',active:true});HSNM.render();var ins=document.querySelectorAll('#hsnm-body tr:last-child input.sa-in');if(ins[0])ins[0].focus();},
-    del:function(i){var r=rows[i];if(!r)return;if(r.name&&!confirm('Remove “'+r.name+'” from the HSN / SAC Master? (Click Save afterwards to apply.)'))return;rows.splice(i,1);HSNM.render();msgM('Removed — click “Save HSN / SAC Master” to apply.',true);},
-    starter:function(){
-      var have={};rows.forEach(function(r){have[String(r.name).trim().toLowerCase()]=1;});
-      var n=0;STARTER.forEach(function(x){if(have[x.name.toLowerCase()])return;rows.push({id:'',name:x.name,keywords:x.keywords,hsn:x.hsn,categoryId:'',active:true});n++;});
-      HSNM.render();
-      msgM(n?n+' starter row(s) added. These are common default codes — please confirm each with your tax consultant'+(STARTER.some(function(x){return !x.hsn;})?' and fill in the empty HSN / SAC (Display Board)':'')+', then click Save.':'All starter examples are already in the list.',true);
-    },
-    test:function(){
-      var out=$('hsnm-test-out'),inp=$('hsnm-test');if(!out||!inp)return;
-      var lab=String(inp.value||'').trim().toLowerCase();if(!lab){out.textContent='';return;}
-      var best=null,bs=-1;
-      rows.forEach(function(r){if(r.active===false||!validCode(r))return;var v=score(r,lab);if(v>bs){bs=v;best=r;}});
-      out.innerHTML=best?'→ <b style="font-family:\'JetBrains Mono\',monospace">'+esc(best.hsn)+'</b> <span style="color:var(--text-muted)">('+esc(best.name)+(best.categoryId?', only in its work category':'')+')</span>':'<span style="color:var(--text-muted)">no default — the user types the code</span>';
-    },
-    load:function(){
-      return apiFetch('/admin/invoice-a-hsn-master').then(function(r){
-        rows=(r.items||[]).map(function(x){return {id:x.id||'',name:x.name||'',keywords:x.keywords||'',hsn:x.hsn||'',categoryId:x.categoryId||'',active:x.active!==false};});
-        savedRows=JSON.stringify(rows);mLoaded=true;HSNM.render();
-        if(!cats()&&typeof MM_FETCH==='function')MM_FETCH().then(function(){HSNM.render();});   // work-category names + match counts
-      }).catch(function(e){msgM(e.message||'Could not load the HSN / SAC Master.');});
-    },
-    save:function(){
-      for(var i=0;i<rows.length;i++){
-        var r=rows[i];
-        if(!String(r.name).trim()){msgM('Row '+(i+1)+': enter the work criteria / material type.');return;}
-        if(!validCode(r)){msgM('Row '+(i+1)+' ('+r.name+'): enter the HSN / SAC code — 4 to 8 digits.');return;}
-      }
-      apiFetch('/admin/invoice-a-hsn-master',{method:'PUT',body:JSON.stringify({items:rows})}).then(function(r){
-        rows=(r.items||[]).map(function(x){return {id:x.id,name:x.name,keywords:x.keywords||'',hsn:x.hsn,categoryId:x.categoryId||'',active:x.active!==false};});
-        savedRows=JSON.stringify(rows);HSNM.render();bc();
-        msgM('✅ Saved — Session A invoice forms pick up the new default codes within a few seconds (or when the user reopens the form).',true);SHOW_TOAST('✅ HSN / SAC Master saved');
-      }).catch(function(e){msgM(e.message);});
-    }
-  };
-
-  // keep the user list in step with the Invoice Material List data, and load both panels when the page opens
-  var _R=window.RENDER_MATERIAL_USERS;
-  if(typeof _R==='function'){window.RENDER_MATERIAL_USERS=function(){var r=_R.apply(this,arguments);try{var c=$('hsna-card');if(c&&c.offsetParent!==null)HSNA.render();}catch(e){}return r;};}
   var _g=window.GOTO;
-  window.GOTO=function(page){var r=_g.apply(this,arguments);if(page==='material-users'){HSNA.load();HSNM.load();}return r;};
+  window.GOTO=function(page){var r=_g.apply(this,arguments);if(page==='material-users')HSNA.load();return r;};
 })();
 
 /* 🧾 Invoice Session B — user mapping (Invoice Session B page) */
@@ -16838,7 +16633,7 @@ function MM_NORM(d){
     return {id:String(c.id),name:String(c.name),items:(Array.isArray(c.items)?c.items:[]).map(function(it){
       var code=it.code?String(it.code):'', name=String(it.name||'');
       if(!code){ var m=name.match(/^\s*(\d{2,6})\s*-\s*(.*)$/); if(m){ code=m[1]; name=m[2]; } }
-      return {id:it.id?String(it.id):MM_UID(),code:code,name:name,unit:String(it.unit||''),gst:Number(it.gst)||0,price:Number(it.price)||0};
+      return {id:it.id?String(it.id):MM_UID(),code:code,name:name,hsn:String(it.hsn||''),unit:String(it.unit||''),gst:Number(it.gst)||0,price:Number(it.price)||0};
     })};
   });
 }
@@ -16858,24 +16653,49 @@ function MM_RENDER(){
   var tabs=document.getElementById('mm-tabs'), tb=document.getElementById('mm-tbody'); if(!tabs||!tb||!MM_CATS) return;
   tabs.innerHTML=MM_CATS.map(function(c){ var on=c.id===MM_SEL; return '<button class="btn btn-sm '+(on?'btn-gold':'btn-ghost')+'" onclick="MM_PICK(\''+MAT_JSARG(c.id)+'\')">'+MAT_ESC(c.name)+' ('+c.items.length+')</button>'; }).join('')
     +'<button class="btn btn-sm btn-ghost" onclick="MM_ADD_CAT()">+ New Category</button>';
-  var cat=MM_CUR(); if(!cat){ tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Create a category to begin.</td></tr>'; return; }
+  var cat=MM_CUR(); if(!cat){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Create a category to begin.</td></tr>'; return; }
   var q=(document.getElementById('mm-search').value||'').toLowerCase();
   var rows=''; var shown=0;
   cat.items.forEach(function(it,i){
     if(q && (it.name+' '+it.code).toLowerCase().indexOf(q)<0) return; shown++;
     rows+='<tr><td>'+(i+1)+'</td>'
      +'<td><input class="sa-in" style="width:80px" value="'+MAT_ESC(it.code)+'" oninput="MM_SET('+i+',\'code\',this.value)"></td>'
-     +'<td><input class="sa-in" style="min-width:260px" value="'+MAT_ESC(it.name)+'" oninput="MM_SET('+i+',\'name\',this.value)"></td>'
-     +'<td><input class="sa-in" style="width:90px" list="mm-units" value="'+MAT_ESC(it.unit)+'" oninput="MM_SET('+i+',\'unit\',this.value)"></td>'
-     +'<td><input class="sa-in" style="width:70px" type="number" min="0" max="100" step="0.5" value="'+it.gst+'" oninput="MM_SET('+i+',\'gst\',this.value)"></td>'
+     +'<td><input class="sa-in" style="min-width:260px" value="'+MAT_ESC(it.name)+'" oninput="MM_SET('+i+',\'name\',this.value)" onchange="MM_NAME_AUTO('+i+',this)"></td>'
+     +'<td><input class="sa-in mm-hsn" style="width:100px" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" value="'+MAT_ESC(it.hsn||'')+'" oninput="MM_SET('+i+',\'hsn\',this.value)"></td>'
+     +'<td><input class="sa-in mm-unit" style="width:90px" list="mm-units" value="'+MAT_ESC(it.unit)+'" oninput="MM_SET('+i+',\'unit\',this.value)"></td>'
+     +'<td><input class="sa-in mm-gst" style="width:70px" type="number" min="0" max="100" step="0.5" value="'+it.gst+'" oninput="MM_SET('+i+',\'gst\',this.value)"></td>'
      +'<td><input class="sa-in" style="width:110px" type="number" min="0" step="0.01" value="'+it.price+'" oninput="MM_SET('+i+',\'price\',this.value)"></td>'
      +'<td><button class="btn-icon" title="Delete this material" style="color:#c0262d" onclick="MM_DEL_ITEM('+i+')">🗑️</button></td></tr>';
   });
-  tb.innerHTML=rows||'<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">'+(cat.items.length?'No match.':'No materials yet — click "+ Add Material".')+'</td></tr>';
+  tb.innerHTML=rows||'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+(cat.items.length?'No match.':'No materials yet — click "+ Add Material".')+'</td></tr>';
 }
 function MM_PICK(id){ MM_SEL=id; MM_RENDER(); }
-function MM_SET(i,f,v){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; cat.items[i][f]=(f==='gst'||f==='price')?(Number(v)||0):v; }
-function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',unit:'Nos',gst:18,price:0}); document.getElementById('mm-search').value=''; MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
+var MM_EDITED=[];   // ids of materials whose Unit / GST % / HSN the admin changed by hand (in order) — propagated to same-name materials on Save
+function MM_KEY(n){ return String(n||'').toLowerCase().replace(/\s+/g,' ').trim(); }
+function MM_SET(i,f,v){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; cat.items[i][f]=(f==='gst'||f==='price')?(Number(v)||0):v;
+  if(f==='unit'||f==='gst'||f==='hsn'){ var id=cat.items[i].id; MM_EDITED=MM_EDITED.filter(function(x){return x!==id;}); MM_EDITED.push(id); } }
+/* Name typed / changed: if a material with the same name already exists (this or another category), pre-fill its default Unit, GST % and HSN. Still editable. */
+function MM_NAME_AUTO(i,el){
+  var cat=MM_CUR(); if(!cat||!cat.items[i]) return; var it=cat.items[i], k=MM_KEY(it.name); if(!k) return;
+  var src=null;
+  (MM_CATS||[]).forEach(function(c){ c.items.forEach(function(o){ if(o!==it && o.id!==it.id && MM_KEY(o.name)===k && !src) src=o; }); });
+  if(!src) return;
+  it.unit=src.unit; it.gst=Number(src.gst)||0; if(src.hsn) it.hsn=src.hsn;
+  var tr=el&&el.closest?el.closest('tr'):null;
+  if(tr){ var u=tr.querySelector('.mm-unit'),g=tr.querySelector('.mm-gst'),h=tr.querySelector('.mm-hsn'); if(u)u.value=it.unit; if(g)g.value=it.gst; if(h)h.value=it.hsn||''; }
+  MM_MSG('Auto-filled Unit / GST % / HSN for "'+it.name+'" from the existing entry. Edit if needed — saving updates all materials with this name.',true);
+}
+/* On Save: every Unit / GST % / HSN the admin edited is copied to all other materials with the same name (all categories) */
+function MM_PROPAGATE(){
+  var n=0, byId={}; (MM_CATS||[]).forEach(function(c){ c.items.forEach(function(o){ byId[o.id]=o; }); });
+  MM_EDITED.forEach(function(id){ var src=byId[id]; if(!src) return; var k=MM_KEY(src.name); if(!k) return;
+    (MM_CATS||[]).forEach(function(c){ c.items.forEach(function(o){
+      if(o!==src && MM_KEY(o.name)===k && (o.unit!==src.unit||Number(o.gst)!==Number(src.gst)||(src.hsn&&o.hsn!==src.hsn))){ o.unit=src.unit; o.gst=Number(src.gst)||0; if(src.hsn) o.hsn=src.hsn; n++; }
+    }); });
+  });
+  MM_EDITED=[]; return n;
+}
+function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',hsn:'',unit:'Nos',gst:18,price:0}); document.getElementById('mm-search').value=''; MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
 function MM_DEL_ITEM(i){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; if(!confirm('Delete "'+(cat.items[i].name||'this material')+'" from '+cat.name+'?')) return; cat.items.splice(i,1); MM_RENDER(); MM_MSG('Deleted — click "Save All" to apply.',true); }
 function MM_ADD_CAT(){
   var n=(prompt('New category name (for example: Plantation, Road Work):')||'').trim(); if(!n) return;
@@ -16887,22 +16707,23 @@ function MM_DEL_CAT(){ var c=MM_CUR(); if(!c) return; if(!confirm('Delete the wh
 function MM_RESET_DEFAULTS(){ ADMIN_PASSWORD_PROMPT('Load Default Lists').then(function(okPw){ if(!okPw) return; if(!confirm('Replace the lists on this screen with the default Material Supply and Plantation lists? (Nothing changes until you click Save All.)')) return; MM_CATS=MM_SEED(); MM_SEL='material'; MM_RENDER(); MM_MSG('Default lists loaded — click "Save All" to apply.',true);  }); }
 function MM_SAVE(){
   if(!MM_CATS) return;
+  var synced=MM_PROPAGATE();
   for(var c=0;c<MM_CATS.length;c++){ var cat=MM_CATS[c];
     for(var i=0;i<cat.items.length;i++){ var it=cat.items[i];
       if(!String(it.name).trim()){ MM_SEL=cat.id; MM_RENDER(); MM_MSG('Every material needs a name ('+cat.name+', row '+(i+1)+').',false); return; }
     } }
-  var payload=MM_CATS.map(function(c){ return {id:c.id,name:c.name.trim(),items:c.items.map(function(it){ return {id:it.id?String(it.id):MM_UID(),code:String(it.code||'').trim(),name:String(it.name).trim(),unit:String(it.unit).trim(),gst:Number(it.gst)||0,price:Number(it.price)||0}; })}; });
+  var payload=MM_CATS.map(function(c){ return {id:c.id,name:c.name.trim(),items:c.items.map(function(it){ return {id:it.id?String(it.id):MM_UID(),code:String(it.code||'').trim(),name:String(it.name).trim(),hsn:String(it.hsn||'').trim(),unit:String(it.unit).trim(),gst:Number(it.gst)||0,price:Number(it.price)||0}; })}; });
   apiFetch('/blob/material_categories',{method:'POST',body:JSON.stringify(payload)}).then(function(){
     // read-back: confirm the shared storage now really holds what was just saved
     return apiFetch('/blob/material_categories?_='+Date.now(),{cache:'no-store'}).then(function(back){
-      var norm=function(a){ return JSON.stringify((a||[]).map(function(c){ return [c.id,c.name,(c.items||[]).map(function(i){ return [i.id,i.code,i.name,i.unit,Number(i.gst)||0,Number(i.price)||0]; })]; })); };
+      var norm=function(a){ return JSON.stringify((a||[]).map(function(c){ return [c.id,c.name,(c.items||[]).map(function(i){ return [i.id,i.code,i.name,String(i.hsn||''),i.unit,Number(i.gst)||0,Number(i.price)||0]; })]; })); };
       if(norm(back)!==norm(payload)) throw new Error('Saved, but the stored copy does not match what you entered — please click Save All again.');
     });
   }).then(function(){
     // tell any open invoice portal (same browser) to reload the Master right now
     try{ var bc=new BroadcastChannel('anmol-material-master'); bc.postMessage({t:Date.now()}); bc.close(); }catch(e){}
     try{ localStorage.setItem('anmol_material_master_ver', String(Date.now())); }catch(e){}
-    MM_CATS=MM_NORM(payload); MM_RENDER(); MM_MSG('✅ Saved — open invoice portals pick up the updated lists within a few seconds (or immediately on reload).',true); SHOW_TOAST('Material Master saved.'); LOG_ACTIVITY('🧱 Material Master updated');
+    MM_CATS=MM_NORM(payload); MM_RENDER(); MM_MSG('✅ Saved'+(synced?' — '+synced+' matching material(s) in other categories were updated too':'')+' — open invoice portals pick up the updated lists within a few seconds (or immediately on reload).',true); SHOW_TOAST('Material Master saved.'); LOG_ACTIVITY('🧱 Material Master updated');
   }).catch(function(e){ MM_MSG('❌ Save failed: '+e.message,false); });
 }
 

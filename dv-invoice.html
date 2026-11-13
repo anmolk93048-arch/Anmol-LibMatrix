@@ -668,9 +668,9 @@ function logoutPortal(){
   try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
   location.href = HOME_URL;
 }
-/* 15-minute inactivity logout — same rule as Session A */
+/* 2-hour inactivity logout — same rule as Session A */
 (function idle(){
-  var LIMIT = 15 * 60 * 1000, last = Date.now();
+  var LIMIT = 2 * 60 * 60 * 1000, last = Date.now();
   ['mousemove','keydown','touchstart','scroll','click'].forEach(function(ev){ window.addEventListener(ev, function(){ last = Date.now(); }, { passive: true }); });
   setInterval(function(){ if (Date.now() - last > LIMIT) { try { localStorage.clear(); } catch (e) {} toLogin('⏰ You were logged out because of inactivity. Please log in again.'); } }, 1000);
 })();
