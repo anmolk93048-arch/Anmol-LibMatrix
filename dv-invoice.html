@@ -452,7 +452,7 @@
   <button type="button" class="bar-btn danger" onclick="logoutPortal()">🚪 Logout</button>
 </div>
 <div id="liuPhotoRow" class="no-print" style="display:flex;align-items:center;gap:10px;background:#f7faff;border-bottom:1px solid #d8e0ee;padding:8px 16px;">
-  <div class="liu-photo-wrap"><div class="liu-photo-ph" id="liuPh">👤</div><span class="liu-live-dot" title="Live"></span></div>
+  <div class="liu-photo-wrap"><img id="liuPhotoImg" style="display:none;" src="" alt="User Photo"><div class="liu-photo-ph" id="liuPh">👤</div><span class="liu-live-dot" title="Live"></span></div>
   <div>
     <div style="font-size:12.5px;font-weight:700;color:var(--gov-navy);" id="liuName">—</div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
@@ -868,6 +868,20 @@ function printInvoiceNow(){
   requestAnimationFrame(function(){ requestAnimationFrame(function(){ fitToPage(); window.print(); }); });
 }
 
+/* ───────── profile photo: ONE source drives the header avatar and the sub-header avatar ───────── */
+function setAvatars(src){
+  var pairs = [['topHeaderPhotoImg', 'topHeaderPhotoPh', 'block'], ['liuPhotoImg', 'liuPh', 'block']];
+  pairs.forEach(function(p){
+    var img = $(p[0]), ph = $(p[1]);
+    if (!img || !ph) return;
+    var showPlaceholder = function(){ img.style.display = 'none'; img.removeAttribute('src'); ph.style.display = 'flex'; };
+    if (!src) return showPlaceholder();               // no photo on the account → 👤 fallback
+    img.onerror = showPlaceholder;                     // broken / blocked image → 👤 fallback
+    img.onload = function(){ ph.style.display = 'none'; img.style.display = p[2]; };
+    img.src = src;
+  });
+}
+
 /* ───────── start ───────── */
 (function init(){
   if (!TOKEN) return toLogin();
@@ -876,7 +890,7 @@ function printInvoiceNow(){
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
-    if (ME.photo) { var img = $('topHeaderPhotoImg'); img.src = ME.photo; img.style.display = 'block'; $('topHeaderPhotoPh').style.display = 'none'; }
+    setAvatars(ME.photo);
     newBill(); loadSaved();
   }).catch(function(e){ if (e && !/expired/i.test(e.message)) showErr(e.message); });
 })();
