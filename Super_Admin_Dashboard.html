@@ -3601,6 +3601,23 @@ html,body,#admin-app{width:100%;min-width:0;}
           </div>
 
           <!-- ═══ Pending Self-Registration Requests (yeh users portal se khud aaye hain) ═══ -->
+          <div class="sa-card" id="hsna-card" style="margin-top:0;margin-bottom:14px">
+            <h3>🔢 HSN / SAC Column — Invoice Session A</h3>
+            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Adds an editable <b>HSN / SAC</b> column after <i>Particulars</i> on the Session&nbsp;A bill form and on the printed invoice. Users type the code themselves. This setting affects <b>Session&nbsp;A only</b>.</div>
+            <div class="sa-grid" style="grid-template-columns:minmax(220px,320px) 1fr">
+              <div><label class="sa-lbl">Show the column for</label>
+                <select class="sa-in" id="hsna-mode" onchange="HSNA.sync()">
+                  <option value="all">All Session A users</option>
+                  <option value="selected">Only the User IDs listed →</option>
+                  <option value="off">Nobody (column hidden)</option>
+                </select></div>
+              <div id="hsna-ids-wrap"><label class="sa-lbl">User IDs (comma, space or new line)</label>
+                <textarea class="sa-in" id="hsna-ids" rows="2" placeholder="e.g. INV001, INV002" style="resize:vertical"></textarea></div>
+            </div>
+            <div style="margin-top:10px"><button class="btn btn-gold btn-sm" type="button" onclick="HSNA.save()">💾 Save HSN / SAC setting</button></div>
+            <div id="hsna-msg" class="sa-msg"></div>
+          </div>
+
           <div class="card" id="mu-pending-card" style="display:none;margin-bottom:16px;border:1.5px solid rgba(201,162,39,.4)">
             <div style="padding:14px 16px;font-weight:800;font-size:14px;color:#c9a227;border-bottom:1px solid var(--border)">🕓 Pending Registration Requests — requests received from the portal</div>
             <div class="tbl-wrap">
@@ -10679,11 +10696,11 @@ function MAT_NUM_WORDS(n){
 }
 function MAT_INVOICE_HTML(b){
   var f=function(v){ return (Number(v)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-  var rows='', taxable=0, gstTotal=0;
+  var rows='', taxable=0, gstTotal=0, hasHsn=(b.materials||[]).some(function(m){return m&&String(m.hsn||'').trim();});
   (b.materials||[]).forEach(function(m,i){
     var price=parseFloat(m.price)||0, qty=parseFloat(m.qty)||0, gst=parseFloat(m.gst)||0;
     var amt=price*qty, half=gst/2, tax=amt*half/100; taxable+=amt; gstTotal+=amt*gst/100;
-    rows+='<tr><td>'+(i+1)+'</td><td style="text-align:left">'+MAT_ESC(m.name||'')+'</td><td>'+qty+'</td><td>'+MAT_ESC(m.unit||'')+'</td><td style="text-align:right">'+f(price)+'</td><td style="text-align:right">'+f(amt)+'</td><td>'+half+'%</td><td style="text-align:right">'+f(tax)+'</td><td>'+half+'%</td><td style="text-align:right">'+f(tax)+'</td><td style="text-align:right">'+f(amt+2*tax)+'</td></tr>';
+    rows+='<tr><td>'+(i+1)+'</td><td style="text-align:left">'+MAT_ESC(m.name||'')+'</td>'+(hasHsn?'<td>'+MAT_ESC(m.hsn||'')+'</td>':'')+'<td>'+qty+'</td><td>'+MAT_ESC(m.unit||'')+'</td><td style="text-align:right">'+f(price)+'</td><td style="text-align:right">'+f(amt)+'</td><td>'+half+'%</td><td style="text-align:right">'+f(tax)+'</td><td>'+half+'%</td><td style="text-align:right">'+f(tax)+'</td><td style="text-align:right">'+f(amt+2*tax)+'</td></tr>';
   });
   var cgst=gstTotal/2, sgst=gstTotal/2, tds=(b.tdsApplicable==='yes')?taxable*0.02:0, royalty=parseFloat(b.royaltyInput)||0;
   var pre=taxable+cgst+sgst+royalty-tds, grand=Math.round(pre);
@@ -10699,7 +10716,7 @@ function MAT_INVOICE_HTML(b){
    +'<tr><td style="border:1px solid #000;padding:5px 8px" colspan="2"><b>Work Name:</b> '+MAT_ESC(b.customerName||'')+'</td><td style="border:1px solid #000;padding:5px 8px"><b>Work Code:</b> '+MAT_ESC(b.workCode||'')+'</td></tr>'
    +'<tr><td style="border:1px solid #000;padding:5px 8px" colspan="3"><b>Customer:</b> '+MAT_ESC(b.vendorName||'')+' — '+MAT_ESC([b.panchayatField,b.blockField,b.districtField,b.stateField].filter(Boolean).join(', '))+'</td></tr></table>'
    +'<table style="width:100%;border-collapse:collapse;margin-top:-1px"><thead><tr>'
-   +['#','Particulars','Qty','Unit','Rate','Amount','CGST%','CGST','SGST%','SGST','Total'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
+   +['#','Particulars'].concat(hasHsn?['HSN / SAC']:[],['Qty','Unit','Rate','Amount','CGST%','CGST','SGST%','SGST','Total']).map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
    +'</tr></thead><tbody style="font-size:10px;text-align:center">'+rows.replace(/<td/g,'<td style="border:1px solid #000;padding:3px 4px"').replace(/<td style="border:1px solid #000;padding:3px 4px" style="/g,'<td style="border:1px solid #000;padding:3px 4px;')+'</tbody></table>'
    +'<table style="width:60%;margin-left:auto;border-collapse:collapse;margin-top:6px;font-size:11px">'
    +[['Taxable Value',f(taxable)],['CGST',f(cgst)],['SGST',f(sgst)],['Royalty',f(royalty)],tds?['Less: TDS (2%)','-'+f(tds)]:null,['Round Off',(grand-pre).toFixed(2)],['<b>Invoice Total</b>','<b>'+f(grand)+'</b>']]
@@ -16430,6 +16447,32 @@ window.GLOBAL_SEARCH=function(value){
   window.GOTO=function(page){_G3.apply(this,arguments);if(page==='invoice-session-b')DVS.load();};
 })();
 
+
+
+/* 🔢 HSN / SAC column switch for Invoice Session A (Invoice Material List page) */
+(function(){
+  function $(i){return document.getElementById(i);}
+  function msg(t,ok){var m=$('hsna-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
+  window.HSNA={
+    sync:function(){var w=$('hsna-ids-wrap');if(w)w.style.display=$('hsna-mode').value==='selected'?'':'none';},
+    load:function(){
+      return apiFetch('/admin/invoice-a-options').then(function(c){
+        $('hsna-mode').value=c.hsnMode||'all';$('hsna-ids').value=(c.hsnUserIds||[]).join(', ');HSNA.sync();
+      }).catch(function(e){msg(e.message||'Could not load the HSN / SAC setting.');});
+    },
+    save:function(){
+      var mode=$('hsna-mode').value;
+      apiFetch('/admin/invoice-a-options',{method:'PUT',body:JSON.stringify({hsnMode:mode,hsnUserIds:$('hsna-ids').value})}).then(function(r){
+        $('hsna-ids').value=(r.hsnUserIds||[]).join(', ');
+        var t='Saved — '+(mode==='all'?'HSN / SAC is shown to all Session A users.':mode==='off'?'HSN / SAC is hidden for everyone.':'HSN / SAC is shown to '+r.hsnUserIds.length+' selected user(s).');
+        if(r.unknown&&r.unknown.length)t+=' Not found (ignored): '+r.unknown.join(', ')+'.';
+        msg(t,!(r.unknown&&r.unknown.length));SHOW_TOAST('✅ HSN / SAC setting saved');
+      }).catch(function(e){msg(e.message);});
+    }
+  };
+  var _g=window.GOTO;
+  window.GOTO=function(page){var r=_g.apply(this,arguments);if(page==='material-users')HSNA.load();return r;};
+})();
 
 /* 🧾 Invoice Session B — user mapping (Invoice Session B page) */
 (function(){

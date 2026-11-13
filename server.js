@@ -6389,6 +6389,42 @@ app.put('/api/admin/material-invoice-settings', requireRole('admin'), asyncRoute
     res.json(cfg);
 }));
 
+// ── Invoice Session A: optional "HSN / SAC" column (Super Admin switch; Session B is not affected) ──
+// mode: 'all' = every Session A user sees the column (default) · 'selected' = only hsnUserIds · 'off' = hidden for everyone
+async function invoiceAHsnConfig() {
+    const st = await xBlobGet('invoice_a_options', {});
+    const mode = st && ['off', 'all', 'selected'].indexOf(st.hsnMode) > -1 ? st.hsnMode : 'all';
+    const ids = st && Array.isArray(st.hsnUserIds) ? st.hsnUserIds.map(String) : [];
+    return { hsnMode: mode, hsnUserIds: ids };
+}
+app.get('/api/admin/invoice-a-options', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    res.json(await invoiceAHsnConfig());
+}));
+app.put('/api/admin/invoice-a-options', requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    if (['off', 'all', 'selected'].indexOf(b.hsnMode) < 0) return res.status(400).json({ error: 'Choose Off, All users or Selected users.' });
+    const raw = Array.isArray(b.hsnUserIds) ? b.hsnUserIds : String(b.hsnUserIds || '').split(/[\s,;]+/);
+    const typed = Array.from(new Set(raw.map(x => String(x || '').trim().slice(0, 50)).filter(Boolean)));
+    if (typed.length > 2000) return res.status(400).json({ error: 'At most 2000 User IDs can be listed.' });
+    const known = await dbq('SELECT userid FROM material_users', []);
+    const byLower = {}; known.forEach(u => { byLower[String(u.userid).toLowerCase()] = u.userid; });
+    const ids = [], unknown = [];
+    typed.forEach(t => { const k = byLower[t.toLowerCase()]; if (k) ids.push(k); else unknown.push(t); });
+    if (b.hsnMode === 'selected' && !ids.length) return res.status(400).json({ error: 'Enter at least one valid User ID, or choose another option.' + (unknown.length ? ' Not found: ' + unknown.join(', ') : '') });
+    const cfg = { hsnMode: b.hsnMode, hsnUserIds: ids };
+    await xBlobSet('invoice_a_options', cfg);
+    auditPii(req, 'invoice_a_hsn_set', 'invoice_a_options', 'mode=' + cfg.hsnMode + ' users=' + ids.length);
+    res.json(Object.assign({ success: true, unknown: unknown }, cfg));
+}));
+// What the logged-in Session A page asks on every login: should the HSN / SAC column be shown for ME?
+app.get('/api/material/invoice-a-options', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const cfg = await invoiceAHsnConfig();
+    const me = String((req.authUser && req.authUser.userId) || '').toLowerCase();
+    const isAdmin = String((req.authUser && req.authUser.role) || '').toLowerCase() === 'admin';
+    const on = cfg.hsnMode === 'all' || (cfg.hsnMode === 'selected' && !!me && cfg.hsnUserIds.some(x => x.toLowerCase() === me)) || (isAdmin && cfg.hsnMode !== 'off');
+    res.json({ hsnSac: on });
+}));
+
 // 🎓 STUDENT SUBSCRIPTION PAYMENT — Student_Attendance.html ka
 //   "Ab Payment Karein" button ab seedha in dono routes se judta hai
 //   (pehle yeh Admin Panel mein manually daale gaye ek alag legacy DB
