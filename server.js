@@ -6416,13 +6416,57 @@ app.put('/api/admin/invoice-a-options', requireRole('admin'), asyncRoute(async (
     auditPii(req, 'invoice_a_hsn_set', 'invoice_a_options', 'mode=' + cfg.hsnMode + ' users=' + ids.length);
     res.json(Object.assign({ success: true, unknown: unknown }, cfg));
 }));
+// ── Invoice Session A: HSN / SAC MASTER (work criteria / material type → default code) ──
+// Each entry: { id, name, keywords, hsn, categoryId, active }
+//   name       = the work criteria / material type shown in Super Admin (e.g. "Plant", "Display Board", "Bamboo")
+//   keywords   = optional comma list of extra words matched against the invoice item name (the name itself is always matched)
+//   hsn        = default HSN (4–8 digits) or SAC (6 digits) code that auto-fills on the Session A bill form
+//   categoryId = '' for every work category, or the id of one Work Category from the Material Master
+//   active     = false keeps the row stored but stops it from filling invoices
+// The invoice user can still type over the auto-filled code on the bill — this list only supplies the default.
+async function invoiceAHsnMaster() {
+    const list = await xBlobGet('invoice_a_hsn_master', []);
+    return Array.isArray(list) ? list : [];
+}
+app.get('/api/admin/invoice-a-hsn-master', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    res.json({ items: await invoiceAHsnMaster() });
+}));
+app.put('/api/admin/invoice-a-hsn-master', requireRole('admin'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    if (!Array.isArray(b.items)) return res.status(400).json({ error: 'Nothing to save.' });
+    if (b.items.length > 300) return res.status(400).json({ error: 'At most 300 work criteria can be listed.' });
+    const out = [], usedIds = {};
+    for (let i = 0; i < b.items.length; i++) {
+        const x = b.items[i] || {};
+        const name = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (!name) return res.status(400).json({ error: 'Row ' + (i + 1) + ': enter the work criteria / material type.' });
+        const hsn = String(x.hsn || '').replace(/\D/g, '');
+        if (hsn.length < 4 || hsn.length > 8) return res.status(400).json({ error: 'Row ' + (i + 1) + ' (' + name + '): the HSN / SAC code must be 4 to 8 digits.' });
+        let id = String(x.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+        if (!id || usedIds[id]) id = 'h' + crypto.randomBytes(6).toString('hex');
+        usedIds[id] = 1;
+        out.push({
+            id: id,
+            name: name,
+            keywords: String(x.keywords || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+            hsn: hsn,
+            categoryId: String(x.categoryId || '').trim().slice(0, 80),
+            active: x.active !== false
+        });
+    }
+    await xBlobSet('invoice_a_hsn_master', out);
+    auditPii(req, 'invoice_a_hsn_master_set', 'invoice_a_hsn_master', 'rows=' + out.length);
+    res.json({ success: true, items: out });
+}));
 // What the logged-in Session A page asks on every login: should the HSN / SAC column be shown for ME?
 app.get('/api/material/invoice-a-options', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
     const cfg = await invoiceAHsnConfig();
     const me = String((req.authUser && req.authUser.userId) || '').toLowerCase();
     const isAdmin = String((req.authUser && req.authUser.role) || '').toLowerCase() === 'admin';
     const on = cfg.hsnMode === 'all' || (cfg.hsnMode === 'selected' && !!me && cfg.hsnUserIds.some(x => x.toLowerCase() === me)) || (isAdmin && cfg.hsnMode !== 'off');
-    res.json({ hsnSac: on });
+    // Default codes travel with the same answer: nothing is sent while the column is hidden for this user.
+    const master = on ? (await invoiceAHsnMaster()).filter(m => m && m.active !== false && /^\d{4,8}$/.test(String(m.hsn || ''))) : [];
+    res.json({ hsnSac: on, hsnMaster: master });
 }));
 
 // 🎓 STUDENT SUBSCRIPTION PAYMENT — Student_Attendance.html ka
