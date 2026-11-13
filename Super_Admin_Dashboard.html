@@ -2538,6 +2538,10 @@ html,body,#admin-app{width:100%;min-width:0;}
           <span class="nav-icon">▤</span><span class="nav-text">Invoice Material List</span>
           <span class="nav-badge" id="nb-material-users">0</span>
         </button>
+        <button class="nav-item" onclick="GOTO('invoice-session-b')" data-tooltip="Invoice Session B">
+          <span class="nav-icon">🧾</span><span class="nav-text">Invoice Session B</span>
+          <span class="nav-badge" id="nb-session-b">0</span>
+        </button>
         <button class="nav-item" onclick="GOTO('bills')" data-tooltip="Bills / Invoices">
           <span class="nav-icon">🧾</span><span class="nav-text">Bills / Invoices</span>
         </button>
@@ -3610,11 +3614,82 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card">
             <div class="tbl-wrap">
               <table>
-                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village</th><th>Mobile</th><th>Aadhaar</th><th>Invoice</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village</th><th>Mobile</th><th>Aadhaar</th><th>Session</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody id="material-users-table"></tbody>
               </table>
             </div>
           </div>
+        </div>
+
+
+        <!-- ═══ INVOICE SESSION B ═══ -->
+        <div class="page" id="page-invoice-session-b">
+          <div class="page-header">
+            <div>
+              <div class="page-title">🧾 Invoice Session B</div>
+              <div class="page-sub">Map User IDs to Session B. Mapped users get the Session B invoice environment the moment they log in with the normal Invoice Portal login.</div>
+            </div>
+            <div class="actions-row">
+              <div class="search-bar"><span style="color:var(--text-muted);font-size:13px">🔍</span><input type="text" id="isb-search" placeholder="User ID, name, village, mobile…" oninput="ISB.render()"></div>
+              <button class="btn btn-ghost" onclick="ISB.load()">↻ Refresh</button>
+            </div>
+          </div>
+
+          <div class="stat-grid" style="margin-bottom:14px">
+            <div class="stat-card"><div class="stat-label">All Invoice Users</div><div class="stat-value" id="isb-total">0</div></div>
+            <div class="stat-card"><div class="stat-label">On Session A</div><div class="stat-value" id="isb-a">0</div></div>
+            <div class="stat-card green"><div class="stat-label">On Session B</div><div class="stat-value" id="isb-b">0</div></div>
+            <div class="stat-card"><div class="stat-label">Session B Invoices</div><div class="stat-value" id="isb-inv">0</div></div>
+          </div>
+
+          <div class="sa-card" style="margin-top:0">
+            <h3>🔗 Map User IDs</h3>
+            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Paste one or more User IDs (separated by commas, spaces or new lines). Moving a user back to Session A restores the standard portal; their saved Session B bills are kept.</div>
+            <textarea class="sa-in" id="isb-ids" rows="3" placeholder="e.g. INV001, INV002, INV003" style="resize:vertical"></textarea>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button class="btn btn-gold btn-sm" type="button" onclick="ISB.mapTyped('B')">➜ Map to Session B</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.mapTyped('A')">↩ Move back to Session A</button>
+            </div>
+            <div id="isb-msg" class="sa-msg"></div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border)">
+              <select class="form-input form-select" id="isb-filter" style="width:auto;padding:6px 8px;font-size:12px" onchange="ISB.render()">
+                <option value="all">All users</option><option value="B">Session B only</option><option value="A">Session A only</option>
+              </select>
+              <span style="font-size:12px;color:var(--text-muted)" id="isb-sel-count">0 selected</span>
+              <span style="flex:1"></span>
+              <button class="btn btn-gold btn-sm" type="button" onclick="ISB.mapSelected('B')">Map selected → B</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.mapSelected('A')">Selected → A</button>
+            </div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th style="width:34px"><input type="checkbox" id="isb-all" onchange="ISB.toggleAll(this.checked)"></th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village</th><th>Mobile</th><th>Status</th><th>Session</th><th>B Bills</th><th>Action</th></tr></thead>
+              <tbody id="isb-body"></tbody>
+            </table></div>
+          </div>
+  <div class="sa-card">
+    <h3>🏢 Session B — Company, Bank &amp; Tax Presets</h3>
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px">These are the <b>default</b> company, bank and tax details every Session&nbsp;B user starts a bill with. A saved bill keeps the details it was issued with, so changes here affect only <b>new</b> bills.</div>
+    <div class="sa-grid">
+      <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120"></div>
+      <div><label class="sa-lbl">Address</label><input class="sa-in" id="dv-addr" maxlength="250"></div>
+      <div><label class="sa-lbl">GSTIN</label><input class="sa-in" id="dv-gstin" maxlength="20"></div>
+      <div><label class="sa-lbl">Mobile number(s)</label><input class="sa-in" id="dv-mobile" maxlength="80"></div>
+      <div><label class="sa-lbl">Bank name</label><input class="sa-in" id="dv-bank" maxlength="80"></div>
+      <div><label class="sa-lbl">Bank branch</label><input class="sa-in" id="dv-branch" maxlength="80"></div>
+      <div><label class="sa-lbl">IFSC</label><input class="sa-in" id="dv-ifsc" maxlength="15"></div>
+      <div><label class="sa-lbl">A/C No.</label><input class="sa-in" id="dv-acc" maxlength="25" inputmode="numeric"></div>
+      <div><label class="sa-lbl">Default CGST %</label><input class="sa-in" id="dv-cgst" type="number" min="0" max="50" step="0.01"></div>
+      <div><label class="sa-lbl">Default SGST %</label><input class="sa-in" id="dv-sgst" type="number" min="0" max="50" step="0.01"></div>
+      <div><label class="sa-lbl">Round off invoice total</label><select class="sa-in" id="dv-round"><option value="1">Yes (to nearest rupee)</option><option value="0">No (exact paise)</option></select></div>
+      <div><label class="sa-lbl">Users may edit these fields</label><select class="sa-in" id="dv-edit"><option value="1">Yes — prefilled, editable per bill</option><option value="0">No — locked to the values above</option></select></div>
+      <div><label class="sa-lbl">Default customer name (optional)</label><input class="sa-in" id="dv-dcust" maxlength="255"></div>
+      <div><label class="sa-lbl">Default block / district (optional)</label><div style="display:flex;gap:6px"><input class="sa-in" id="dv-dblock" maxlength="120" placeholder="Block"><input class="sa-in" id="dv-ddist" maxlength="120" placeholder="District"></div></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="DVS.save()">💾 Save DV Presets</button></div>
+    <div id="dv-msg" class="sa-msg"></div>
+  </div>
         </div>
 
         <!-- ═══ ADMIN ACCOUNTS ═══ -->
@@ -4185,28 +4260,6 @@ html,body,#admin-app{width:100%;min-width:0;}
     <div><label class="sa-lbl">Fee collection</label><select class="sa-in" id="inv-fee-enabled"><option value="1">Enabled (charge the fee above)</option><option value="0">Disabled (everyone free)</option></select></div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="MU.invSave()">💾 Save Invoice Fee</button></div>
     <div id="inv-fee-msg" class="sa-msg"></div>
-  </div>
-  <div class="sa-card">
-    <h3>🧾 Option B — DV Enterprises Invoice Presets</h3>
-    <div style="font-size:12px;opacity:.8;margin-bottom:8px">These details are printed on every Option&nbsp;B invoice. Users cannot edit them. A saved bill keeps the details it was issued with, so changing them here affects only <b>new</b> bills (and bills that are later updated).</div>
-    <div class="sa-grid">
-      <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120"></div>
-      <div><label class="sa-lbl">Address</label><input class="sa-in" id="dv-addr" maxlength="250"></div>
-      <div><label class="sa-lbl">GSTIN</label><input class="sa-in" id="dv-gstin" maxlength="20"></div>
-      <div><label class="sa-lbl">Mobile number(s)</label><input class="sa-in" id="dv-mobile" maxlength="80"></div>
-      <div><label class="sa-lbl">Bank name</label><input class="sa-in" id="dv-bank" maxlength="80"></div>
-      <div><label class="sa-lbl">Branch</label><input class="sa-in" id="dv-branch" maxlength="80"></div>
-      <div><label class="sa-lbl">IFSC</label><input class="sa-in" id="dv-ifsc" maxlength="15"></div>
-      <div><label class="sa-lbl">A/C No.</label><input class="sa-in" id="dv-acc" maxlength="25" inputmode="numeric"></div>
-      <div><label class="sa-lbl">CGST %</label><input class="sa-in" id="dv-cgst" type="number" min="0" max="50" step="0.01"></div>
-      <div><label class="sa-lbl">SGST %</label><input class="sa-in" id="dv-sgst" type="number" min="0" max="50" step="0.01"></div>
-      <div><label class="sa-lbl">Round off invoice total</label><select class="sa-in" id="dv-round"><option value="1">Yes (to nearest rupee)</option><option value="0">No (exact paise)</option></select></div>
-      <div></div>
-      <div><label class="sa-lbl">Default customer name (optional)</label><input class="sa-in" id="dv-dcust" maxlength="255"></div>
-      <div><label class="sa-lbl">Default block / district (optional)</label><div style="display:flex;gap:6px"><input class="sa-in" id="dv-dblock" maxlength="120" placeholder="Block"><input class="sa-in" id="dv-ddist" maxlength="120" placeholder="District"></div></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="DVS.save()">💾 Save DV Presets</button></div>
-    <div id="dv-msg" class="sa-msg"></div>
   </div>
     </div>
   </div>
@@ -5726,7 +5779,7 @@ html,body,#admin-app{width:100%;min-width:0;}
         </div>
         <div class="form-group">
           <label class="form-label">Invoice type</label>
-          <select class="form-input form-select" id="mu-inv-version"><option value="A">Option A — Legacy Wallet System</option><option value="B">Option B — Custom DV Enterprises Format</option></select>
+          <select class="form-input form-select" id="mu-inv-version"><option value="A">Session A — Standard Invoice Portal</option><option value="B">Session B — Invoice Session B</option></select>
         </div>
         <div class="form-group">
           <label class="form-label">Status</label>
@@ -5862,7 +5915,7 @@ html,body,#admin-app{width:100%;min-width:0;}
         <div class="form-group"><label class="form-label">Address *</label><input type="text" class="form-input" id="mur-address"></div>
         <div class="form-group"><label class="form-label">CUSTOM INVOICE FEE (₹)</label><input type="number" min="0" step="1" class="form-input" id="mur-inv-amount" placeholder="Blank = default · 0 = free"></div>
         <div class="form-group"><label class="form-label">INVOICE PAYMENT</label><label style="display:flex;gap:8px;align-items:center;font-size:12px;padding:9px 0"><input type="checkbox" id="mur-inv-exempt" style="width:auto"> Exempt (always free)</label></div>
-        <div class="form-group"><label class="form-label">INVOICE TYPE</label><select class="form-input form-select" id="mur-inv-version"><option value="A">Option A — Legacy Wallet System</option><option value="B">Option B — Custom DV Enterprises Format</option></select></div>
+        <div class="form-group"><label class="form-label">INVOICE TYPE</label><select class="form-input form-select" id="mur-inv-version"><option value="A">Session A — Standard Invoice Portal</option><option value="B">Session B — Invoice Session B</option></select></div>
       </div>
       <div id="mur-note" style="font-size:11px;color:var(--text-muted);background:var(--page-bg);border-radius:8px;padding:9px 11px;margin-top:4px"></div>
     </div>
@@ -10440,7 +10493,7 @@ function RENDER_MATERIAL_USERS(filter){
       +'<td>'+MAT_ESC(u.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(u.aadhaarMasked&&u.aadhaar_last4?u.aadhaarMasked:'—')+'</td>'
       +'<td><select class="form-input form-select" style="padding:4px 6px;font-size:12px;min-width:92px" title="Invoice type for this user" onchange="SET_MU_VERSION(\''+id+'\',this)">'
-      +  '<option value="A"'+(u.invoiceVersion==='B'?'':' selected')+'>Option A</option><option value="B"'+(u.invoiceVersion==='B'?' selected':'')+'>Option B</option></select></td>'
+      +  '<option value="A"'+(u.invoiceVersion==='B'?'':' selected')+'>Session A</option><option value="B"'+(u.invoiceVersion==='B'?' selected':'')+'>Session B</option></select></td>'
       +'<td><span class="badge '+(isBlocked?'inactive':'active')+'">'+(isBlocked?'🚫 Blocked':'✅ Active')+'</span></td>'
       +'<td style="display:flex;gap:6px;flex-wrap:wrap">'
       +  '<button class="btn-icon" title="View Entries" onclick="VIEW_MATERIAL_ENTRIES(\''+id+'\')">📄</button>'
@@ -10453,9 +10506,9 @@ function RENDER_MATERIAL_USERS(filter){
 
 function SET_MU_VERSION(docId, sel){
   var v=sel.value==='B'?'B':'A', prev=v==='B'?'A':'B';
-  if(!confirm('Switch this user to Invoice Option '+v+'? Their next login opens the '+(v==='B'?'DV Enterprises invoice screen.':'legacy wallet invoice system.'))){ sel.value=prev; return; }
+  if(!confirm('Switch this user to Invoice Session '+v+'? Their next login opens '+(v==='B'?'the Invoice Session B environment.':'the standard Invoice Session A portal.'))){ sel.value=prev; return; }
   apiFetch('/material/users/'+encodeURIComponent(docId),{method:'PUT',body:JSON.stringify({invoiceVersion:v})}).then(function(){
-    SHOW_TOAST('✅ Invoice type set to Option '+v+'.'); MAT_REFRESH();
+    SHOW_TOAST('✅ User mapped to Invoice Session '+v+'.'); if(window.ISB) ISB.load(); MAT_REFRESH();
   }).catch(function(e){ sel.value=prev; SHOW_TOAST('❌ '+e.message); });
 }
 
@@ -16357,7 +16410,7 @@ window.GLOBAL_SEARCH=function(value){
   window.GOTO=function(page){_G2(page);if(page==='settings')MU.load();};
 })();
 
-/* 🧾 Option B — DV Enterprises presets (Settings → Payments) */
+/* 🧾 Invoice Session B — company / bank / tax presets (Invoice Session B page) */
 (function(){
   function $(i){return document.getElementById(i);}
   function msg(t,ok){var m=$('dv-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
@@ -16365,16 +16418,85 @@ window.GLOBAL_SEARCH=function(value){
   window.DVS={
     load:function(){apiFetch('/admin/dv-settings').then(function(c){
       Object.keys(MAP).forEach(function(k){var el=$('dv-'+k);if(el)el.value=c[MAP[k]]==null?'':c[MAP[k]];});
-      $('dv-round').value=c.roundOff===false?'0':'1';
+      $('dv-round').value=c.roundOff===false?'0':'1';var e=$('dv-edit');if(e)e.value=c.userEditable===false?'0':'1';
     }).catch(function(e){msg(e.message||'Unable to load the DV presets.');});},
     save:function(){
-      var b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';
+      var b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';b.userEditable=$('dv-edit').value==='1';
       apiFetch('/admin/dv-settings',{method:'PUT',body:JSON.stringify(b)}).then(function(){msg('DV Enterprises presets saved.',true);SHOW_TOAST('✅ DV invoice presets saved.');DVS.load();})
       .catch(function(e){msg(e.message||'Unable to save.');});
     }
   };
   var _G3=window.GOTO;
-  window.GOTO=function(page){_G3.apply(this,arguments);if(page==='settings')DVS.load();};
+  window.GOTO=function(page){_G3.apply(this,arguments);if(page==='invoice-session-b')DVS.load();};
+})();
+
+
+/* 🧾 Invoice Session B — user mapping (Invoice Session B page) */
+(function(){
+  function $(i){return document.getElementById(i);}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function msg(t,ok){var m=$('isb-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
+  var rows=[],sel={};
+  function visible(){
+    var q=($('isb-search').value||'').toLowerCase().trim(),f=$('isb-filter').value;
+    return rows.filter(function(u){
+      if(f!=='all'&&u.session!==f)return false;
+      return !q||[u.userId,u.name,u.village,u.mobile].join(' ').toLowerCase().indexOf(q)>-1;
+    });
+  }
+  function counts(){
+    var b=rows.filter(function(u){return u.session==='B';});
+    $('isb-total').textContent=rows.length;$('isb-b').textContent=b.length;$('isb-a').textContent=rows.length-b.length;
+    $('isb-inv').textContent=b.reduce(function(n,u){return n+u.invoices;},0);
+    var nb=$('nb-session-b');if(nb)nb.textContent=b.length;
+    $('isb-sel-count').textContent=Object.keys(sel).length+' selected';
+  }
+  function put(ids,session){
+    return apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:ids,session:session})});
+  }
+  window.ISB={
+    load:function(){
+      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];sel={};ISB.render();})
+        .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
+    },
+    render:function(){
+      var list=visible(),b=$('isb-body');if(!b)return;
+      b.innerHTML=list.length?list.map(function(u){
+        var isB=u.session==='B',blocked=u.status==='blocked';
+        return '<tr><td><input type="checkbox" '+(sel[u.userId]?'checked ':'')+'onchange="ISB.pick(\''+esc(u.userId)+'\',this.checked)"></td>'
+          +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+esc(u.userId)+'</td>'
+          +'<td>'+esc(u.name||'—')+'</td><td>'+esc(u.village||'—')+'</td><td>'+esc(u.mobile||'—')+'</td>'
+          +'<td><span class="badge '+(blocked?'inactive':'active')+'">'+(blocked?'🚫 Blocked':'✅ Active')+'</span></td>'
+          +'<td><span class="badge '+(isB?'active':'inactive')+'" style="'+(isB?'':'background:rgba(120,130,150,.18);color:var(--text-muted)')+'">'+(isB?'Session B':'Session A')+'</span></td>'
+          +'<td>'+u.invoices+'</td>'
+          +'<td><button class="btn btn-sm '+(isB?'btn-ghost':'btn-gold')+'" onclick="ISB.one(\''+esc(u.userId)+'\',\''+(isB?'A':'B')+'\')">'+(isB?'↩ To Session A':'➜ To Session B')+'</button></td></tr>';
+      }).join(''):'<tr><td colspan="9" style="text-align:center;padding:26px;color:var(--text-muted)">No users found.</td></tr>';
+      counts();
+    },
+    pick:function(id,on){if(on)sel[id]=1;else delete sel[id];counts();},
+    toggleAll:function(on){sel={};if(on)visible().forEach(function(u){sel[u.userId]=1;});ISB.render();},
+    one:function(id,session){
+      if(!confirm('Move '+id+' to Invoice Session '+session+'? Their next login opens that environment.'))return;
+      put([id],session).then(function(){SHOW_TOAST('✅ '+id+' → Session '+session);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){SHOW_TOAST('❌ '+e.message);});
+    },
+    mapSelected:function(session){
+      var ids=Object.keys(sel);if(!ids.length){msg('Select at least one user first.');return;}
+      if(!confirm('Move '+ids.length+' user(s) to Invoice Session '+session+'?'))return;
+      put(ids,session).then(function(r){msg(r.updated.length+' user(s) moved to Session '+session+'.',true);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){msg(e.message);});
+    },
+    mapTyped:function(session){
+      var raw=($('isb-ids').value||'').trim();if(!raw){msg('Enter at least one User ID.');return;}
+      put(raw,session).then(function(r){
+        var t=r.updated.length+' user(s) moved to Session '+session+'.';
+        if(r.notFound.length)t+=' Not found: '+r.notFound.join(', ')+'.';
+        msg(t,!r.notFound.length);if(!r.notFound.length)$('isb-ids').value='';
+        ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();
+      }).catch(function(e){msg(e.message);});
+    }
+  };
+  var _G=window.GOTO;
+  window.GOTO=function(page){var r=_G.apply(this,arguments);if(page==='invoice-session-b'){ISB.load();DVS.load();}return r;};
+  setTimeout(function(){if(typeof AUTH_TOKEN!=='undefined'&&AUTH_TOKEN)ISB.load();},3000);   // fills the sidebar badge
 })();
 
 /* Header & Announcement Settings (inside Settings → Website Notices & Navigation) */
