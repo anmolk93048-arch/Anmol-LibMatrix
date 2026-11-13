@@ -785,13 +785,6 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
   #loginGate .login-card:has(#otpReveal.is-open) #regTrackLinkBtn{display:none!important}
   @media (max-width:380px){.otp-boxes{gap:4px!important}#loginGate .otp-boxes .otp-box{max-width:34px!important;height:40px!important;font-size:1.05rem!important}}
 </style>
-<style id="hsn-style">#matTable.hsn-off .hsn-col{display:none}
-.hsn-wrap{display:flex;align-items:center;gap:3px}
-.hsn-field.hsn-auto{background:#fffbe6;border-color:#e0b800}
-.hsn-reset{display:none;flex:none;width:22px;height:26px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e3a8a;font-size:13px;line-height:1;cursor:pointer;padding:0}
-.hsn-reset.show{display:inline-block}
-.hsn-reset:hover{background:#eef2ff}
-@media print{.hsn-reset{display:none!important}}</style>
 </head>
 <body class="min-h-screen locked">
 
@@ -1286,12 +1279,11 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
       <button onclick="addRow()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-2.5 py-1 rounded hover:bg-blue-50">+ ADD MATERIAL ROW</button>
     </div>
     <div class="p-3 overflow-x-auto">
-      <table id="matTable" class="mat-table w-full text-sm border-collapse min-w-[900px]">
+      <table class="mat-table w-full text-sm border-collapse min-w-[900px]">
         <thead>
           <tr>
             <th class="w-10">S.No.</th>
             <th class="min-w-[220px]">Material Name / Code</th>
-            <th class="w-28 hsn-col">HSN / SAC</th>
             <th class="w-20">Unit</th>
             <th class="w-28">Price (₹)</th>
             <th class="w-24">Quantity</th>
@@ -1303,7 +1295,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
         <tbody id="materialBody"></tbody>
         <tfoot>
           <tr class="bg-blue-50 font-bold">
-            <td id="totalLabelCell" colspan="5" class="text-right">Total Bill Amount (Taxable Value)</td>
+            <td colspan="5" class="text-right">Total Bill Amount (Taxable Value)</td>
             <td id="totalBillAmount">₹0.00</td>
             <td colspan="2"></td>
           </tr>
@@ -1509,7 +1501,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
 
   <!-- Row 5: Materials / items table -->
   <table class="inv-block inv-items">
-    <colgroup id="invColgroup">
+    <colgroup>
       <col style="width:5%"><col style="width:20%"><col style="width:9%"><col style="width:6%">
       <col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:9%">
       <col style="width:6%"><col style="width:9%"><col style="width:11%">
@@ -1518,7 +1510,6 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
       <tr>
         <th>Sl.<br>No.</th>
         <th>Particulars</th>
-        <th id="invThHsn" style="display:none">HSN /<br>SAC</th>
         <th>Quantity</th>
         <th>Unit</th>
         <th>Rate</th>
@@ -1533,7 +1524,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
     <tbody id="inv-materialRows"></tbody>
     <tfoot>
       <tr class="inv-bold">
-        <td id="invTotalLabel" colspan="5" class="inv-right">Total :-</td>
+        <td colspan="5" class="inv-right">Total :-</td>
         <td id="inv-totalTaxable" class="inv-num"></td>
         <td></td>
         <td id="inv-cgst" class="inv-num"></td>
@@ -1858,14 +1849,13 @@ function loadMaterialCategories(){
       // GST / default price follow the Master unless the user typed their own value in this row
       const gstEl = tr.querySelector('.gst-select');
       if(prev && gstEl && Number(gstEl.value) === Number(prev.gst) && Number(prev.gst) !== Number(m.gst)){
-        tr.children[7].innerHTML = gstCellHTML(Number(m.gst) || 0);
+        tr.children[6].innerHTML = gstCellHTML(Number(m.gst) || 0);
       }
       const priceEl = tr.querySelector('.price-field');
       if(prev && priceEl && (Number(priceEl.value) || 0) === (Number(prev.price) || 0) && (Number(prev.price) || 0) !== (Number(m.price) || 0)){
         priceEl.value = Number(m.price) || 0;
       }
     });
-    refreshAutoHsn();
     calculateAll();
   }).catch(function(err){
     console.warn('Unable to load material categories (using the fallback list):', err.message);
@@ -1919,7 +1909,7 @@ function onWorkCategoryChange(){
         p.tr.dataset.mid = m.id ? String(m.id) : '';
         p.tr.querySelector('.unit-field').value = m.unit == null ? '' : String(m.unit);
         p.tr.querySelector('.price-field').value = Number(m.price) || 0;
-        p.tr.children[7].innerHTML = gstCellHTML(Number(m.gst) || 0);
+        p.tr.children[6].innerHTML = gstCellHTML(Number(m.gst) || 0);
       }
     } else {
       const idx = _catIndexOf(newCatalog, p.it);
@@ -1927,7 +1917,6 @@ function onWorkCategoryChange(){
     }
   });
   if(!rows.length) addRow();
-  refreshAutoHsn();   // work criteria changed: rows still on an auto-filled code follow it
   calculateAll();
 }
 
@@ -2011,7 +2000,7 @@ function gstCellHTML(gstVal){
 
 function onGstChange(sel){
   const tr = sel.closest('tr');
-  const gstTd = tr.children[7];
+  const gstTd = tr.children[6];
   if(sel.value === 'custom'){
     gstTd.innerHTML = gstCellHTML(0.001); // 0.001 forces the "not in slab" (custom) branch even if 0%
     const input = gstTd.querySelector('input.gst-select');
@@ -2023,98 +2012,8 @@ function onGstChange(sel){
 
 function resetGstToSlab(btn){
   const tr = btn.closest('tr');
-  tr.children[7].innerHTML = gstCellHTML(GST_SLABS[0]);
+  tr.children[6].innerHTML = gstCellHTML(GST_SLABS[0]);
   calculateAll();
-}
-
-/* ── HSN / SAC column (Super Admin → Invoice Material List → "HSN / SAC column") ──
-   Visible only when the admin allows it for this user. The code is a normal per-item field saved with the bill, so a hidden
-   column never loses data and an old bill keeps its codes. */
-let HSN_ENABLED = true;   // shown by default; the server answer below can only switch it off for this user
-function _hsnEsc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-function applyHsnFeature(){
-  const on = !!HSN_ENABLED;
-  const t = document.getElementById('matTable');             if(t) t.classList.toggle('hsn-off', !on);
-  const f = document.getElementById('totalLabelCell');       if(f) f.colSpan = on ? 6 : 5;
-  const th = document.getElementById('invThHsn');            if(th) th.style.display = on ? '' : 'none';
-  const tl = document.getElementById('invTotalLabel');       if(tl) tl.colSpan = on ? 6 : 5;
-  const cg = document.getElementById('invColgroup');
-  if(cg){
-    const w = on ? [4,17,8,8,6,8,11,5,8,5,8,12] : [5,20,9,6,8,11,6,9,6,9,11];
-    cg.innerHTML = w.map(function(x){ return '<col style="width:' + x + '%">'; }).join('');
-  }
-}
-function loadInvoiceOptions(){
-  if(!AUTH_TOKEN) return Promise.resolve();
-  return API.get('/material/invoice-a-options?_=' + Date.now()).then(function(r){
-    HSN_ENABLED = !!(r && r.hsnSac); applyHsnFeature();
-    HSN_MASTER = (r && Array.isArray(r.hsnMaster)) ? r.hsnMaster : [];
-    refreshAutoHsn();
-  }).catch(function(){ /* keep the last known state */ });
-}
-document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadInvoiceOptions(); });
-try{ const hsnBc = new BroadcastChannel('anmol-hsn-master'); hsnBc.onmessage = function(){ loadInvoiceOptions(); }; }catch(e){}
-
-/* ── HSN / SAC defaults from the Super Admin "HSN / SAC Master" (work criteria / material type → code) ──
-   Where each row's code came from (input.dataset.src):
-     'auto'   filled from the master — follows the item / work category until the user types
-     'manual' typed or cleared by the user — never overwritten, except by picking another item or pressing ↺
-     'saved'  came with a saved bill — kept exactly as saved
-     ''       empty, nothing to fill yet */
-let HSN_MASTER = [];
-function _hsnDigits(v){ return String(v == null ? '' : v).replace(/\D/g, '').slice(0, 8); }
-function _hsnRx(kw){
-  const t = String(kw || '').trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  return t ? new RegExp('(^|[^a-z0-9])' + t + '(s|es)?($|[^a-z0-9])', 'i') : null;   // whole words only: "plant" ≠ "plantation"
-}
-function hsnDefaultFor(item){
-  if(!item) return '';
-  const own = _hsnDigits(item.hsn);                       // a code stored on the Material Master item itself is the most specific
-  if(own) return own;
-  if(!HSN_MASTER.length) return '';
-  const label = _matLabel(item).toLowerCase();
-  const catEl = document.getElementById('workCategory');
-  const cat = catEl ? catEl.value : '';
-  let best = '', bestScore = -1;
-  HSN_MASTER.forEach(function(m){
-    if(!m || m.active === false) return;
-    const code = _hsnDigits(m.hsn); if(code.length < 4) return;
-    if(m.categoryId && m.categoryId !== cat) return;      // criteria limited to one work category
-    String(m.keywords || '').split(/[,;\n]+/).concat([m.name]).forEach(function(w){
-      const rx = _hsnRx(w); if(!rx || !rx.test(label)) return;
-      const score = String(w).trim().length + (m.categoryId ? 1000 : 0);   // longer / category-specific match wins
-      if(score > bestScore){ bestScore = score; best = code; }
-    });
-  });
-  return best;
-}
-function _hsnRowItem(tr){ const s = tr.querySelector('.mat-select'); return s ? ACTIVE_CATALOG[parseInt(s.value, 10) || 0] : null; }
-function _hsnPaint(tr){
-  const f = tr.querySelector('.hsn-field'), b = tr.querySelector('.hsn-reset'); if(!f) return;
-  const src = f.dataset.src || '';
-  f.classList.toggle('hsn-auto', src === 'auto');
-  f.title = src === 'auto' ? 'Auto-filled from the HSN / SAC master — type to change it for this bill' : 'HSN (4–8 digits) or SAC (6 digits)';
-  if(b){ const def = hsnDefaultFor(_hsnRowItem(tr)); b.classList.toggle('show', !!def && f.value !== def); }
-}
-function _hsnSet(tr, code, src){
-  const f = tr.querySelector('.hsn-field'); if(!f) return;
-  f.value = code;
-  f.dataset.src = (code || src === 'manual' || src === 'saved') ? src : '';
-  _hsnPaint(tr);
-}
-function hsnFill(tr){ _hsnSet(tr, hsnDefaultFor(_hsnRowItem(tr)), 'auto'); }
-function hsnReset(btn){ hsnFill(btn.closest('tr')); }
-function hsnTyped(inp){
-  inp.value = _hsnDigits(inp.value);
-  inp.dataset.src = 'manual';
-  _hsnPaint(inp.closest('tr'));
-}
-function refreshAutoHsn(){
-  document.querySelectorAll('#materialBody tr').forEach(function(tr){
-    const f = tr.querySelector('.hsn-field'); if(!f) return;
-    const src = f.dataset.src || '';
-    if(src === 'auto' || (src === '' && !f.value)) hsnFill(tr); else _hsnPaint(tr);
-  });
 }
 
 function addRow(prefill){
@@ -2131,7 +2030,6 @@ function addRow(prefill){
         ${materialOptions(matIdx)}
       </select>
     </td>
-    <td class="hsn-col"><div class="hsn-wrap"><input type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="HSN / SAC" title="HSN (4–8 digits) or SAC (6 digits)" class="hsn-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm" value="" oninput="hsnTyped(this)"><button type="button" class="hsn-reset no-print" title="Use the default code for this item" onclick="hsnReset(this)">↺</button></div></td>
     <td><input type="text" class="unit-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm bg-gray-50" value="${_unitAttr(ACTIVE_CATALOG[matIdx].unit)}" readonly></td>
     <td><input type="number" min="0" step="0.01" class="price-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${Number(ACTIVE_CATALOG[matIdx].price)||0}" oninput="calculateAll()"></td>
     <td><input type="number" min="0" step="0.01" class="qty-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="0" oninput="calculateAll()"></td>
@@ -2144,7 +2042,6 @@ function addRow(prefill){
     </td>
   `;
   tbody.appendChild(tr);
-  hsnFill(tr);   // default code for this item from the HSN / SAC master (still editable)
   calculateAll();
 }
 
@@ -2153,8 +2050,7 @@ function onMaterialChange(sel){
   const tr = sel.closest('tr');
   tr.dataset.mid = ACTIVE_CATALOG[idx].id ? String(ACTIVE_CATALOG[idx].id) : '';
   tr.querySelector('.unit-field').value = ACTIVE_CATALOG[idx].unit;
-  hsnFill(tr);   // a different item was picked: take that item's default HSN / SAC (type over it to override)
-  tr.children[7].innerHTML = gstCellHTML(ACTIVE_CATALOG[idx].gst);
+  tr.children[6].innerHTML = gstCellHTML(ACTIVE_CATALOG[idx].gst);
   const dp = Number(ACTIVE_CATALOG[idx].price) || 0;   // default price set by Super Admin
   if(dp > 0) tr.querySelector('.price-field').value = dp;
   calculateAll();
@@ -2690,12 +2586,10 @@ function _fillInvoiceFromForm(){
   document.getElementById('inv-block').textContent = document.getElementById('blockField').value;
   document.getElementById('inv-district').textContent = document.getElementById('districtField').value;
 
-  applyHsnFeature();                                  // show / hide the HSN / SAC column on the printed invoice
   const invBody = document.getElementById('inv-materialRows');
   invBody.innerHTML = '';
   document.querySelectorAll('#materialBody tr').forEach((tr,i)=>{
     const matName = tr.querySelector('.mat-select option:checked').textContent;
-    const hsnVal = (tr.querySelector('.hsn-field').value || '').trim();
     const unit = tr.querySelector('.unit-field').value;
     const price = parseFloat(tr.querySelector('.price-field').value) || 0;
     const qty = parseFloat(tr.querySelector('.qty-field').value) || 0;
@@ -2709,7 +2603,6 @@ function _fillInvoiceFromForm(){
     row.innerHTML = `
       <td>${i+1}</td>
       <td class="inv-particulars">${matName}</td>
-      ${HSN_ENABLED ? '<td>' + _hsnEsc(hsnVal) + '</td>' : ''}
       <td>${qty}</td>
       <td>${_unitAttr(unit)}</td>
       <td class="inv-num">${fmtPlain(price)}</td>
@@ -2846,8 +2739,7 @@ function collectFormData(){
       unit: tr.querySelector('.unit-field').value,
       price: tr.querySelector('.price-field').value,
       qty: tr.querySelector('.qty-field').value,
-      gst: tr.querySelector('.gst-select').value,
-      hsn: (tr.querySelector('.hsn-field').value || '').trim()      // HSN / SAC typed by the user (kept even while the column is hidden)
+      gst: tr.querySelector('.gst-select').value
     });
   });
   return {
@@ -2962,8 +2854,7 @@ function applyFormData(data){
     const tr = document.getElementById('materialBody').lastElementChild;
     tr.querySelector('.price-field').value = m.price;
     tr.querySelector('.qty-field').value = m.qty;
-    _hsnSet(tr, _hsnDigits(m.hsn), 'saved');   // a saved bill keeps exactly the code it was saved with
-    tr.children[7].innerHTML = gstCellHTML(m.gst);
+    tr.children[6].innerHTML = gstCellHTML(m.gst);
   });
   if(!(data.materials && data.materials.length)) addRow();
   calculateAll();
@@ -3162,7 +3053,6 @@ function enterPortal(userDoc){
   try{ updateLoggedInUserBar(); }catch(e){ console.error('updateLoggedInUserBar failed:', e); }
   try{ startBillsSync(); }catch(e){ console.error('startBillsSync failed:', e); }
   try{ loadWalletBalance(); }catch(e){}
-  try{ loadInvoiceOptions(); }catch(e){}
   try{ PORTAL_IDLE.start(); }catch(e){ console.error('idle timer failed:', e); }
 }
 
