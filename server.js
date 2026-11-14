@@ -2455,7 +2455,8 @@ app.post('/api/material/change-mobile', requireActiveMaterialUser, (req, res) =>
 });
 
 // 9b) 🔒 Material user: re-confirm their OWN identity before a destructive action (Invoice Portal → "Reset Factory All").
-//   Accepts the logged-in user's account password OR registered mobile number (same two factors as /material/login).
+//   Requires the logged-in user's current account PASSWORD. (Only an account that has no password set yet — it logs in with its
+//   registered mobile number — may confirm with that mobile number instead.)
 //   The identity comes only from the JWT — a user can never be verified as someone else. The password hash never leaves
 //   the server, attempts are rate-limited per user, and the value entered is never logged or returned.
 app.post('/api/material/verify-self', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
@@ -2464,7 +2465,7 @@ app.post('/api/material/verify-self', noStore, requireActiveMaterialUser, asyncR
         return res.status(401).json({ error: 'This check is only available to a logged-in Invoice Portal user. Please log in again.' });
     }
     const cred = req.body && req.body.credential != null ? String(req.body.credential).trim() : '';
-    if (!cred) return res.status(400).json({ error: 'Enter your account password or registered mobile number.' });
+    if (!cred) return res.status(400).json({ error: 'Enter your current account password.' });
     if (hitRateLimit('verify-self:' + String(auth.userId), 6, 5 * 60 * 1000)) {
         return res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
     }
@@ -2478,7 +2479,8 @@ app.post('/api/material/verify-self', noStore, requireActiveMaterialUser, asyncR
     if (u.password_hash && typeof u.password_hash === 'string' && looksHashed(u.password_hash)) {
         try { passwordOk = bcrypt.compareSync(cred, u.password_hash); } catch (e) { passwordOk = false; }
     }
-    if (!mobileOk && !passwordOk) return res.status(403).json({ error: 'Incorrect password or mobile number. Nothing was changed.' });
+    const hasPassword = !!(u.password_hash && typeof u.password_hash === 'string' && looksHashed(u.password_hash));
+    if (hasPassword ? !passwordOk : !mobileOk) return res.status(403).json({ error: 'Incorrect password. Nothing was changed.' });
     res.json({ success: true });
 }));
 
@@ -2743,7 +2745,7 @@ const ENTITY_KEYS = ['admins', 'staff', 'agents', 'students', 'agent_logins'];
 // (koi secret key nahi — Razorpay secret hamesha server-side hi rehta
 // hai) — isliye yeh public-read hai (Agent/Student ko apna subscription/
 // fee payment shuru karne ke liye chahiye).
-const ADMIN_ONLY_READ_BLOB_KEYS = ['sms_api_config', 'hrms_registrations',
+const ADMIN_ONLY_READ_BLOB_KEYS = ['admin_profile_photos', 'sms_api_config', 'hrms_registrations',
     'agent_payments', 'agent_pending_registrations',
     'customer_pending_registrations', 'hrms_pending_registrations'];
 // 🔒 Kuch blob-keys par Employee ko sirf PADHNE ki, likhne ki nahi,
@@ -2759,7 +2761,7 @@ const MULTI_ROLE_READ_BLOB_KEYS = { staff_att: ['admin', 'agent', 'employee'], l
 // WRITE mein 'student' role bhi shaamil hai, lekin READ (poori list dekhna)
 // sirf Admin/Agent ke paas hi hai.
 const MULTI_ROLE_WRITE_BLOB_KEYS = { staff_att: ['admin', 'agent', 'employee'], leave_requests: ['admin', 'agent', 'employee'], hrms_salary_slips: ['admin', 'agent'], hrms_settings: ['admin', 'agent'], hrms_attendance: ['admin', 'agent', 'employee'], hrms_leaves: ['admin', 'agent', 'employee'], hrms_salary_claims: ['admin', 'agent', 'employee'], att_records: ['admin', 'agent', 'student'], student_photos: ['admin', 'agent', 'student'], selfies: ['admin', 'agent', 'student'], attendance_locations: ['admin', 'agent', 'student'], comments: ['admin', 'agent'], att_monthly_summary: ['admin', 'agent'], fee_records: ['admin', 'agent'], pending_staff: ['admin', 'agent'], salary_claims: ['admin', 'agent'] };
-const BLOB_KEYS = ['settings', 'activity', 'notices', 'mem_plans', 'members',
+const BLOB_KEYS = ['admin_profile_photos', 'settings', 'activity', 'notices', 'mem_plans', 'members',
     'hrms_registrations', 'staff_att', 'leave_requests', 'agent_plans', 'agent_payments',
     'razorpay_config', 'sms_api_config', 'agent_pending_registrations', 'customer_pending_registrations',
     'hrms_employees', 'hrms_pending_registrations', 'hrms_salary_slips', 'hrms_settings',
@@ -6387,86 +6389,6 @@ app.put('/api/admin/material-invoice-settings', requireRole('admin'), asyncRoute
     await xBlobSet('material_invoice_settings', cfg);
     auditPii(req, 'invoice_fee_set', 'material_invoice_settings', 'amount=' + cfg.amount + ' enabled=' + cfg.enabled);
     res.json(cfg);
-}));
-
-// ── Invoice Session A: optional "HSN / SAC" column (Super Admin switch; Session B is not affected) ──
-// mode: 'all' = every Session A user sees the column (default) · 'selected' = only hsnUserIds · 'off' = hidden for everyone
-async function invoiceAHsnConfig() {
-    const st = await xBlobGet('invoice_a_options', {});
-    const mode = st && ['off', 'all', 'selected'].indexOf(st.hsnMode) > -1 ? st.hsnMode : 'all';
-    const ids = st && Array.isArray(st.hsnUserIds) ? st.hsnUserIds.map(String) : [];
-    return { hsnMode: mode, hsnUserIds: ids };
-}
-app.get('/api/admin/invoice-a-options', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    res.json(await invoiceAHsnConfig());
-}));
-app.put('/api/admin/invoice-a-options', requireRole('admin'), asyncRoute(async (req, res) => {
-    const b = req.body || {};
-    if (['off', 'all', 'selected'].indexOf(b.hsnMode) < 0) return res.status(400).json({ error: 'Choose Off, All users or Selected users.' });
-    const raw = Array.isArray(b.hsnUserIds) ? b.hsnUserIds : String(b.hsnUserIds || '').split(/[\s,;]+/);
-    const typed = Array.from(new Set(raw.map(x => String(x || '').trim().slice(0, 50)).filter(Boolean)));
-    if (typed.length > 2000) return res.status(400).json({ error: 'At most 2000 User IDs can be listed.' });
-    const known = await dbq('SELECT userid FROM material_users', []);
-    const byLower = {}; known.forEach(u => { byLower[String(u.userid).toLowerCase()] = u.userid; });
-    const ids = [], unknown = [];
-    typed.forEach(t => { const k = byLower[t.toLowerCase()]; if (k) ids.push(k); else unknown.push(t); });
-    if (b.hsnMode === 'selected' && !ids.length) return res.status(400).json({ error: 'Enter at least one valid User ID, or choose another option.' + (unknown.length ? ' Not found: ' + unknown.join(', ') : '') });
-    const cfg = { hsnMode: b.hsnMode, hsnUserIds: ids };
-    await xBlobSet('invoice_a_options', cfg);
-    auditPii(req, 'invoice_a_hsn_set', 'invoice_a_options', 'mode=' + cfg.hsnMode + ' users=' + ids.length);
-    res.json(Object.assign({ success: true, unknown: unknown }, cfg));
-}));
-// ── Invoice Session A: HSN / SAC MASTER (work criteria / material type → default code) ──
-// Each entry: { id, name, keywords, hsn, categoryId, active }
-//   name       = the work criteria / material type shown in Super Admin (e.g. "Plant", "Display Board", "Bamboo")
-//   keywords   = optional comma list of extra words matched against the invoice item name (the name itself is always matched)
-//   hsn        = default HSN (4–8 digits) or SAC (6 digits) code that auto-fills on the Session A bill form
-//   categoryId = '' for every work category, or the id of one Work Category from the Material Master
-//   active     = false keeps the row stored but stops it from filling invoices
-// The invoice user can still type over the auto-filled code on the bill — this list only supplies the default.
-async function invoiceAHsnMaster() {
-    const list = await xBlobGet('invoice_a_hsn_master', []);
-    return Array.isArray(list) ? list : [];
-}
-app.get('/api/admin/invoice-a-hsn-master', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    res.json({ items: await invoiceAHsnMaster() });
-}));
-app.put('/api/admin/invoice-a-hsn-master', requireRole('admin'), asyncRoute(async (req, res) => {
-    const b = req.body || {};
-    if (!Array.isArray(b.items)) return res.status(400).json({ error: 'Nothing to save.' });
-    if (b.items.length > 300) return res.status(400).json({ error: 'At most 300 work criteria can be listed.' });
-    const out = [], usedIds = {};
-    for (let i = 0; i < b.items.length; i++) {
-        const x = b.items[i] || {};
-        const name = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-        if (!name) return res.status(400).json({ error: 'Row ' + (i + 1) + ': enter the work criteria / material type.' });
-        const hsn = String(x.hsn || '').replace(/\D/g, '');
-        if (hsn.length < 4 || hsn.length > 8) return res.status(400).json({ error: 'Row ' + (i + 1) + ' (' + name + '): the HSN / SAC code must be 4 to 8 digits.' });
-        let id = String(x.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
-        if (!id || usedIds[id]) id = 'h' + crypto.randomBytes(6).toString('hex');
-        usedIds[id] = 1;
-        out.push({
-            id: id,
-            name: name,
-            keywords: String(x.keywords || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-            hsn: hsn,
-            categoryId: String(x.categoryId || '').trim().slice(0, 80),
-            active: x.active !== false
-        });
-    }
-    await xBlobSet('invoice_a_hsn_master', out);
-    auditPii(req, 'invoice_a_hsn_master_set', 'invoice_a_hsn_master', 'rows=' + out.length);
-    res.json({ success: true, items: out });
-}));
-// What the logged-in Session A page asks on every login: should the HSN / SAC column be shown for ME?
-app.get('/api/material/invoice-a-options', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
-    const cfg = await invoiceAHsnConfig();
-    const me = String((req.authUser && req.authUser.userId) || '').toLowerCase();
-    const isAdmin = String((req.authUser && req.authUser.role) || '').toLowerCase() === 'admin';
-    const on = cfg.hsnMode === 'all' || (cfg.hsnMode === 'selected' && !!me && cfg.hsnUserIds.some(x => x.toLowerCase() === me)) || (isAdmin && cfg.hsnMode !== 'off');
-    // Default codes travel with the same answer: nothing is sent while the column is hidden for this user.
-    const master = on ? (await invoiceAHsnMaster()).filter(m => m && m.active !== false && /^\d{4,8}$/.test(String(m.hsn || ''))) : [];
-    res.json({ hsnSac: on, hsnMaster: master });
 }));
 
 // 🎓 STUDENT SUBSCRIPTION PAYMENT — Student_Attendance.html ka

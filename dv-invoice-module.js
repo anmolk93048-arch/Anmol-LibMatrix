@@ -63,7 +63,7 @@ const DEFAULT_SETTINGS = {
     cgstPct: 2.5,
     sgstPct: 2.5,
     roundOff: true,
-    userEditable: true,          // true = users may change company / bank / tax-rate fields on their own bill (these values are the defaults)
+    userEditable: false,         // Session B presets are ALWAYS locked: users cannot change company / bank / tax-rate fields on their bill
     defaultCustomer: '',
     defaultBlock: '',
     defaultDistrict: ''
@@ -85,7 +85,7 @@ function sanitizeSettings(b, base) {
         cgstPct: b.cgstPct != null && b.cgstPct !== '' ? Number(b.cgstPct) : Number(cur.cgstPct),
         sgstPct: b.sgstPct != null && b.sgstPct !== '' ? Number(b.sgstPct) : Number(cur.sgstPct),
         roundOff: b.roundOff != null ? (b.roundOff === true || b.roundOff === 'true' || b.roundOff === 1 || b.roundOff === '1') : !!cur.roundOff,
-        userEditable: b.userEditable != null ? (b.userEditable === true || b.userEditable === 'true' || b.userEditable === 1 || b.userEditable === '1') : (cur.userEditable !== false),
+        userEditable: false,                                   // locked for good — kept in the object only for older clients
         defaultCustomer: txt(b.defaultCustomer != null ? b.defaultCustomer : cur.defaultCustomer, 255),
         defaultBlock: txt(b.defaultBlock != null ? b.defaultBlock : cur.defaultBlock, 120),
         defaultDistrict: txt(b.defaultDistrict != null ? b.defaultDistrict : cur.defaultDistrict, 120)
@@ -179,22 +179,11 @@ function parseInvoiceBody(b, settings) {
         if (!isFinite(qty) || qty <= 0 || qty > 1e7) return { error: 'Row ' + (i + 1) + ': quantity must be greater than 0.' };
         if (!isFinite(rate) || rate < 0 || rate > 1e8) return { error: 'Row ' + (i + 1) + ': rate must be 0 or more.' };
         const item = { name: name, qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20), rate: Math.round(rate * 100) / 100 };
-        if (settings.userEditable !== false && r.gst !== '' && r.gst != null) {
-            const g = Number(r.gst);
-            if (!isFinite(g) || g < 0 || g > 100) return { error: 'Row ' + (i + 1) + ': GST % must be between 0 and 100.' };
-            item.gst = Math.round(g * 100) / 100;
-        }
         items.push(item);
     }
     if (!items.length) return { error: 'Add at least one material row.' };
-    // Company / bank / tax-rate fields: the Super-Admin presets are the defaults; when the Super Admin allows it, the user's own entries win.
-    let company = settings;
-    if (settings.userEditable !== false && b.company && typeof b.company === 'object') {
-        const merged = sanitizeSettings(b.company, settings);
-        if (merged.error) return { error: merged.error };
-        company = merged.value;
-        company.roundOff = settings.roundOff;                // rounding stays an admin decision
-    }
+    // Company / bank / tax-rate fields ALWAYS come from the Super-Admin "Session B Presets". Anything a client sends in b.company is ignored.
+    const company = settings;
     const c = calc(items, company.cgstPct, company.sgstPct, company.roundOff);
     if (c.grandTotal > 99999999999) return { error: 'Invoice total is too large.' };
     return {

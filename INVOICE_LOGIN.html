@@ -2133,11 +2133,7 @@ function verifyOwnCredential(value){
   if(!loggedInUser || !AUTH_TOKEN) return Promise.reject(new Error('Session expired — please log in again.'));
   return apiFetch('/material/verify-self', { method:'POST', body: JSON.stringify({ credential: value }) })
     .catch(function(e){
-      // Backend not updated yet (route missing) → fall back to the existing login check, which accepts the same
-      // password / mobile for this very user. The token it returns is ignored.
-      if(e && /Server error \(404\)/.test(e.message || '')){
-        return apiFetch('/material/login', { method:'POST', body: JSON.stringify({ userId: loggedInUser.userId, secondFactor: value }) });
-      }
+      // No fallback: the password check is done only by the server's verify-self route.
       throw e;
     });
 }
@@ -2152,9 +2148,9 @@ function VERIFY_USER_PROMPT(actionName, warningText){
       + '<div style="font-size:30px;text-align:center">🔒</div>'
       + '<h3 id="vup-title" style="margin:6px 0 4px;font-size:17px;text-align:center;font-weight:800">Verify it\'s you</h3>'
       + '<p id="vup-warn" style="margin:0 0 6px;font-size:13px;text-align:center;color:#b42318;font-weight:700;line-height:1.5"></p>'
-      + '<p style="margin:0 0 12px;font-size:13px;text-align:center;color:#4a5568;line-height:1.5">Enter your <b>account password</b> or your <b>registered mobile number</b> to continue with <b id="vup-act"></b>.</p>'
+      + '<p style="margin:0 0 12px;font-size:13px;text-align:center;color:#4a5568;line-height:1.5">Enter your <b>current account password</b> to continue with <b id="vup-act"></b>.</p>'
       + '<div style="position:relative">'
-      +   '<input id="vup-input" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" maxlength="128" aria-label="Account password or registered mobile number" placeholder="Password or mobile number" style="width:100%;padding:11px 64px 11px 12px;border:1.5px solid #b8c4d6;border-radius:9px;font-size:14px;box-sizing:border-box">'
+      +   '<input id="vup-input" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" maxlength="128" aria-label="Current account password" placeholder="Current account password" style="width:100%;padding:11px 64px 11px 12px;border:1.5px solid #b8c4d6;border-radius:9px;font-size:14px;box-sizing:border-box">'
       +   '<button id="vup-eye" type="button" aria-label="Show or hide what you typed" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:transparent;color:#0d1e3d;font-size:12px;font-weight:700;cursor:pointer;padding:6px 8px">Show</button>'
       + '</div>'
       + '<div id="vup-err" role="alert" style="display:none;margin-top:8px;font-size:12px;font-weight:700;color:#b42318"></div>'
@@ -2176,7 +2172,7 @@ function VERIFY_USER_PROMPT(actionName, warningText){
     function submit(){
       if(busy) return;
       var val = inp.value.trim();
-      if(!val){ showErr('Enter your account password or registered mobile number.'); inp.focus(); return; }
+      if(!val){ showErr('Enter your current account password.'); inp.focus(); return; }
       busy = true; ok.disabled = true; ok.textContent = 'Verifying...'; err.style.display = 'none';
       verifyOwnCredential(val)
         .then(function(){ busy = false; done(true); })
@@ -2204,7 +2200,12 @@ function VERIFY_USER_PROMPT(actionName, warningText){
 
 function resetForm(){
   VERIFY_USER_PROMPT('Reset Factory All', 'This clears EVERY field and restores the blank form. It cannot be undone.')
-    .then(function(verified){ if(verified) _doResetForm(); });
+    .then(function(verified){
+      if(!verified) return;                        // wrong password / cancelled → nothing is touched
+      _doResetForm();
+      // also drop this browser's local backup copy of bills — only when every bill is safely on the server
+      try{ if(cloudSyncOK) localStorage.removeItem(LOCAL_BACKUP_KEY); }catch(e){}
+    });
 }
 /* Silent full reset: blank form + edit-mode off (used by the confirm-based Reset and by Back / Reset) */
 function _doResetForm(){

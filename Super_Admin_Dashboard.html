@@ -135,7 +135,7 @@ const API = {
 // data ko dekhte hain — is liye yeh 'admin-entities' route se jaate hain)
 const BACKEND_ENTITY_KEYS = ['admins', 'staff', 'agents', 'students'];
 // In keys ke liye generic blob store hai (routes/blob.js ke ALLOWED_KEYS se match)
-const BACKEND_BLOB_KEYS = ['settings', 'activity', 'notices', 'mem_plans', 'members',
+const BACKEND_BLOB_KEYS = ['admin_profile_photos', 'settings', 'activity', 'notices', 'mem_plans', 'members',
   'hrms_registrations', 'staff_att', 'leave_requests', 'agent_plans', 'agent_payments',
   'razorpay_config', 'sms_api_config',
   'att_records', 'fee_records', 'salary_claims', 'pending_staff', 'selfies', 'attendance_locations',
@@ -3601,23 +3601,6 @@ html,body,#admin-app{width:100%;min-width:0;}
           </div>
 
           <!-- ═══ Pending Self-Registration Requests (yeh users portal se khud aaye hain) ═══ -->
-          <div class="sa-card" id="hsna-card" style="margin-top:0;margin-bottom:14px">
-            <h3>🔢 HSN / SAC Column — Invoice Session A</h3>
-            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Adds an editable <b>HSN / SAC</b> column after <i>Particulars</i> on the Session&nbsp;A bill form and on the printed invoice. Users type the code themselves. This setting affects <b>Session&nbsp;A only</b>.</div>
-            <div class="sa-grid" style="grid-template-columns:minmax(220px,320px) 1fr">
-              <div><label class="sa-lbl">Show the column for</label>
-                <select class="sa-in" id="hsna-mode" onchange="HSNA.sync()">
-                  <option value="all">All Session A users</option>
-                  <option value="selected">Only the User IDs listed →</option>
-                  <option value="off">Nobody (column hidden)</option>
-                </select></div>
-              <div id="hsna-ids-wrap"><label class="sa-lbl">User IDs (comma, space or new line)</label>
-                <textarea class="sa-in" id="hsna-ids" rows="2" placeholder="e.g. INV001, INV002" style="resize:vertical"></textarea></div>
-            </div>
-            <div style="margin-top:10px"><button class="btn btn-gold btn-sm" type="button" onclick="HSNA.save()">💾 Save HSN / SAC setting</button></div>
-            <div id="hsna-msg" class="sa-msg"></div>
-          </div>
-
           <div class="card" id="mu-pending-card" style="display:none;margin-bottom:16px;border:1.5px solid rgba(201,162,39,.4)">
             <div style="padding:14px 16px;font-weight:800;font-size:14px;color:#c9a227;border-bottom:1px solid var(--border)">🕓 Pending Registration Requests — requests received from the portal</div>
             <div class="tbl-wrap">
@@ -3644,25 +3627,34 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="page-header">
             <div>
               <div class="page-title">🧾 Invoice Session B</div>
-              <div class="page-sub">Map User IDs to Session B. Mapped users get the Session B invoice environment the moment they log in with the normal Invoice Portal login.</div>
+              <div class="page-sub">Save the business profile once, then map User IDs to it. Mapped users see these details locked on their invoice portal and only enter customer and material details.</div>
             </div>
-            <div class="actions-row">
-              <div class="search-bar"><span style="color:var(--text-muted);font-size:13px">🔍</span><input type="text" id="isb-search" placeholder="User ID, name, village, mobile…" oninput="ISB.render()"></div>
-              <button class="btn btn-ghost" onclick="ISB.load()">↻ Refresh</button>
-            </div>
-          </div>
-
-          <div class="stat-grid" style="margin-bottom:14px">
-            <div class="stat-card"><div class="stat-label">All Invoice Users</div><div class="stat-value" id="isb-total">0</div></div>
-            <div class="stat-card"><div class="stat-label">On Session A</div><div class="stat-value" id="isb-a">0</div></div>
-            <div class="stat-card green"><div class="stat-label">On Session B</div><div class="stat-value" id="isb-b">0</div></div>
-            <div class="stat-card"><div class="stat-label">Session B Invoices</div><div class="stat-value" id="isb-inv">0</div></div>
+            <div class="actions-row"><button class="btn btn-ghost" onclick="ISB.load();DVS.load()">↻ Refresh</button></div>
           </div>
 
           <div class="sa-card" style="margin-top:0">
-            <h3>🔗 Map User IDs</h3>
-            <div style="font-size:12px;opacity:.8;margin-bottom:8px">Paste one or more User IDs (separated by commas, spaces or new lines). Moving a user back to Session A restores the standard portal; their saved Session B bills are kept.</div>
-            <textarea class="sa-in" id="isb-ids" rows="3" placeholder="e.g. INV001, INV002, INV003" style="resize:vertical"></textarea>
+            <h3>🔒 Session B Presets <span style="font-size:11px;font-weight:600;opacity:.7">— locked for mapped users</span></h3>
+            <div class="sa-grid">
+              <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120" placeholder="e.g. DEV ENTERPRISES"></div>
+              <div><label class="sa-lbl">Address</label><input class="sa-in" id="dv-addr" maxlength="250"></div>
+              <div><label class="sa-lbl">GSTIN</label><input class="sa-in" id="dv-gstin" maxlength="20"></div>
+              <div><label class="sa-lbl">Mobile number(s)</label><input class="sa-in" id="dv-mobile" maxlength="80"></div>
+              <div><label class="sa-lbl">Bank name</label><input class="sa-in" id="dv-bank" maxlength="80"></div>
+              <div><label class="sa-lbl">Bank branch</label><input class="sa-in" id="dv-branch" maxlength="80"></div>
+              <div><label class="sa-lbl">IFSC</label><input class="sa-in" id="dv-ifsc" maxlength="15"></div>
+              <div><label class="sa-lbl">A/C No.</label><input class="sa-in" id="dv-acc" maxlength="25" inputmode="numeric"></div>
+              <div><label class="sa-lbl">CGST %</label><input class="sa-in" id="dv-cgst" type="number" min="0" max="50" step="0.01"></div>
+              <div><label class="sa-lbl">SGST %</label><input class="sa-in" id="dv-sgst" type="number" min="0" max="50" step="0.01"></div>
+              <div><label class="sa-lbl">Round off invoice total</label><select class="sa-in" id="dv-round"><option value="1">Yes (to nearest rupee)</option><option value="0">No (exact paise)</option></select></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="DVS.save()">💾 Save &amp; Lock Presets</button></div>
+            <div id="dv-msg" class="sa-msg"></div>
+            <div style="font-size:11.5px;opacity:.75;margin-top:6px">Saved bills keep the details they were issued with. New and re-issued bills always use these presets.</div>
+          </div>
+
+          <div class="sa-card">
+            <h3>🔗 Map User IDs to Session B</h3>
+            <textarea class="sa-in" id="isb-ids" rows="2" placeholder="User IDs separated by commas, spaces or new lines — e.g. INV001, INV002" style="resize:vertical"></textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
               <button class="btn btn-gold btn-sm" type="button" onclick="ISB.mapTyped('B')">➜ Map to Session B</button>
               <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.mapTyped('A')">↩ Move back to Session A</button>
@@ -3671,42 +3663,12 @@ html,body,#admin-app{width:100%;min-width:0;}
           </div>
 
           <div class="card" style="margin-top:14px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border)">
-              <select class="form-input form-select" id="isb-filter" style="width:auto;padding:6px 8px;font-size:12px" onchange="ISB.render()">
-                <option value="all">All users</option><option value="B">Session B only</option><option value="A">Session A only</option>
-              </select>
-              <span style="font-size:12px;color:var(--text-muted)" id="isb-sel-count">0 selected</span>
-              <span style="flex:1"></span>
-              <button class="btn btn-gold btn-sm" type="button" onclick="ISB.mapSelected('B')">Map selected → B</button>
-              <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.mapSelected('A')">Selected → A</button>
-            </div>
+            <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:800">Users on Session B (<span id="isb-b">0</span>)</div>
             <div class="tbl-wrap"><table>
-              <thead><tr><th style="width:34px"><input type="checkbox" id="isb-all" onchange="ISB.toggleAll(this.checked)"></th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village</th><th>Mobile</th><th>Status</th><th>Session</th><th>B Bills</th><th>Action</th></tr></thead>
+              <thead><tr><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Mobile</th><th>Status</th><th>Bills</th><th>Action</th></tr></thead>
               <tbody id="isb-body"></tbody>
             </table></div>
           </div>
-  <div class="sa-card">
-    <h3>🏢 Session B — Company, Bank &amp; Tax Presets</h3>
-    <div style="font-size:12px;opacity:.8;margin-bottom:8px">These are the <b>default</b> company, bank and tax details every Session&nbsp;B user starts a bill with. A saved bill keeps the details it was issued with, so changes here affect only <b>new</b> bills.</div>
-    <div class="sa-grid">
-      <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120"></div>
-      <div><label class="sa-lbl">Address</label><input class="sa-in" id="dv-addr" maxlength="250"></div>
-      <div><label class="sa-lbl">GSTIN</label><input class="sa-in" id="dv-gstin" maxlength="20"></div>
-      <div><label class="sa-lbl">Mobile number(s)</label><input class="sa-in" id="dv-mobile" maxlength="80"></div>
-      <div><label class="sa-lbl">Bank name</label><input class="sa-in" id="dv-bank" maxlength="80"></div>
-      <div><label class="sa-lbl">Bank branch</label><input class="sa-in" id="dv-branch" maxlength="80"></div>
-      <div><label class="sa-lbl">IFSC</label><input class="sa-in" id="dv-ifsc" maxlength="15"></div>
-      <div><label class="sa-lbl">A/C No.</label><input class="sa-in" id="dv-acc" maxlength="25" inputmode="numeric"></div>
-      <div><label class="sa-lbl">Default CGST %</label><input class="sa-in" id="dv-cgst" type="number" min="0" max="50" step="0.01"></div>
-      <div><label class="sa-lbl">Default SGST %</label><input class="sa-in" id="dv-sgst" type="number" min="0" max="50" step="0.01"></div>
-      <div><label class="sa-lbl">Round off invoice total</label><select class="sa-in" id="dv-round"><option value="1">Yes (to nearest rupee)</option><option value="0">No (exact paise)</option></select></div>
-      <div><label class="sa-lbl">Users may edit these fields</label><select class="sa-in" id="dv-edit"><option value="1">Yes — prefilled, editable per bill</option><option value="0">No — locked to the values above</option></select></div>
-      <div><label class="sa-lbl">Default customer name (optional)</label><input class="sa-in" id="dv-dcust" maxlength="255"></div>
-      <div><label class="sa-lbl">Default block / district (optional)</label><div style="display:flex;gap:6px"><input class="sa-in" id="dv-dblock" maxlength="120" placeholder="Block"><input class="sa-in" id="dv-ddist" maxlength="120" placeholder="District"></div></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="DVS.save()">💾 Save DV Presets</button></div>
-    <div id="dv-msg" class="sa-msg"></div>
-  </div>
         </div>
 
         <!-- ═══ ADMIN ACCOUNTS ═══ -->
@@ -6685,8 +6647,39 @@ function UPDATE_SIDEBAR_ADMIN_AVATAR(){
   }
 }
 
+/* ── Super Admin profile photo: kept in its own server store (blob 'admin_profile_photos', keyed by username) AND a local cache,
+      so it survives re-logins, refreshes, other devices and any later save of the admin list. ── */
+var ADMIN_PHOTO_KEY='admin_profile_photos';
+function ADMIN_PHOTO_UKEY(a){ return String((a&&a.username)||'').toLowerCase(); }
+function ADMIN_PHOTO_MAP(){ try{ var m=JSON.parse(localStorage.getItem('shdl_'+ADMIN_PHOTO_KEY)); return (m&&typeof m==='object'&&!Array.isArray(m))?m:{}; }catch(e){ return {}; } }
+function ADMIN_PHOTO_CACHE(m){ try{ localStorage.setItem('shdl_'+ADMIN_PHOTO_KEY,JSON.stringify(m)); }catch(e){} }
+/* writes the photo (or removes it when photo is empty) to the server; resolves only when the server really stored it */
+function ADMIN_PHOTO_PERSIST(a,photo){
+  var m=Object.assign({},ADMIN_PHOTO_MAP()), k=ADMIN_PHOTO_UKEY(a);
+  return API.get('/blob/'+ADMIN_PHOTO_KEY).catch(function(){ return null; }).then(function(server){
+    if(server&&typeof server==='object'&&!Array.isArray(server)) m=Object.assign({},server,m);   // never drop other admins' photos
+    if(photo) m[k]=photo; else delete m[k];
+    ADMIN_PHOTO_CACHE(m);
+    return API.post('/blob/'+ADMIN_PHOTO_KEY,m);
+  });
+}
+/* after sign-in / refresh: bring the stored photo back onto currentAdmin and repaint every avatar */
+function ADMIN_PHOTO_RESTORE(){
+  if(!currentAdmin) return;
+  var k=ADMIN_PHOTO_UKEY(currentAdmin), local=ADMIN_PHOTO_MAP()[k];
+  if(local && !currentAdmin.photo){ currentAdmin.photo=local; UPDATE_TOPBAR(); }
+  API.get('/blob/'+ADMIN_PHOTO_KEY).then(function(server){
+    if(!server||typeof server!=='object'||Array.isArray(server)||!currentAdmin) return;
+    var merged=Object.assign({},ADMIN_PHOTO_MAP(),server); ADMIN_PHOTO_CACHE(merged);
+    var p=server[k];
+    if(p && p!==currentAdmin.photo){ currentAdmin.photo=p; UPDATE_TOPBAR(); }
+    else if(!p && currentAdmin.photo && ADMIN_PHOTO_MAP()[k]){ ADMIN_PHOTO_PERSIST(currentAdmin,currentAdmin.photo).catch(function(){}); }   // server has none yet → upload the local one
+  }).catch(function(){ /* offline: the local cache is already applied */ });
+}
+
 function UPDATE_TOPBAR(){
   if(!currentAdmin) return;
+  if(!currentAdmin.photo){ var _lp=ADMIN_PHOTO_MAP()[ADMIN_PHOTO_UKEY(currentAdmin)]; if(_lp) currentAdmin.photo=_lp; }
   document.getElementById('topbar-admin-name').textContent = currentAdmin.name.split(' ')[0];
   var topAv=document.getElementById('topbar-admin-av');
   if(topAv){
@@ -10607,6 +10600,7 @@ function RENDER_MU_ENTRIES(bills){
       + '<td style="font-size:10px">'+savedOn+'</td>'
       + '<td style="display:flex;gap:6px">'
       +   '<button class="btn-icon" title="View / Print invoice" onclick="MAT_SHOW_INVOICE(_muEntriesCurrentList.find(function(x){return x._docId===\''+b._docId+'\';}),\'Invoice\')">🖨️</button>'
+      +   '<button class="btn-icon" title="Download PDF" onclick="MAT_PDF_DIRECT(_muEntriesCurrentList.find(function(x){return x._docId===\''+b._docId+'\';}))">⬇️</button>'
       +   '<button class="btn-icon" title="Edit" onclick="OPEN_MU_ENTRY_EDIT(\''+b._docId+'\')">✏️</button>'
       +   '<button class="btn-icon" title="Delete" onclick="DELETE_MU_ENTRY(\''+b._docId+'\')">🗑️</button>'
       + '</td>'
@@ -10734,16 +10728,26 @@ function MAT_SHOW_INVOICE(bill,title){
     +'<button class="sa-btn gh" onclick="document.getElementById(\'mat-inv-modal\').remove()">✕ Close</button></div><div style="overflow:auto">'+MAT_INVOICE_HTML(bill)+'</div></div>';
   document.body.appendChild(m);
 }
+/* One-click PDF straight from a list row: builds the invoice off-screen (no modal, no print dialog) and downloads it */
+function MAT_PDF_DIRECT(bill){
+  if(!bill){ SHOW_TOAST('❌ Invoice not found.'); return; }
+  var host=document.createElement('div'); host.style.cssText='position:fixed;left:-10000px;top:0;width:800px;background:#fff';
+  host.innerHTML=MAT_INVOICE_HTML(bill); document.body.appendChild(host);
+  var sheet=host.firstElementChild; if(sheet) sheet.removeAttribute('id');
+  SHOW_TOAST('⏳ Preparing PDF…');
+  var p=MAT_PDF_INVOICE(bill.billNo||'invoice',sheet);
+  Promise.resolve(p).then(function(){ setTimeout(function(){ host.remove(); },400); },function(){ host.remove(); });
+}
 function MAT_PRINT_INVOICE(){
   var done=function(){ document.body.classList.remove('mat-inv-printing'); window.removeEventListener('afterprint',done); };
   document.body.classList.add('mat-inv-printing'); window.addEventListener('afterprint',done); window.print();
 }
-function MAT_PDF_INVOICE(name){
+function MAT_PDF_INVOICE(name,el){
   var no=String(name||'').trim().replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'NA';
   var fileName='Anmol_LibMatrix_Invoice_'+no+'.pdf';
-  MAT_LOAD_SCRIPT('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',function(){ return !!window.html2canvas; })
+  return MAT_LOAD_SCRIPT('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',function(){ return !!window.html2canvas; })
   .then(function(){ return MAT_LOAD_SCRIPT('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',function(){ return !!(window.jspdf&&window.jspdf.jsPDF); }); })
-  .then(function(){ return html2canvas(document.getElementById('mat-inv-sheet'),{ scale:3, backgroundColor:'#ffffff', useCORS:true, scrollX:0, scrollY:0 }); })
+  .then(function(){ return html2canvas(el||document.getElementById('mat-inv-sheet'),{ scale:3, backgroundColor:'#ffffff', useCORS:true, scrollX:0, scrollY:0 }); })
   .then(function(canvas){
     var PW=210, PH=297, M=12, bw=PW-2*M, bh=PH-2*M;
     var w=bw, h=w*canvas.height/canvas.width; if(h>bh){ var k=bh/h; w*=k; h=bh; }     // natural proportions, inside the margins
@@ -10977,7 +10981,9 @@ function HANDLE_ADMIN_PROFILE_FILE(input){
     DB.set('admins',admins);
     UPDATE_TOPBAR();
     RENDER_ADMINS();
-    SHOW_TOAST('✅ Profile photo updated everywhere.');
+    ADMIN_PHOTO_PERSIST(currentAdmin,photo)
+      .then(function(){ SHOW_TOAST('✅ Profile photo saved permanently.'); })
+      .catch(function(e){ SHOW_TOAST('⚠️ Photo shown here but NOT saved to the server ('+((e&&e.message)||'network error')+'). Please upload again.',5000); });
     input.value='';
   });
 }
@@ -10988,11 +10994,12 @@ function REMOVE_ADMIN_PROFILE_PHOTO(){
   var idx=admins.findIndex(function(a){return a.id===currentAdmin.id;});
   if(idx<0) return;
   delete admins[idx].photo;
+  var _who=currentAdmin;
   delete currentAdmin.photo;
   DB.set('admins',admins);
   UPDATE_TOPBAR();
   RENDER_ADMINS();
-  SHOW_TOAST('✅ Profile photo removed.');
+  ADMIN_PHOTO_PERSIST(_who,'').then(function(){ SHOW_TOAST('✅ Profile photo removed.'); }).catch(function(){ SHOW_TOAST('⚠️ Removed here, but the server could not be updated.'); });
 }
 
 function RENDER_ADMINS(filter=''){
@@ -12422,6 +12429,7 @@ document.addEventListener('DOMContentLoaded',function(){
   CloudSync.pullAll(function(){
     INIT_DATA();
     APPLY_SETTINGS();
+    try{ ADMIN_PHOTO_RESTORE(); }catch(e){}
     // Real-time listeners start karo
     CloudSync.listenStudents();
     CloudSync.listenAttendance();
@@ -15930,6 +15938,7 @@ function enter(user){
   try{LOG_ACTIVITY('🔐 Admin session: '+currentAdmin.name+(user.location?' @ '+user.location:''));}catch(e){}
   try{REFRESH_DASH();}catch(e){}
   try{UPDATE_TOPBAR();}catch(e){}
+  try{ADMIN_PHOTO_RESTORE();}catch(e){}
   try{$('dash-date').textContent=DATE_STR();}catch(e){}
   if(user.location){ try{var chip=document.querySelector('.admin-chip'); if(chip) chip.title='Location: '+user.location;}catch(e){} }
   toast('✅ Welcome '+currentAdmin.name+'!');
@@ -16427,19 +16436,19 @@ window.GLOBAL_SEARCH=function(value){
   window.GOTO=function(page){_G2(page);if(page==='settings')MU.load();};
 })();
 
-/* 🧾 Invoice Session B — company / bank / tax presets (Invoice Session B page) */
+/* 🧾 Invoice Session B — locked company / bank / tax presets (Invoice Session B page) */
 (function(){
   function $(i){return document.getElementById(i);}
   function msg(t,ok){var m=$('dv-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  var MAP={name:'companyName',addr:'address',gstin:'gstin',mobile:'mobile',bank:'bankName',branch:'branch',ifsc:'ifsc',acc:'accountNo',cgst:'cgstPct',sgst:'sgstPct',dcust:'defaultCustomer',dblock:'defaultBlock',ddist:'defaultDistrict'};
+  var MAP={name:'companyName',addr:'address',gstin:'gstin',mobile:'mobile',bank:'bankName',branch:'branch',ifsc:'ifsc',acc:'accountNo',cgst:'cgstPct',sgst:'sgstPct'};
   window.DVS={
     load:function(){apiFetch('/admin/dv-settings').then(function(c){
       Object.keys(MAP).forEach(function(k){var el=$('dv-'+k);if(el)el.value=c[MAP[k]]==null?'':c[MAP[k]];});
-      $('dv-round').value=c.roundOff===false?'0':'1';var e=$('dv-edit');if(e)e.value=c.userEditable===false?'0':'1';
-    }).catch(function(e){msg(e.message||'Unable to load the DV presets.');});},
+      $('dv-round').value=c.roundOff===false?'0':'1';
+    }).catch(function(e){msg(e.message||'Unable to load the Session B presets.');});},
     save:function(){
-      var b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';b.userEditable=$('dv-edit').value==='1';
-      apiFetch('/admin/dv-settings',{method:'PUT',body:JSON.stringify(b)}).then(function(){msg('DV Enterprises presets saved.',true);SHOW_TOAST('✅ DV invoice presets saved.');DVS.load();})
+      var b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';b.userEditable=false;
+      apiFetch('/admin/dv-settings',{method:'PUT',body:JSON.stringify(b)}).then(function(){msg('Session B presets saved and locked for all mapped users.',true);SHOW_TOAST('✅ Session B presets saved & locked.');DVS.load();})
       .catch(function(e){msg(e.message||'Unable to save.');});
     }
   };
@@ -16449,83 +16458,37 @@ window.GLOBAL_SEARCH=function(value){
 
 
 
-/* 🔢 HSN / SAC column switch for Invoice Session A (Invoice Material List page) */
-(function(){
-  function $(i){return document.getElementById(i);}
-  function msg(t,ok){var m=$('hsna-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  window.HSNA={
-    sync:function(){var w=$('hsna-ids-wrap');if(w)w.style.display=$('hsna-mode').value==='selected'?'':'none';},
-    load:function(){
-      return apiFetch('/admin/invoice-a-options').then(function(c){
-        $('hsna-mode').value=c.hsnMode||'all';$('hsna-ids').value=(c.hsnUserIds||[]).join(', ');HSNA.sync();
-      }).catch(function(e){msg(e.message||'Could not load the HSN / SAC setting.');});
-    },
-    save:function(){
-      var mode=$('hsna-mode').value;
-      apiFetch('/admin/invoice-a-options',{method:'PUT',body:JSON.stringify({hsnMode:mode,hsnUserIds:$('hsna-ids').value})}).then(function(r){
-        $('hsna-ids').value=(r.hsnUserIds||[]).join(', ');
-        var t='Saved — '+(mode==='all'?'HSN / SAC is shown to all Session A users.':mode==='off'?'HSN / SAC is hidden for everyone.':'HSN / SAC is shown to '+r.hsnUserIds.length+' selected user(s).');
-        if(r.unknown&&r.unknown.length)t+=' Not found (ignored): '+r.unknown.join(', ')+'.';
-        msg(t,!(r.unknown&&r.unknown.length));SHOW_TOAST('✅ HSN / SAC setting saved');
-      }).catch(function(e){msg(e.message);});
-    }
-  };
-  var _g=window.GOTO;
-  window.GOTO=function(page){var r=_g.apply(this,arguments);if(page==='material-users')HSNA.load();return r;};
-})();
-
 /* 🧾 Invoice Session B — user mapping (Invoice Session B page) */
 (function(){
   function $(i){return document.getElementById(i);}
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function msg(t,ok){var m=$('isb-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  var rows=[],sel={};
-  function visible(){
-    var q=($('isb-search').value||'').toLowerCase().trim(),f=$('isb-filter').value;
-    return rows.filter(function(u){
-      if(f!=='all'&&u.session!==f)return false;
-      return !q||[u.userId,u.name,u.village,u.mobile].join(' ').toLowerCase().indexOf(q)>-1;
-    });
-  }
-  function counts(){
-    var b=rows.filter(function(u){return u.session==='B';});
-    $('isb-total').textContent=rows.length;$('isb-b').textContent=b.length;$('isb-a').textContent=rows.length-b.length;
-    $('isb-inv').textContent=b.reduce(function(n,u){return n+u.invoices;},0);
-    var nb=$('nb-session-b');if(nb)nb.textContent=b.length;
-    $('isb-sel-count').textContent=Object.keys(sel).length+' selected';
-  }
+  var rows=[];
   function put(ids,session){
     return apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:ids,session:session})});
   }
   window.ISB={
     load:function(){
-      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];sel={};ISB.render();})
-        .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
+      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();})
+        .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
     },
     render:function(){
-      var list=visible(),b=$('isb-body');if(!b)return;
+      var list=rows.filter(function(u){return u.session==='B';}),b=$('isb-body');
+      var c=$('isb-b');if(c)c.textContent=list.length;
+      var nb=$('nb-session-b');if(nb)nb.textContent=list.length;
+      if(!b)return;
       b.innerHTML=list.length?list.map(function(u){
-        var isB=u.session==='B',blocked=u.status==='blocked';
-        return '<tr><td><input type="checkbox" '+(sel[u.userId]?'checked ':'')+'onchange="ISB.pick(\''+esc(u.userId)+'\',this.checked)"></td>'
-          +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+esc(u.userId)+'</td>'
-          +'<td>'+esc(u.name||'—')+'</td><td>'+esc(u.village||'—')+'</td><td>'+esc(u.mobile||'—')+'</td>'
+        var blocked=u.status==='blocked';
+        return '<tr><td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+esc(u.userId)+'</td>'
+          +'<td>'+esc(u.name||'—')+'</td><td>'+esc(u.mobile||'—')+'</td>'
           +'<td><span class="badge '+(blocked?'inactive':'active')+'">'+(blocked?'🚫 Blocked':'✅ Active')+'</span></td>'
-          +'<td><span class="badge '+(isB?'active':'inactive')+'" style="'+(isB?'':'background:rgba(120,130,150,.18);color:var(--text-muted)')+'">'+(isB?'Session B':'Session A')+'</span></td>'
           +'<td>'+u.invoices+'</td>'
-          +'<td><button class="btn btn-sm '+(isB?'btn-ghost':'btn-gold')+'" onclick="ISB.one(\''+esc(u.userId)+'\',\''+(isB?'A':'B')+'\')">'+(isB?'↩ To Session A':'➜ To Session B')+'</button></td></tr>';
-      }).join(''):'<tr><td colspan="9" style="text-align:center;padding:26px;color:var(--text-muted)">No users found.</td></tr>';
-      counts();
+          +'<td><button class="btn btn-sm btn-ghost" onclick="ISB.one(\''+esc(u.userId)+'\',\'A\')">↩ To Session A</button></td></tr>';
+      }).join(''):'<tr><td colspan="6" style="text-align:center;padding:26px;color:var(--text-muted)">No users are on Session B yet — add User IDs above.</td></tr>';
     },
-    pick:function(id,on){if(on)sel[id]=1;else delete sel[id];counts();},
-    toggleAll:function(on){sel={};if(on)visible().forEach(function(u){sel[u.userId]=1;});ISB.render();},
     one:function(id,session){
       if(!confirm('Move '+id+' to Invoice Session '+session+'? Their next login opens that environment.'))return;
       put([id],session).then(function(){SHOW_TOAST('✅ '+id+' → Session '+session);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){SHOW_TOAST('❌ '+e.message);});
-    },
-    mapSelected:function(session){
-      var ids=Object.keys(sel);if(!ids.length){msg('Select at least one user first.');return;}
-      if(!confirm('Move '+ids.length+' user(s) to Invoice Session '+session+'?'))return;
-      put(ids,session).then(function(r){msg(r.updated.length+' user(s) moved to Session '+session+'.',true);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){msg(e.message);});
     },
     mapTyped:function(session){
       var raw=($('isb-ids').value||'').trim();if(!raw){msg('Enter at least one User ID.');return;}
@@ -16755,11 +16718,13 @@ function BILLS_RENDER(){
      +'<td style="font-family:monospace;color:#c9a227">'+MAT_ESC(b.ownerUserId||'—')+(b.ownerName?'<div style="font-family:inherit;font-size:10px;color:var(--text-muted)">'+MAT_ESC(b.ownerName)+'</div>':'')+'</td><td>'+MAT_ESC(b.businessName||b.vendorName||'—')+'</td><td>'+MAT_ESC(b.workCode||'—')+'</td>'
      +'<td style="text-align:right">'+tot.toLocaleString('en-IN',{minimumFractionDigits:2})+'</td><td style="font-size:10px">'+MAT_ESC(b.savedAt?new Date(b.savedAt).toLocaleString('en-IN'):'—')+'</td>'
      +'<td style="display:flex;gap:6px"><button class="btn-icon" title="View / Print invoice" onclick="BILLS_VIEW(\''+id+'\')">🖨️</button>'
+     +'<button class="btn-icon" title="Download PDF" onclick="BILLS_PDF(\''+id+'\')">⬇️</button>'
      +'<button class="btn-icon" title="Edit" onclick="BILLS_EDIT(\''+id+'\')">✏️</button>'
      +'<button class="btn-icon" title="Delete" style="color:#c0262d" onclick="BILLS_DELETE(\''+id+'\')">🗑️</button></td></tr>';
   }).join('');
 }
 function BILLS_FIND(id){ return BILLS.find(function(x){ return x._docId===String(id); }); }
+function BILLS_PDF(id){ var b=BILLS_FIND(id); if(b) MAT_PDF_DIRECT(b); }
 function BILLS_VIEW(id){ var b=BILLS_FIND(id); if(b) MAT_SHOW_INVOICE(b,'Invoice '+(b.billNo||'')); }
 function BILLS_DELETE(id){
   var b=BILLS_FIND(id); if(!b) return;

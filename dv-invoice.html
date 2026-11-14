@@ -463,7 +463,7 @@
 </div>
 
 <main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
-  <div id="lockNote" class="login-error" style="display:none;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">Company, bank and tax details are set by the administrator and cannot be changed here.</div>
+  <div id="lockNote" class="login-error" style="display:block;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">🔒 Company, bank and tax details are your locked Session B business profile, set by the administrator. Just enter the customer and material details.</div>
   <div id="pageError" class="login-error"></div>
 
   <section class="gov-card bg-white rounded-sm overflow-hidden">
@@ -510,11 +510,11 @@
       <table class="mat-table w-full text-sm border-collapse min-w-[980px]">
         <thead><tr>
           <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th>
-          <th class="w-20" title="Optional. Leave blank to use the CGST + SGST rates above">GST %</th><th class="w-28">Taxable (₹)</th><th class="w-24">CGST (₹)</th><th class="w-24">SGST (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
+          <th class="w-28">Taxable (₹)</th><th class="w-24">CGST (₹)</th><th class="w-24">SGST (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
         </tr></thead>
         <tbody id="rows"></tbody>
         <tfoot><tr class="bg-blue-50 font-bold">
-          <td colspan="6" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfCgst" class="text-right">0.00</td><td id="tfSgst" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
+          <td colspan="5" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfCgst" class="text-right">0.00</td><td id="tfSgst" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -709,23 +709,22 @@ function rowHtml(){
     + '<td><input class="inp r-unit" maxlength="20" placeholder="Unit"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
-    + '<td><input class="inp r-gst text-right" type="number" min="0" max="100" step="any" placeholder="auto" oninput="recalc()"></td>'
     + '<td class="text-right r-tax">0.00</td><td class="text-right r-cgst">0.00</td><td class="text-right r-sgst">0.00</td><td class="text-right font-semibold r-total">0.00</td>'
     + '<td class="text-center"><button type="button" class="text-red-600 font-bold" title="Remove row" onclick="delRow(this)">✕</button></td></tr>';
 }
 function addRow(v){
   $('rows').insertAdjacentHTML('beforeend', rowHtml());
   var tr = $('rows').lastElementChild;
-  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; if (v.gst != null) tr.querySelector('.r-gst').value = v.gst; }
+  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; }
   recalc();
 }
 function delRow(btn){ var tr = btn.closest('tr'); tr.parentNode.removeChild(tr); if (!$('rows').children.length) addRow(); recalc(); }
 function readItems(){
   var items = [];
   Array.prototype.forEach.call($('rows').children, function(tr, i){
-    var name = tr.querySelector('.r-name').value.trim(), q = tr.querySelector('.r-qty').value, r = tr.querySelector('.r-rate').value, g = tr.querySelector('.r-gst').value;
+    var name = tr.querySelector('.r-name').value.trim(), q = tr.querySelector('.r-qty').value, r = tr.querySelector('.r-rate').value;
     if (!name && q === '' && r === '') return;
-    items.push({ name: name, unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: g === '' ? null : num(g), _tr: tr, _no: i + 1 });
+    items.push({ name: name, unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: null, _tr: tr, _no: i + 1 });
   });
   return items;
 }
@@ -750,10 +749,9 @@ function fillCompany(c){
   Object.keys(COMPANY_FIELDS).forEach(function(k){ var el = $(COMPANY_FIELDS[k]); if (el && c && c[k] != null) el.value = c[k]; });
 }
 function applyLock(){
-  var locked = SETTINGS && SETTINGS.userEditable === false;
-  Array.prototype.forEach.call(document.querySelectorAll('.co'), function(el){ el.readOnly = locked; });
-  $('lockNote').style.display = locked ? 'block' : 'none';
-  Array.prototype.forEach.call(document.querySelectorAll('.r-gst'), function(el){ el.readOnly = locked; });
+  /* Session B company / bank / tax details are ALWAYS the locked Super-Admin presets */
+  Array.prototype.forEach.call(document.querySelectorAll('.co'), function(el){ el.readOnly = true; el.tabIndex = -1; el.classList.add('bg-gray-50'); });
+  $('lockNote').style.display = 'block';
 }
 function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function newBill(){
@@ -767,7 +765,7 @@ function resetForm(){ if (confirm('Clear the whole form and start a new bill? Sa
 
 /* ───────── save / generate ───────── */
 function payload(){
-  var items = readItems().map(function(i){ return { name: i.name, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst == null ? '' : i.gst }; });
+  var items = readItems().map(function(i){ return { name: i.name, unit: i.unit, qty: i.qty, rate: i.rate }; });
   return { billNo: $('billNo').value, date: $('billDate').value, customer: $('customer').value, block: $('block').value, district: $('district').value,
            transport: $('transport').value, vehicle: $('vehicle').value, items: items, company: readCompany() };
 }
@@ -818,8 +816,8 @@ function openBill(id, print){
     editingId = inv.id; origBillNo = inv.billNo; showErr('');
     $('billNo').value = inv.billNo; $('billDate').value = inv.date; $('customer').value = inv.customer; $('block').value = inv.block; $('district').value = inv.district;
     $('transport').value = inv.transport; $('vehicle').value = inv.vehicle;
-    if (inv.company) fillCompany(inv.company);
-    $('rows').innerHTML = ''; (inv.items || []).forEach(function(it){ addRow({ name: it.name, unit: it.unit, qty: it.qty, rate: it.rate, gst: it.gst }); });
+    if (SETTINGS) fillCompany(SETTINGS);   // company / bank / tax are always the locked presets
+    $('rows').innerHTML = ''; (inv.items || []).forEach(function(it){ addRow({ name: it.name, unit: it.unit, qty: it.qty, rate: it.rate }); });
     if (!$('rows').children.length) addRow();
     applyLock(); toggleSidebar(); window.scrollTo({ top: 0, behavior: 'smooth' });
     toast('Editing bill ' + inv.billNo + ' — change the Bill No. to save it as a new bill.');
