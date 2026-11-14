@@ -30,6 +30,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Anmol LibMatrix Invoice Portal — Session B</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<style>
+  /* plan banner / plan + password dialogs */
+  #planBanner{display:none;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;display:none;align-items:center;gap:10px;flex-wrap:wrap}
+  #planBanner.show{display:flex}
+  #planBanner.ok{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46}
+  #planBanner.warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+  #planBanner.bad{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+  #planBanner button{margin-left:auto;padding:7px 14px;border-radius:6px;border:none;background:#0b2545;color:#fff;font-weight:800;font-size:12px;cursor:pointer}
+  body.plan-locked main > section:not(.act-bar){pointer-events:none;opacity:.55;filter:grayscale(.35)}
+  body.plan-locked #saveBtn, body.plan-locked #genBtn{opacity:.45;cursor:not-allowed}
+  .dv-ov{position:fixed;inset:0;z-index:100000;background:rgba(13,30,61,.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:14px}
+  .dv-dlg{background:#fff;color:#0d1e3d;border-radius:14px;padding:22px;max-width:460px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 14px 44px rgba(0,0,0,.35)}
+  .dv-plan{border:1.5px solid #cbd5e1;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center}
+  .dv-plan b{font-size:15px}.dv-plan .pr{font-size:20px;font-weight:800;color:#0f6e56;white-space:nowrap}
+  .dv-plan button{margin-left:auto;padding:9px 14px;border-radius:8px;border:none;background:#0f6e56;color:#fff;font-weight:800;cursor:pointer;white-space:nowrap}
+</style>
 <style>
   :root{
     --gov-navy:#0b2545;
@@ -212,6 +229,7 @@
   #invoiceArea .inv-noborder{ border:none !important; }
   #invoiceArea .inv-sig-box{ height:70px; }
   #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
+  #invoiceArea .inv-items th{ white-space:nowrap !important; word-break:keep-all !important; overflow-wrap:normal !important; word-wrap:normal !important; padding:3px 2px; font-size:9.5px; letter-spacing:0; overflow:hidden; }
   #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
   #invoiceArea .inv-items td.inv-num{ text-align:right; }
   #invoiceArea .inv-items tbody tr td{ height:16px; } /* keeps empty rows from collapsing to 0 height */
@@ -221,7 +239,7 @@
   @media print{
     /* A4 with a 5 mm page margin — identical to the downloaded PDF. The invoice is centred horizontally and TOP-aligned
        (starts at the top margin, flows downwards) by fitInvoiceToSinglePage(); shrunk only if it would not fit on one page. */
-    @page{ size: A4; margin: 5mm; }
+    @page{ size: A4; margin: 10mm; }
     html, body{
       width:100% !important; height:auto !important;
       margin:0 !important; padding:0 !important;
@@ -233,7 +251,9 @@
     /* Remove every other block from the printed layout completely (not just make it invisible) so no blank
        extra page appears and the invoice can be centred on a single page */
     body > *:not(#invoiceArea){ display:none !important; }
-    html, body{ min-height:0 !important; overflow:hidden !important; }   /* no 100vh / scroll overflow → no blank 2nd page */
+    html, body{ min-height:0 !important; overflow:hidden !important; }
+    /* body = exactly one A4 content box (190 × 277 mm): the absolutely-placed invoice is clipped to it, so it can never spill a 2nd page */
+    body{ position:relative !important; height:277mm !important; max-height:277mm !important; }   /* no 100vh / scroll overflow → no blank 2nd page */
     #invoiceArea, #invoiceArea *{ visibility:visible; }
     #invoiceArea{
       position:absolute; left:0; top:0;
@@ -464,6 +484,7 @@
 
 <main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
   <div id="lockNote" class="login-error" style="display:block;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">🔒 Company, bank and tax details are your locked Session B business profile, set by the administrator. Just enter the customer and material details.</div>
+  <div id="planBanner"></div>
   <div id="pageError" class="login-error"></div>
 
   <section class="gov-card bg-white rounded-sm overflow-hidden">
@@ -547,6 +568,7 @@
     <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
     <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
     <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
+    <button type="button" onclick="openPlans()" class="act-btn border border-emerald-600 text-emerald-700 hover:bg-emerald-50">💳 My Plan</button>
     <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
     <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
   </section>
@@ -566,6 +588,7 @@
   <div id="invoiceViewerBar">
     <strong id="invoiceViewerTitle" style="flex:1;min-width:200px;font-size:14px;color:#065f46"></strong>
     <button type="button" class="ivb" onclick="printInvoiceNow()">🖨️ Print Invoice</button>
+    <button type="button" class="ivb" style="background:#0f6e56;border-color:#0f6e56" onclick="savePdfInvoiceNow(this)">⬇️ Save PDF</button>
     <button type="button" class="ivb back" onclick="newBill()">← Back</button>
     <button type="button" class="ivb close" onclick="closeInvoiceViewer()">✕ Close</button>
   </div>
@@ -761,7 +784,47 @@ function newBill(){
   if (SETTINGS) { fillCompany(SETTINGS); $('customer').value = SETTINGS.defaultCustomer || ''; $('block').value = SETTINGS.defaultBlock || ''; $('district').value = SETTINGS.defaultDistrict || ''; }
   $('rows').innerHTML = ''; addRow(); applyLock(); window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-function resetForm(){ if (confirm('Clear the whole form and start a new bill? Saved bills are not deleted.')) newBill(); }
+function resetForm(){
+  askPassword('Reset Factory All', 'This clears EVERY field and restores the blank form. Your saved bills are not deleted.').then(function(ok){
+    if (!ok) return;
+    newBill(); $('savedSearch').value = ''; loadSaved();
+    try { Object.keys(localStorage).forEach(function(k){ if (/^(dv_|anmol_local_backup)/i.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+    toast('✅ Form reset.');
+  });
+}
+/* 🔒 Password check before a destructive action — the server verifies the logged-in user's CURRENT account password */
+function askPassword(action, warn){
+  return new Promise(function(resolve){
+    var old = $('dvPwOv'); if (old) old.remove();
+    var ov = document.createElement('div'); ov.id = 'dvPwOv'; ov.className = 'dv-ov';
+    ov.innerHTML = '<div class="dv-dlg" role="dialog" aria-modal="true" style="max-width:390px"><div style="font-size:30px;text-align:center">🔒</div>'
+      + '<h3 style="margin:6px 0 4px;font-size:17px;text-align:center;font-weight:800">Verify it\'s you</h3>'
+      + '<p id="pwWarn" style="margin:0 0 6px;font-size:13px;text-align:center;color:#b42318;font-weight:700"></p>'
+      + '<p style="margin:0 0 12px;font-size:13px;text-align:center;color:#4a5568">Enter your <b>current account password</b> to continue with <b id="pwAct"></b>.</p>'
+      + '<div style="position:relative"><input id="pwIn" type="password" autocomplete="new-password" maxlength="128" placeholder="Current account password" style="width:100%;padding:11px 56px 11px 12px;border:1.5px solid #b8c4d6;border-radius:9px;font-size:15px;box-sizing:border-box">'
+      + '<button id="pwEye" type="button" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:transparent;font-size:12px;font-weight:700;cursor:pointer">Show</button></div>'
+      + '<div id="pwErr" role="alert" style="display:none;margin-top:8px;font-size:12px;font-weight:700;color:#b42318"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:14px"><button id="pwNo" type="button" style="flex:1;padding:10px;border-radius:9px;border:1px solid #b8c4d6;background:#fff;font-weight:700;cursor:pointer">Cancel</button>'
+      + '<button id="pwOk" type="button" style="flex:1;padding:10px;border-radius:9px;border:none;background:#b42318;color:#fff;font-weight:800;cursor:pointer">Verify &amp; Continue</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#pwAct').textContent = action; ov.querySelector('#pwWarn').textContent = warn || '';
+    var inp = ov.querySelector('#pwIn'), err = ov.querySelector('#pwErr'), ok = ov.querySelector('#pwOk'), busy = false, fin = false;
+    function done(v){ if (fin) return; fin = true; inp.value = ''; ov.remove(); resolve(v); }
+    function bad(m){ err.textContent = m; err.style.display = 'block'; }
+    function submit(){
+      if (busy) return; var v = inp.value.trim();
+      if (!v) { bad('Enter your current account password.'); inp.focus(); return; }
+      busy = true; ok.disabled = true; ok.textContent = 'Verifying...'; err.style.display = 'none';
+      api('/material/verify-self', { method: 'POST', body: JSON.stringify({ credential: v }) })
+        .then(function(){ busy = false; done(true); })
+        .catch(function(e){ busy = false; ok.disabled = false; ok.textContent = 'Verify & Continue'; inp.value = ''; bad(e.message || 'Verification failed.'); inp.focus(); });   // nothing is reset unless the password is right
+    }
+    ov.querySelector('#pwEye').onclick = function(){ var sh = inp.type === 'password'; inp.type = sh ? 'text' : 'password'; this.textContent = sh ? 'Hide' : 'Show'; inp.focus(); };
+    ok.onclick = submit; ov.querySelector('#pwNo').onclick = function(){ if (!busy) done(false); };
+    ov.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); submit(); } else if (e.key === 'Escape' && !busy) done(false); });
+    setTimeout(function(){ inp.focus(); }, 30);
+  });
+}
 
 /* ───────── save / generate ───────── */
 function payload(){
@@ -779,7 +842,8 @@ function validate(){
   return '';
 }
 function submitBill(mode){
-  showErr(''); var bad = validate(); if (bad) return showErr(bad);
+  showErr(''); if (SUB && SUB.locked) { openPlans(); return; }
+  var bad = validate(); if (bad) return showErr(bad);
   var btns = [$('saveBtn'), $('genBtn')], txt = btns.map(function(b){ return b.innerHTML; }); btns.forEach(function(b){ b.disabled = true; });
   $(mode === 'save' ? 'saveBtn' : 'genBtn').textContent = 'Saving…';
   // editing a saved bill → PUT (the server updates in place for the same Bill No., or creates a NEW bill for a different one)
@@ -789,7 +853,7 @@ function submitBill(mode){
     editingId = r.id; origBillNo = r.billNo; loadSaved();
     if (mode === 'generate') return api('/dv/invoices/' + r.id).then(function(inv){ showInvoice(inv); });
     toast('✅ Invoice ' + r.billNo + (r.mode === 'updated' ? ' updated.' : ' saved.') + (r.previousBillNo ? ' Original ' + r.previousBillNo + ' is unchanged.' : ''));
-  }).catch(function(e){ showErr(e.message); }).then(function(){ btns.forEach(function(b, i){ b.disabled = false; b.innerHTML = txt[i]; }); });
+  }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); }).then(function(){ btns.forEach(function(b, i){ b.disabled = false; b.innerHTML = txt[i]; }); });
 }
 function toast(m){ var t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0b2545;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;box-shadow:0 6px 20px rgba(0,0,0,.3)'; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 3200); }
 
@@ -806,7 +870,7 @@ function loadSaved(){
     $('savedList').innerHTML = rows.length ? rows.map(function(r){
       return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
         + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
-        + '<div class="flex gap-2 mt-2"><button class="sb-btn" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="sb-btn" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="sb-btn del" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️</button></div></div>';
+        + '<div class="flex gap-2 mt-2"><button class="sb-btn" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="sb-btn" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="sb-btn" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="sb-btn del" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️</button></div></div>';
     }).join('') : '<p class="text-xs text-gray-500 text-center py-6">' + (q ? 'No bill matches “' + esc(q) + '”.' : 'No saved bills yet.') + '</p>';
   }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
 }
@@ -825,7 +889,7 @@ function openBill(id, print){
 }
 function delBill(id, no){
   if (!confirm('Delete bill ' + no + ' permanently?')) return;
-  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); });
+  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
 }
 
 /* ───────── invoice viewer / print ───────── */
@@ -855,13 +919,15 @@ function closeInvoiceViewer(){
 }
 function fitToPage(){
   var a = $('invoiceArea'); a.style.transform = 'none'; a.style.width = '';
-  var pageW = 794 - 38, pageH = 1123 - 38;                 // A4 minus 5 mm margins, in CSS px
-  a.style.width = pageW + 'px'; var s = Math.min(1, pageH / a.scrollHeight); a.style.transform = 'scale(' + s + ')';
+  var pageW = 718, pageH = 1047 - 19;                      // A4 minus 10 mm margins (190 × 277 mm) minus 5 mm bottom safety, in CSS px
+  a.style.width = pageW + 'px'; a.style.boxSizing = 'border-box'; a.style.transformOrigin = 'top left';
+  var s = Math.min(1, pageH / a.scrollHeight); a.style.transform = 'scale(' + s + ')';
+  a.style.left = Math.max(0, (pageW - pageW * s) / 2) + 'px'; a.style.top = '0px';   // centred horizontally, top-aligned
 }
 function printInvoiceNow(){
   var a = $('invoiceArea'), host = $('invoiceViewerBody'), viewer = $('invoiceViewer');
   document.body.appendChild(a); viewer.hidden = true; a.classList.remove('hidden');
-  var restore = function(){ window.removeEventListener('afterprint', restore); host.appendChild(a); a.style.transform = 'none'; a.style.width = ''; viewer.hidden = false; };
+  var restore = function(){ window.removeEventListener('afterprint', restore); host.appendChild(a); a.style.transform = 'none'; a.style.width = ''; a.style.left = ''; a.style.top = ''; viewer.hidden = false; };
   window.addEventListener('afterprint', restore);
   requestAnimationFrame(function(){ requestAnimationFrame(function(){ fitToPage(); window.print(); }); });
 }
@@ -880,16 +946,102 @@ function setAvatars(src){
   });
 }
 
+/* ───────── Invoice Plan: status banner, renewal notice (5 days before), lock after expiry, Razorpay upgrade ───────── */
+var SUB = null, PLANS = [];
+function refreshMe(){ return api('/dv/me').then(function(me){ SUB = me.sub; PLANS = me.plans || []; SETTINGS = me.settings; renderPlan(); }).catch(function(){}); }
+function renderPlan(){
+  var b = $('planBanner'); if (!b) return;
+  var st = SUB && SUB.state || 'none';
+  document.body.classList.toggle('plan-locked', !!(SUB && SUB.locked));
+  if (st === 'none') { b.className = ''; b.innerHTML = ''; return; }
+  var dl = SUB.daysLeft, till = fmtDate(SUB.expires), nm = esc(SUB.planName || 'Plan');
+  if (st === 'active') { b.className = 'show ok'; b.innerHTML = '✅ <span>' + nm + ' — valid till <b>' + till + '</b> (' + dl + ' days left)</span>'; }
+  else if (st === 'expiring') { b.className = 'show warn'; b.innerHTML = '⚠️ <span>Your ' + nm + ' ' + (dl === 0 ? 'expires <b>today</b>' : 'expires in <b>' + dl + ' day' + (dl === 1 ? '' : 's') + '</b> (' + till + ')') + '. Renew now to avoid interruption.</span><button onclick="openPlans()">Renew now</button>'; }
+  else { b.className = 'show bad'; b.innerHTML = '🔒 <span>Your ' + nm + ' expired on <b>' + till + '</b>. Billing is locked — your saved bills are safe and can still be viewed, printed and downloaded. Renew to unlock instantly.</span><button onclick="openPlans()">Renew &amp; unlock</button>'; }
+}
+function openPlans(){
+  var old = $('dvPlanOv'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'dvPlanOv'; ov.className = 'dv-ov';
+  var cur = SUB && SUB.state !== 'none' ? '<p style="font-size:13px;margin:6px 0 0;color:#475569">Current: <b>' + esc(SUB.planName || 'Plan') + '</b> — ' + (SUB.locked ? '<span style="color:#b42318;font-weight:800">expired on ' : 'valid till <b>') + fmtDate(SUB.expires) + (SUB.locked ? '</span>' : '</b>') + '</p>' : '';
+  var list = (PLANS || []).map(function(p){
+    return '<div class="dv-plan"><div><b>' + esc(p.name) + '</b><div style="font-size:12px;color:#475569">' + esc(p.description || (p.days + ' days')) + '</div><div style="font-size:11px;color:#64748b">' + p.days + ' days</div></div>'
+      + '<div style="margin-left:auto;text-align:right"><div class="pr">' + (p.price > 0 ? '₹' + money(p.price).replace(/\.00$/, '') : 'Free') + '</div><button style="margin:6px 0 0" onclick="buyPlan(' + p.id + ',this)">' + (SUB && SUB.locked ? 'Pay &amp; unlock' : (SUB && SUB.state !== 'none' ? 'Renew / Upgrade' : 'Buy')) + '</button></div></div>';
+  }).join('') || '<p style="font-size:13px;color:#64748b;margin-top:12px">No plans are available right now. Please contact the administrator.</p>';
+  ov.innerHTML = '<div class="dv-dlg"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:18px;font-weight:800">💳 Invoice Plans</h3><button onclick="document.getElementById(\'dvPlanOv\').remove()" style="border:none;background:none;font-size:24px;cursor:pointer" aria-label="Close">&times;</button></div>' + cur
+    + '<p style="font-size:12px;color:#64748b;margin:4px 0 0">Renewing early adds the new days to your remaining time. Saved bills are never deleted.</p>' + list + '<div id="dvPlanMsg" style="margin-top:10px;font-size:12px;font-weight:700;color:#b42318"></div></div>';
+  document.body.appendChild(ov);
+}
+function buyPlan(id, btn){
+  var msg = $('dvPlanMsg'); msg.textContent = ''; btn.disabled = true; var t = btn.innerHTML; btn.textContent = 'Please wait…';
+  var fail = function(m){ msg.textContent = m; btn.disabled = false; btn.innerHTML = t; };
+  var ok = function(sub, text){ SUB = sub; renderPlan(); var o = $('dvPlanOv'); if (o) o.remove(); toast(text); };
+  api('/dv/plan/order', { method: 'POST', body: JSON.stringify({ planId: id }) }).then(function(o){
+    if (o.free) return ok(o.sub, '✅ Plan activated.');
+    if (typeof Razorpay === 'undefined') return fail('Unable to load the payment gateway. Check your internet connection and try again.');
+    var paid = false;
+    var rz = new Razorpay({
+      key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
+      description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
+      prefill: { name: ME && ME.name || '', contact: ME && ME.mobile || '' },
+      handler: function(r){
+        paid = true; msg.style.color = '#0f6e56'; msg.textContent = 'Verifying payment…';
+        api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
+          .then(function(v){ ok(v.sub, '✅ Payment received — your plan is active until ' + fmtDate(v.sub.expires) + '. Billing is unlocked.'); })
+          .catch(function(e){ msg.style.color = '#b42318'; fail('Payment could not be verified: ' + e.message + ' If money was deducted it will be refunded in 5–7 days, or contact the administrator.'); });
+      },
+      modal: { ondismiss: function(){ if (!paid) fail('Payment cancelled — your plan was not changed.'); } }
+    });
+    rz.on('payment.failed', function(){ if (!paid) fail('Payment failed — your plan was not changed.'); });
+    rz.open();
+  }).catch(function(e){ fail(e.message); });
+}
+
+/* ───────── Save PDF: the exact invoice → A4, 10 mm margins, centred, starts at the top margin (same look as the print) ───────── */
+function loadScriptOnce(src, ready){
+  return new Promise(function(resolve, reject){
+    if (ready()) return resolve();
+    var el = document.createElement('script'); el.src = src; el.async = true;
+    el.onload = function(){ ready() ? resolve() : reject(new Error('PDF library failed to start')); };
+    el.onerror = function(){ reject(new Error('Could not load the PDF library — check your internet connection')); };
+    document.head.appendChild(el);
+  });
+}
+function savePdfInvoiceNow(btn){
+  var inv = $('invoiceArea'); if (!inv) return;
+  var old = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparing PDF…'; }
+  var bn = String($('i-billNo').textContent || '').trim().replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA';
+  var fileName = 'Anmol_LibMatrix_Invoice_' + bn + '.pdf';
+  var keep = { w: inv.style.width, t: inv.style.transform, l: inv.style.left, tp: inv.style.top };
+  var restore = function(){ inv.classList.remove('pdf-mode'); inv.style.width = keep.w; inv.style.transform = keep.t || 'none'; inv.style.left = keep.l; inv.style.top = keep.tp; if (btn) { btn.disabled = false; btn.textContent = old; } };
+  return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', function(){ return !!window.html2canvas; })
+    .then(function(){ return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', function(){ return !!(window.jspdf && window.jspdf.jsPDF); }); })
+    .then(function(){
+      inv.classList.add('pdf-mode'); inv.style.transform = 'none'; inv.style.left = ''; inv.style.top = ''; inv.style.width = Math.round(186 * 96 / 25.4) + 'px'; void inv.offsetHeight;
+      return window.html2canvas(inv, { scale: 3, backgroundColor: '#ffffff', useCORS: true, scrollX: 0, scrollY: 0 });
+    })
+    .then(function(canvas){
+      var PW = 210, PH = 297, M = 10, bw = PW - 2 * M, bh = PH - 2 * M - 5;        // 10 mm margins + 5 mm bottom safety
+      var w = bw, h = w * canvas.height / canvas.width; if (h > bh) { var k = bh / h; w *= k; h = bh; }
+      var pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+      pdf.setProperties({ title: fileName.replace(/\.pdf$/, ''), subject: 'Tax Invoice', creator: 'Anmol LibMatrix' });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', (PW - w) / 2, M, w, h);   // centred left-right, top-aligned
+      pdf.save(fileName);
+    })
+    .catch(function(e){ alert('❌ PDF could not be created: ' + (e && e.message ? e.message : e) + '\nPlease use Print Invoice → Save as PDF instead.'); })
+    .then(restore);
+}
+function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(inv); return savePdfInvoiceNow(); }).catch(function(e){ showErr(e.message); }); }
+
 /* ───────── start ───────── */
 (function init(){
   if (!TOKEN) return toLogin();
   api('/dv/me').then(function(me){
-    ME = me.user; SETTINGS = me.settings;
+    ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
-    newBill(); loadSaved();
+    newBill(); loadSaved(); renderPlan();
   }).catch(function(e){ if (e && !/expired/i.test(e.message)) showErr(e.message); });
 })();
 

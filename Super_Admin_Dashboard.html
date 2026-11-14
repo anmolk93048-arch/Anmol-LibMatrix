@@ -3627,13 +3627,16 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="page-header">
             <div>
               <div class="page-title">🧾 Invoice Session B</div>
-              <div class="page-sub">Save the business profile once, then map User IDs to it. Mapped users see these details locked on their invoice portal and only enter customer and material details.</div>
+              <div class="page-sub">Every Session B user has their OWN locked company profile. Plans and expiry are managed below.</div>
             </div>
-            <div class="actions-row"><button class="btn btn-ghost" onclick="ISB.load();DVS.load()">↻ Refresh</button></div>
+            <div class="actions-row"><button class="btn btn-ghost" onclick="ISB.load()">↻ Refresh</button></div>
           </div>
 
           <div class="sa-card" style="margin-top:0">
-            <h3>🔒 Session B Presets <span style="font-size:11px;font-weight:600;opacity:.7">— locked for mapped users</span></h3>
+            <h3>🏢 Company Profile <span style="font-size:11px;font-weight:600;opacity:.7">— saved &amp; locked per user</span></h3>
+            <div style="max-width:520px;margin-bottom:10px"><label class="sa-lbl">Edit the profile of</label>
+              <select class="sa-in" id="dv-target" onchange="ISB.loadProfile()"></select></div>
+            <div id="dv-hint" style="font-size:12px;opacity:.8;margin-bottom:8px"></div>
             <div class="sa-grid">
               <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120" placeholder="e.g. DEV ENTERPRISES"></div>
               <div><label class="sa-lbl">Address</label><input class="sa-in" id="dv-addr" maxlength="250"></div>
@@ -3647,9 +3650,12 @@ html,body,#admin-app{width:100%;min-width:0;}
               <div><label class="sa-lbl">SGST %</label><input class="sa-in" id="dv-sgst" type="number" min="0" max="50" step="0.01"></div>
               <div><label class="sa-lbl">Round off invoice total</label><select class="sa-in" id="dv-round"><option value="1">Yes (to nearest rupee)</option><option value="0">No (exact paise)</option></select></div>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="DVS.save()">💾 Save &amp; Lock Presets</button></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button class="btn btn-gold btn-sm" type="button" onclick="ISB.saveProfile()">💾 Save &amp; Lock</button>
+              <button class="btn btn-ghost btn-sm" type="button" id="dv-reset" onclick="ISB.resetProfile()">↺ Use default template</button>
+            </div>
             <div id="dv-msg" class="sa-msg"></div>
-            <div style="font-size:11.5px;opacity:.75;margin-top:6px">Saved bills keep the details they were issued with. New and re-issued bills always use these presets.</div>
+            <div style="font-size:11.5px;opacity:.75;margin-top:6px">Saving a user's profile changes <b>only that user</b>. The default template is copied to a user when they are mapped to Session B; changing it later never alters existing users. Saved bills keep the details they were issued with.</div>
           </div>
 
           <div class="sa-card">
@@ -3665,9 +3671,44 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card" style="margin-top:14px">
             <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:800">Users on Session B (<span id="isb-b">0</span>)</div>
             <div class="tbl-wrap"><table>
-              <thead><tr><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Mobile</th><th>Status</th><th>Bills</th><th>Action</th></tr></thead>
+              <thead><tr><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Company profile</th><th>Plan</th><th>Bills</th><th>Action</th></tr></thead>
               <tbody id="isb-body"></tbody>
             </table></div>
+          </div>
+
+          <div class="sa-card" style="margin-top:18px">
+            <h3>💳 Invoice Plans <span style="font-size:11px;font-weight:600;opacity:.7">— what Session B users can buy (Razorpay)</span></h3>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Plan</th><th>Description</th><th>Days</th><th>Price (₹)</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="pln-body"></tbody>
+            </table></div>
+            <div class="sa-grid" style="margin-top:12px">
+              <div><label class="sa-lbl">Plan name</label><input class="sa-in" id="pln-name" maxlength="80" placeholder="e.g. Monthly"></div>
+              <div><label class="sa-lbl">Description shown to users</label><input class="sa-in" id="pln-desc" maxlength="300" placeholder="e.g. 30 Days for ₹500 — unlimited bills"></div>
+              <div><label class="sa-lbl">Validity (days)</label><input class="sa-in" id="pln-days" type="number" min="1" max="3650" placeholder="30"></div>
+              <div><label class="sa-lbl">Price (₹)</label><input class="sa-in" id="pln-price" type="number" min="0" step="0.01" placeholder="500"></div>
+              <div><label class="sa-lbl">Available to buy</label><select class="sa-in" id="pln-active"><option value="1">Yes</option><option value="0">No (hidden)</option></select></div>
+            </div>
+            <input type="hidden" id="pln-id">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button class="btn btn-gold btn-sm" type="button" onclick="PLN.save()">💾 Save plan</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="PLN.clear()">New plan</button>
+            </div>
+            <div id="pln-msg" class="sa-msg"></div>
+          </div>
+
+          <div class="sa-card">
+            <h3>🗓️ Give / Extend a User's Plan</h3>
+            <div class="sa-grid">
+              <div style="grid-column:1/-1"><label class="sa-lbl">User IDs</label><textarea class="sa-in" id="sub-ids" rows="2" placeholder="INV001, INV002" style="resize:vertical"></textarea></div>
+              <div><label class="sa-lbl">Plan</label><select class="sa-in" id="sub-plan"></select></div>
+              <div><label class="sa-lbl">Days (blank = plan's days)</label><input class="sa-in" id="sub-days" type="number" min="1" max="3650"></div>
+              <div><label class="sa-lbl">Action</label><select class="sa-in" id="sub-mode">
+                <option value="extend">Add days to the current expiry</option><option value="set">Set — start from today</option><option value="clear">Remove plan (no expiry / unrestricted)</option></select></div>
+            </div>
+            <div style="margin-top:8px"><button class="btn btn-gold btn-sm" type="button" onclick="PLN.assign()">✔ Apply</button></div>
+            <div id="sub-msg" class="sa-msg"></div>
+            <div style="font-size:11.5px;opacity:.75;margin-top:6px">A user with <b>no</b> plan record is not restricted. Once a plan is set, users get a renewal notice 5 days before expiry; after expiry billing is locked (saved bills stay safe) until they pay or you extend the plan.</div>
           </div>
         </div>
 
@@ -10698,7 +10739,7 @@ function MAT_INVOICE_HTML(b){
   });
   var cgst=gstTotal/2, sgst=gstTotal/2, tds=(b.tdsApplicable==='yes')?taxable*0.02:0, royalty=parseFloat(b.royaltyInput)||0;
   var pre=taxable+cgst+sgst+royalty-tds, grand=Math.round(pre);
-  var th='border:1px solid #000;padding:3px 4px;font-size:10px;text-align:center;background:#f2f2f2';
+  var th='border:1px solid #000;padding:3px 3px;font-size:10px;text-align:center;background:#f2f2f2;white-space:nowrap';
   return '<div id="mat-inv-sheet" style="background:#fff;color:#000;font-family:Segoe UI,Tahoma,Verdana,sans-serif;padding:14px;min-width:720px">'
    +'<div style="text-align:center;font-weight:700;font-size:15px;letter-spacing:.04em">TAX INVOICE</div>'
    +'<div style="text-align:center;color:#c0392b;font-size:19px;font-weight:800">'+MAT_ESC(b.businessName||'')+'</div>'
@@ -10740,7 +10781,14 @@ function MAT_PDF_DIRECT(bill){
 }
 function MAT_PRINT_INVOICE(){
   var done=function(){ document.body.classList.remove('mat-inv-printing'); window.removeEventListener('afterprint',done); };
-  document.body.classList.add('mat-inv-printing'); window.addEventListener('afterprint',done); window.print();
+  var sh=document.getElementById('mat-inv-sheet');
+  document.body.classList.add('mat-inv-printing'); window.addEventListener('afterprint',done);
+  if(sh){   // fit to ONE A4 page inside the 10 mm margins: scale down if tall, centre horizontally, keep a 5 mm bottom safety gap
+    sh.style.transform='none'; sh.style.left='0px'; sh.style.width='718px';
+    var k=Math.min(1,1028/Math.max(1,sh.scrollHeight)); sh.style.transform='scale('+k+')'; sh.style.left=Math.max(0,(718-718*k)/2)+'px';
+    window.addEventListener('afterprint',function r(){ window.removeEventListener('afterprint',r); sh.style.transform=''; sh.style.left=''; sh.style.width=''; });
+  }
+  window.print();
 }
 function MAT_PDF_INVOICE(name,el){
   var no=String(name||'').trim().replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'NA';
@@ -10749,15 +10797,15 @@ function MAT_PDF_INVOICE(name,el){
   .then(function(){ return MAT_LOAD_SCRIPT('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',function(){ return !!(window.jspdf&&window.jspdf.jsPDF); }); })
   .then(function(){ return html2canvas(el||document.getElementById('mat-inv-sheet'),{ scale:3, backgroundColor:'#ffffff', useCORS:true, scrollX:0, scrollY:0 }); })
   .then(function(canvas){
-    var PW=210, PH=297, M=12, bw=PW-2*M, bh=PH-2*M;
+    var PW=210, PH=297, M=10, bw=PW-2*M, bh=PH-2*M-5;
     var w=bw, h=w*canvas.height/canvas.width; if(h>bh){ var k=bh/h; w*=k; h=bh; }     // natural proportions, inside the margins
     var pdf=new window.jspdf.jsPDF({ orientation:'p', unit:'mm', format:'a4', compress:true });
     pdf.setProperties({ title:fileName.replace(/\.pdf$/,''), subject:'Tax Invoice', creator:'Anmol LibMatrix' });
-    pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',(PW-w)/2,(PH-h)/2,w,h);   // centred horizontally and vertically
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',(PW-w)/2,M,w,h);   // centred horizontally, starts at the 10 mm top margin
     pdf.save(fileName);
   }).catch(function(e){ SHOW_TOAST('❌ PDF failed: '+e.message+' — use Print Invoice → Save as PDF.'); });
 }
-(function(){ var st=document.createElement('style'); st.textContent='@media print{body.mat-inv-printing *{visibility:hidden}body.mat-inv-printing #mat-inv-sheet,body.mat-inv-printing #mat-inv-sheet *{visibility:visible}body.mat-inv-printing #mat-inv-sheet{position:absolute;left:0;top:0;width:100%}body.mat-inv-printing .sa-modal{position:static}body.mat-inv-printing .sa-modal>div{max-height:none;overflow:visible}@page{margin:6mm}}'; document.head.appendChild(st); })();
+(function(){ var st=document.createElement('style'); st.textContent='@media print{body.mat-inv-printing *{visibility:hidden}body.mat-inv-printing #mat-inv-sheet,body.mat-inv-printing #mat-inv-sheet *{visibility:visible}body.mat-inv-printing #mat-inv-sheet{position:absolute;left:0;top:0;width:718px;min-width:0!important;box-sizing:border-box;padding:0!important;transform-origin:top left}body.mat-inv-printing #mat-inv-sheet table,body.mat-inv-printing #mat-inv-sheet tr,body.mat-inv-printing #mat-inv-sheet div{break-inside:avoid;page-break-inside:avoid}body.mat-inv-printing .sa-modal{position:static}body.mat-inv-printing .sa-modal>div{max-height:none;overflow:visible}@page{size:A4;margin:10mm}html,body{height:auto!important;overflow:hidden!important}}'; document.head.appendChild(st); })();
 
 function DELETE_MU_ENTRY(docId){
   if(!confirm('Do you want to permanently delete this entry?')) return;
@@ -16436,40 +16484,27 @@ window.GLOBAL_SEARCH=function(value){
   window.GOTO=function(page){_G2(page);if(page==='settings')MU.load();};
 })();
 
-/* 🧾 Invoice Session B — locked company / bank / tax presets (Invoice Session B page) */
-(function(){
-  function $(i){return document.getElementById(i);}
-  function msg(t,ok){var m=$('dv-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  var MAP={name:'companyName',addr:'address',gstin:'gstin',mobile:'mobile',bank:'bankName',branch:'branch',ifsc:'ifsc',acc:'accountNo',cgst:'cgstPct',sgst:'sgstPct'};
-  window.DVS={
-    load:function(){apiFetch('/admin/dv-settings').then(function(c){
-      Object.keys(MAP).forEach(function(k){var el=$('dv-'+k);if(el)el.value=c[MAP[k]]==null?'':c[MAP[k]];});
-      $('dv-round').value=c.roundOff===false?'0':'1';
-    }).catch(function(e){msg(e.message||'Unable to load the Session B presets.');});},
-    save:function(){
-      var b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';b.userEditable=false;
-      apiFetch('/admin/dv-settings',{method:'PUT',body:JSON.stringify(b)}).then(function(){msg('Session B presets saved and locked for all mapped users.',true);SHOW_TOAST('✅ Session B presets saved & locked.');DVS.load();})
-      .catch(function(e){msg(e.message||'Unable to save.');});
-    }
-  };
-  var _G3=window.GOTO;
-  window.GOTO=function(page){_G3.apply(this,arguments);if(page==='invoice-session-b')DVS.load();};
-})();
-
-
-
-/* 🧾 Invoice Session B — user mapping (Invoice Session B page) */
+/* 🧾 Invoice Session B — per-user company profiles, mapping, plans (Invoice Session B page) */
 (function(){
   function $(i){return document.getElementById(i);}
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function msg(t,ok){var m=$('isb-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  var rows=[];
-  function put(ids,session){
-    return apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:ids,session:session})});
+  function say(id,t,ok){var m=$(id);if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
+  function fdate(d){var m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'-'+m[2]+'-'+m[1]:'—';}
+  var rows=[], plans=[];
+  var MAP={name:'companyName',addr:'address',gstin:'gstin',mobile:'mobile',bank:'bankName',branch:'branch',ifsc:'ifsc',acc:'accountNo',cgst:'cgstPct',sgst:'sgstPct'};
+  function fillFields(c){
+    Object.keys(MAP).forEach(function(k){var el=$('dv-'+k);if(el)el.value=c[MAP[k]]==null?'':c[MAP[k]];});
+    $('dv-round').value=c.roundOff===false?'0':'1';
+  }
+  function planCell(p){
+    if(!p||p.state==='none')return '<span style="opacity:.6">No plan (unrestricted)</span>';
+    var col=p.state==='expired'?'#f87171':(p.state==='expiring'?'#fbbf24':'#34d399');
+    var t=p.state==='expired'?'🔒 Expired '+fdate(p.expires):(p.state==='expiring'?'⚠️ '+p.daysLeft+' day(s) left — ':'✅ ')+(p.state==='expired'?'':'till '+fdate(p.expires));
+    return '<div style="color:'+col+';font-weight:800">'+t+'</div><div style="font-size:11px;opacity:.7">'+esc(p.planName||'')+'</div>';
   }
   window.ISB={
     load:function(){
-      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();})
+      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();ISB.fillTargets();PLN.fillSelect();})
         .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
     },
     render:function(){
@@ -16478,31 +16513,92 @@ window.GLOBAL_SEARCH=function(value){
       var nb=$('nb-session-b');if(nb)nb.textContent=list.length;
       if(!b)return;
       b.innerHTML=list.length?list.map(function(u){
-        var blocked=u.status==='blocked';
-        return '<tr><td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+esc(u.userId)+'</td>'
-          +'<td>'+esc(u.name||'—')+'</td><td>'+esc(u.mobile||'—')+'</td>'
-          +'<td><span class="badge '+(blocked?'inactive':'active')+'">'+(blocked?'🚫 Blocked':'✅ Active')+'</span></td>'
-          +'<td>'+u.invoices+'</td>'
-          +'<td><button class="btn btn-sm btn-ghost" onclick="ISB.one(\''+esc(u.userId)+'\',\'A\')">↩ To Session A</button></td></tr>';
+        var id=esc(u.userId);
+        return '<tr><td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+id+'</td>'
+          +'<td>'+esc(u.name||'—')+(u.status==='blocked'?' <span class="badge inactive">🚫 Blocked</span>':'')+'</td>'
+          +'<td>'+(u.profile?esc(u.profile):'<span style="opacity:.6">Default template</span>')+'</td>'
+          +'<td>'+planCell(u.plan)+'</td><td>'+u.invoices+'</td>'
+          +'<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="ISB.edit(\''+id+'\')">🏢 Profile</button> '
+          +'<button class="btn btn-sm btn-ghost" onclick="PLN.pick(\''+id+'\')">💳 Plan</button> '
+          +'<button class="btn btn-sm btn-ghost" onclick="ISB.one(\''+id+'\',\'A\')">↩ To A</button></td></tr>';
       }).join(''):'<tr><td colspan="6" style="text-align:center;padding:26px;color:var(--text-muted)">No users are on Session B yet — add User IDs above.</td></tr>';
+    },
+    fillTargets:function(){
+      var sel=$('dv-target');if(!sel)return;var keep=sel.value||'__default__';
+      var opts='<option value="__default__">★ Default template (copied to users when they are mapped)</option>';
+      rows.filter(function(u){return u.session==='B';}).forEach(function(u){
+        opts+='<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+(u.profile?'  ✓ own profile':'  (default template)')+'</option>';});
+      sel.innerHTML=opts;
+      sel.value=Array.prototype.some.call(sel.options,function(o){return o.value===keep;})?keep:'__default__';
+      ISB.loadProfile();
+    },
+    edit:function(id){var sel=$('dv-target');sel.value=id;ISB.loadProfile();sel.scrollIntoView({behavior:'smooth',block:'center'});},
+    loadProfile:function(){
+      var t=$('dv-target').value;say('dv-msg','');
+      var isDef=t==='__default__';$('dv-reset').style.display=isDef?'none':'';
+      $('dv-hint').textContent=isDef?'This template is copied into each user\'s own profile when they are mapped. It does not change existing users.':'These details are saved for '+t+' only and are locked on that user\'s invoice portal.';
+      var p=isDef?apiFetch('/admin/dv-settings'):apiFetch('/admin/dv-profile/'+encodeURIComponent(t)).then(function(r){
+        if(!r.hasProfile)$('dv-hint').textContent+=' (Currently using the default template — saving creates their own profile.)';return r.settings;});
+      p.then(fillFields).catch(function(e){say('dv-msg',e.message||'Unable to load.');});
+    },
+    saveProfile:function(){
+      var t=$('dv-target').value,b={};Object.keys(MAP).forEach(function(k){b[MAP[k]]=$('dv-'+k).value;});b.roundOff=$('dv-round').value==='1';
+      var url=t==='__default__'?'/admin/dv-settings':'/admin/dv-profile/'+encodeURIComponent(t);
+      apiFetch(url,{method:'PUT',body:JSON.stringify(b)}).then(function(){
+        say('dv-msg',t==='__default__'?'Default template saved. Existing users are unchanged.':'Profile saved & locked for '+t+' only.',true);SHOW_TOAST('✅ Saved.');ISB.load();
+      }).catch(function(e){say('dv-msg',e.message||'Unable to save.');});
+    },
+    resetProfile:function(){
+      var t=$('dv-target').value;if(t==='__default__'||!confirm('Remove '+t+'\'s own profile? They will use the default template.'))return;
+      apiFetch('/admin/dv-profile/'+encodeURIComponent(t),{method:'DELETE'}).then(function(){SHOW_TOAST('✅ '+t+' now uses the default template.');ISB.load();}).catch(function(e){say('dv-msg',e.message);});
     },
     one:function(id,session){
       if(!confirm('Move '+id+' to Invoice Session '+session+'? Their next login opens that environment.'))return;
-      put([id],session).then(function(){SHOW_TOAST('✅ '+id+' → Session '+session);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){SHOW_TOAST('❌ '+e.message);});
+      apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:[id],session:session})}).then(function(){SHOW_TOAST('✅ '+id+' → Session '+session);ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();}).catch(function(e){SHOW_TOAST('❌ '+e.message);});
     },
     mapTyped:function(session){
-      var raw=($('isb-ids').value||'').trim();if(!raw){msg('Enter at least one User ID.');return;}
-      put(raw,session).then(function(r){
-        var t=r.updated.length+' user(s) moved to Session '+session+'.';
+      var raw=($('isb-ids').value||'').trim();if(!raw){say('isb-msg','Enter at least one User ID.');return;}
+      apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:raw,session:session})}).then(function(r){
+        var t=r.updated.length+' user(s) moved to Session '+session+(session==='B'?' — each got their own copy of the default company profile (edit it above).':'.');
         if(r.notFound.length)t+=' Not found: '+r.notFound.join(', ')+'.';
-        msg(t,!r.notFound.length);if(!r.notFound.length)$('isb-ids').value='';
+        say('isb-msg',t,!r.notFound.length);if(!r.notFound.length)$('isb-ids').value='';
         ISB.load();if(window.MAT_REFRESH)MAT_REFRESH();
-      }).catch(function(e){msg(e.message);});
+      }).catch(function(e){say('isb-msg',e.message);});
+    }
+  };
+  window.PLN={
+    load:function(){return apiFetch('/admin/dv-plans').then(function(r){plans=r||[];PLN.render();PLN.fillSelect();}).catch(function(e){say('pln-msg',e.message||'Unable to load plans.');});},
+    render:function(){
+      var b=$('pln-body');if(!b)return;
+      b.innerHTML=plans.length?plans.map(function(p){
+        return '<tr><td style="font-weight:800">'+esc(p.name)+'</td><td>'+esc(p.description||'—')+'</td><td>'+p.days+'</td><td>₹'+Number(p.price).toLocaleString('en-IN')+'</td>'
+          +'<td><span class="badge '+(p.active?'active':'inactive')+'">'+(p.active?'Active':'Hidden')+'</span></td>'
+          +'<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="PLN.edit('+p.id+')">✏️ Edit</button> <button class="btn btn-sm btn-ghost" onclick="PLN.del('+p.id+')">🗑️</button></td></tr>';
+      }).join(''):'<tr><td colspan="6" style="text-align:center;padding:22px;color:var(--text-muted)">No plans yet — create one below (e.g. Monthly · 30 days · ₹500).</td></tr>';
+    },
+    fillSelect:function(){var s=$('sub-plan');if(!s)return;var k=s.value;s.innerHTML='<option value="">— Custom days only —</option>'+plans.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+' ('+p.days+' days · ₹'+p.price+')</option>';}).join('');s.value=k;},
+    edit:function(id){var p=plans.filter(function(x){return x.id===id;})[0];if(!p)return;
+      $('pln-id').value=p.id;$('pln-name').value=p.name;$('pln-desc').value=p.description;$('pln-days').value=p.days;$('pln-price').value=p.price;$('pln-active').value=p.active?'1':'0';$('pln-name').focus();},
+    clear:function(){['pln-id','pln-name','pln-desc','pln-days','pln-price'].forEach(function(i){$(i).value='';});$('pln-active').value='1';say('pln-msg','');},
+    save:function(){
+      var b={id:$('pln-id').value||undefined,name:$('pln-name').value,description:$('pln-desc').value,days:$('pln-days').value,price:$('pln-price').value,active:$('pln-active').value==='1'};
+      apiFetch('/admin/dv-plans',{method:'PUT',body:JSON.stringify(b)}).then(function(){say('pln-msg','Plan saved.',true);PLN.clear();PLN.load();}).catch(function(e){say('pln-msg',e.message);});
+    },
+    del:function(id){if(!confirm('Delete this plan? Users who already have it keep their expiry date.'))return;
+      apiFetch('/admin/dv-plans/'+id,{method:'DELETE'}).then(PLN.load).catch(function(e){say('pln-msg',e.message);});},
+    pick:function(id){var t=$('sub-ids');t.value=id;t.scrollIntoView({behavior:'smooth',block:'center'});t.focus();},
+    assign:function(){
+      var b={userIds:$('sub-ids').value,planId:$('sub-plan').value||undefined,days:$('sub-days').value||undefined,mode:$('sub-mode').value};
+      if(b.mode==='clear'&&!confirm('Remove the plan (and its expiry) from these users? They become unrestricted.'))return;
+      apiFetch('/admin/dv-subscriptions',{method:'POST',body:JSON.stringify(b)}).then(function(r){
+        var t=r.updated.length+' user(s) updated.';if(r.notFound.length)t+=' Not found: '+r.notFound.join(', ')+'.';
+        say('sub-msg',t,!r.notFound.length);if(!r.notFound.length)$('sub-ids').value='';ISB.load();
+      }).catch(function(e){say('sub-msg',e.message);});
     }
   };
   var _G=window.GOTO;
-  window.GOTO=function(page){var r=_G.apply(this,arguments);if(page==='invoice-session-b'){ISB.load();DVS.load();}return r;};
-  setTimeout(function(){if(typeof AUTH_TOKEN!=='undefined'&&AUTH_TOKEN)ISB.load();},3000);   // fills the sidebar badge
+  window.GOTO=function(page){var r=_G.apply(this,arguments);if(page==='invoice-session-b'){ISB.load();PLN.load();}return r;};
+  setTimeout(function(){if(typeof AUTH_TOKEN!=='undefined'&&AUTH_TOKEN){ISB.load();PLN.load();}},3000);   // fills the sidebar badge
 })();
 
 /* Header & Announcement Settings (inside Settings → Website Notices & Navigation) */

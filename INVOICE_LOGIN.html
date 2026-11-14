@@ -182,6 +182,7 @@
     background:#fff !important;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  #invoiceArea{ box-sizing:border-box; }
   #invoiceArea *{ box-sizing:border-box; }
   #invoiceArea table{
     width:100% !important;
@@ -215,6 +216,7 @@
   #invoiceArea .inv-noborder{ border:none !important; }
   #invoiceArea .inv-sig-box{ height:70px; }
   #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
+  #invoiceArea .inv-items th{ white-space:nowrap !important; word-break:keep-all !important; overflow-wrap:normal !important; word-wrap:normal !important; padding:3px 2px; font-size:9.5px; letter-spacing:0; overflow:hidden; }
   #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
   #invoiceArea .inv-items td.inv-num{ text-align:right; }
   #invoiceArea .inv-items tbody tr td{ height:16px; } /* keeps empty rows from collapsing to 0 height */
@@ -224,7 +226,7 @@
   @media print{
     /* A4 with a 5 mm page margin — identical to the downloaded PDF. The invoice is centred horizontally and TOP-aligned
        (starts at the top margin, flows downwards) by fitInvoiceToSinglePage(); shrunk only if it would not fit on one page. */
-    @page{ size: A4; margin: 5mm; }
+    @page{ size: A4; margin: 10mm; }
     html, body{
       width:100% !important; height:auto !important;
       margin:0 !important; padding:0 !important;
@@ -236,7 +238,9 @@
     /* Remove every other block from the printed layout completely (not just make it invisible) so no blank
        extra page appears and the invoice can be centred on a single page */
     body > *:not(#invoiceArea){ display:none !important; }
-    html, body{ min-height:0 !important; overflow:hidden !important; }   /* no 100vh / scroll overflow → no blank 2nd page */
+    html, body{ min-height:0 !important; overflow:hidden !important; }
+    /* body = exactly one A4 content box (190 × 277 mm): the absolutely-placed invoice is clipped to it, so it can never spill a 2nd page */
+    body{ position:relative !important; height:277mm !important; max-height:277mm !important; }   /* no 100vh / scroll overflow → no blank 2nd page */
     #invoiceArea, #invoiceArea *{ visibility:visible; }
     #invoiceArea{
       position:absolute; left:0; top:0;
@@ -2494,7 +2498,7 @@ function _effHsn(v){ if(!_hsnOn()) return '00'; v = String(v == null ? '' : v).t
 
 /* Rebuilds colgroup / header / total-label of the printed items table for the chosen column set */
 function _buildInvoiceItemsHead(showHsn){
-  const W_H = [4,19,8,7,5,8,10,5,9,5,9,11], W_N = [5,20,9,6,8,11,6,9,6,9,11];
+  const W_H = [4,17,9,8,5,8,9,6,9,6,9,10], W_N = [5,19,9,6,8,11,7,9,7,9,10];
   const w = showHsn ? W_H : W_N;
   document.getElementById('inv-colgroup').innerHTML = w.map(function(x){ return '<col style="width:' + x + '%">'; }).join('');
   const heads = ['Sl.<br>No.', 'Particulars / Description'].concat(showHsn ? ['HSN / SAC'] : [], ['Quantity','Unit','Rate','Taxable<br>Amount','CGST','CGST<br>Amount','SGST','SGST<br>Amount','Total<br>Amount']);
@@ -2529,7 +2533,7 @@ async function savePdfInvoiceNow(btn){
     inv.style.width = mmToPx(PRINT_RENDER_WIDTH_MM) + 'px';
     void inv.offsetHeight;
     const canvas = await window.html2canvas(inv, { scale: 3, backgroundColor: '#ffffff', useCORS: true, scrollX: 0, scrollY: 0 });
-    const PW = 210, PH = 297, M = 12, bw = PW - 2 * M, bh = PH - 2 * M;
+    const PW = 210, PH = 297, M = 10, bw = PW - 2 * M, bh = PH - 2 * M - 5;   // 10 mm margins + 5 mm bottom safety
     let w = bw, h = w * canvas.height / canvas.width;
     if(h > bh){ const k = bh / h; w *= k; h = bh; }
     const pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
@@ -2718,9 +2722,9 @@ function _fillInvoiceFromForm(){
    (215.9x279.4mm) after a 5mm margin on every side:
      width  -> limited by A4  (210 - 10 = 200mm)
      height -> limited by Letter (279.4 - 10 = 269.4mm, rounded down for safety) */
-const SAFE_PRINT_WIDTH_MM  = 200;
-const PRINT_TOP_OFFSET_MM = 7;      // extra gap below the 5 mm @page margin → 12 mm top margin, same as the PDF
-const SAFE_PRINT_HEIGHT_MM = 278;   // A4 printable height (297 − 2×5 = 287) − 7 mm top offset − 2 mm safety gap
+const SAFE_PRINT_WIDTH_MM  = 190;      // A4 210 − 2×10 mm @page margin
+const PRINT_TOP_OFFSET_MM = 0;      // the 10 mm @page margin already gives the top gap (same 10 mm margin as the PDF)
+const SAFE_PRINT_HEIGHT_MM = 272;   // A4 printable height (297 − 2×10 = 277) − 5 mm safety, so the bank box / signature never reach the page bottom
 /* The invoice is laid out at this width for BOTH print and PDF, then centred horizontally and top-aligned (≈12 mm margins on an A4 sheet) */
 const PRINT_RENDER_WIDTH_MM = 186;
 
@@ -2749,7 +2753,7 @@ function fitInvoiceToSinglePage(){
   inv.classList.remove('pdf-mode');
 
   // Centre horizontally only; TOP-align vertically so the invoice starts at the top margin and flows downwards
-  const boxW = mmToPx(SAFE_PRINT_WIDTH_MM), boxH = mmToPx(287);
+  const boxW = mmToPx(SAFE_PRINT_WIDTH_MM), boxH = mmToPx(277);
   inv.style.transformOrigin = 'top left';
   inv.style.transform = scale < 0.999 ? `scale(${scale})` : 'none';
   inv.style.left = Math.max(0, (boxW - rect.width  * scale) / 2) + 'px';
