@@ -290,6 +290,7 @@ const SEL_LIST = `id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS "invoiceDat
 const SEL_FULL = SEL_LIST + `, block_name, district_name, transport_mode, vehicle_no, items, taxable_total, cgst_total, sgst_total, round_off, amount_words, company_snapshot`;
 
 /* ───────────────────────────── 5. ROUTES ────────────────────────────────── */
+let _settle = null;
 function install(app, ctx) {
     // ctx = { dbq, requireRole, getAuthUser, asyncRoute, noStore, escapeLike, findStaticFile, auditPii }
     const { dbq, requireRole, getAuthUser, asyncRoute, noStore, escapeLike, findStaticFile } = ctx;
@@ -421,6 +422,37 @@ function install(app, ctx) {
         if (claimed.length) await grantDays(uid, row.plan_id, row.plan_name, Number(row.days), 'razorpay', Number(row.amount));
         audit(req, 'dv_plan_paid', uid, 'plan=' + row.plan_name + ' amount=' + row.amount);
         res.json({ success: true, sub: subState(await loadSub(uid)) });
+    }));
+
+    // ── Settle a paid plan order (used by the webhook and by the status check, so a UPI / PhonePe payment is activated
+    //    even when the browser never returns to the checkout callback). Idempotent: days are added once per order.
+    async function settleOrder(oid, pid, paidRs) {
+        const row = (await dbq('SELECT order_id, user_id, plan_id, plan_name, days, amount, status FROM dv_plan_payments WHERE order_id = ?', [String(oid)]))[0];
+        if (!row) return false;
+        if (row.status === 'paid') return true;
+        if (paidRs != null && Math.abs(Number(row.amount) - Number(paidRs)) > 0.001) { console.error('❌ plan order ' + oid + ': paid ₹' + paidRs + ' but ₹' + row.amount + ' expected — not activated'); return false; }
+        const claimed = await dbq("UPDATE dv_plan_payments SET status='paid', payment_id=?, paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='created' RETURNING order_id", [pid || null, String(oid)]);
+        if (claimed.length) { await grantDays(row.user_id, row.plan_id, row.plan_name, Number(row.days), 'razorpay', Number(row.amount)); try { audit({ headers: {}, ip: '' }, 'dv_plan_paid', row.user_id, 'plan=' + row.plan_name + ' amount=' + row.amount + ' via=webhook/status'); } catch (e) {} }
+        return true;
+    }
+    _settle = settleOrder;
+    // Browser asks "was this order paid?" (after a UPI app / PhonePe redirect, a closed window, or a slow callback) — the server asks Razorpay itself.
+    app.get('/api/dv/plan/status', noStore, dvUser, asyncRoute(async (req, res) => {
+        const oid = cleanText(req.query.orderId, 80), uid = req.dvUser.userId;
+        const row = (await dbq('SELECT order_id, status, amount FROM dv_plan_payments WHERE order_id = ? AND LOWER(user_id) = LOWER(?)', [oid, uid]))[0];
+        if (!row) return res.status(404).json({ error: 'Order not found.' });
+        if (row.status !== 'paid' && ctx.razorpayCall) {
+            try {
+                const list = await ctx.razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
+                const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
+                if (p) {
+                    if (ctx.razorpayConfirmPayment) await ctx.razorpayConfirmPayment(oid, p.id, Number(row.amount));   // captures an authorized payment
+                    await settleOrder(oid, p.id, Number(p.amount) / 100);
+                }
+            } catch (e) { console.error('plan status check:', e.message); }
+        }
+        const now = (await dbq('SELECT status FROM dv_plan_payments WHERE order_id = ?', [oid]))[0];
+        res.json({ paid: !!now && now.status === 'paid', sub: subState(await loadSub(uid)) });
     }));
 
     // ── List / instant search by Bill No.  GET /api/dv/invoices?q=50
@@ -651,4 +683,4 @@ function install(app, ctx) {
 
 function normVersion(v) { return String(v == null ? '' : v).trim().toUpperCase() === 'B' ? 'B' : 'A'; }
 
-module.exports = { subState, nextExpiry, normVersion, SCHEMA_SQL, DEFAULT_SETTINGS, install, calc, amountInWords, sanitizeSettings, parseInvoiceBody };
+module.exports = { settlePlanOrder: function (o, p, r) { return _settle ? _settle(o, p, r) : Promise.resolve(false); }, subState, nextExpiry, normVersion, SCHEMA_SQL, DEFAULT_SETTINGS, install, calc, amountInWords, sanitizeSettings, parseInvoiceBody };

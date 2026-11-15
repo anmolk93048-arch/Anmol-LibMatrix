@@ -151,6 +151,7 @@ const dvInvoice = require('./dv-invoice-module');
 dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAuthUser, asyncRoute: asyncRoute, noStore: noStore,
                          escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); },
                          razorpayRequest: function () { return razorpayRequest.apply(null, arguments); },
+                         razorpayCall: function () { return razorpayCall.apply(null, arguments); },
                          razorpayConfirmPayment: function () { return razorpayConfirmPayment.apply(null, arguments); } });
 // ▲ RENDER-URL REWRITE (safety net): any page/script served by THIS server that still contains the old Render origin
 //   (theme.js, config.js, portal pages ...) gets it replaced by the current site's own origin → every API call becomes
@@ -5972,7 +5973,9 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
             const paidRs = pay ? Number(pay.amount) / 100 : (ord ? Number(ord.amount_paid) / 100 : null);
             const rows = await dbq('SELECT status, amount FROM material_invoice_payments WHERE order_id=?', [orderId]);
             if (!rows.length) {
-                console.log('ℹ️ ' + tag + ' not a material-invoice order — nothing to mark here.');
+                let planDone = false;
+                try { planDone = await dvInvoice.settlePlanOrder(orderId, paymentId, paidRs); } catch (e) { console.error('❌ ' + tag + ' Session B plan settle failed:', e.message); throw e; }
+                console.log('ℹ️ ' + tag + (planDone ? ' Session B plan order settled / already active.' : ' not a material-invoice or plan order — nothing to mark here.'));
             } else if (paidRs !== null && Math.abs(Number(rows[0].amount) - paidRs) > 0.001) {
                 console.error('❌ ' + tag + ' AMOUNT MISMATCH — Razorpay received ₹' + paidRs + ', order was created for ₹' + rows[0].amount + '. Invoice NOT marked Paid.');
             } else if (rows[0].status === 'created') {

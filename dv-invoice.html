@@ -431,7 +431,7 @@
 .mat-table .inp{padding:.25rem .4rem}
 .hidden{display:none}
 .sess-pill{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;letter-spacing:.06em;color:#fff;background:var(--gov-blue);border-radius:9999px;padding:2px 8px}
-.bar-btn{border:1px solid #cbd3de;background:#fff;color:var(--gov-navy);font-size:12px;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer}
+.bar-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1;border:1px solid #cbd3de;background:#fff;color:var(--gov-navy);font-size:12px;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer}
 .bar-btn.danger{color:#b91c1c;border-color:#f3b4b4}
 .sb-btn{border:1px solid #cbd3de;background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--gov-navy);cursor:pointer}
 .sb-btn.del{color:#b91c1c;margin-left:auto}
@@ -469,8 +469,8 @@
 
 <div id="loggedInUserBar" class="no-print" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eef3fb;border-bottom:1px solid #d8e0ee;padding:7px 16px;flex-wrap:wrap">
   <span style="font-size:12px;font-weight:700;color:var(--gov-navy)">👤 Logged in <span class="sess-pill">SESSION B</span></span>
-  <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><button type="button" class="bar-btn" onclick="openPlans()" style="color:#047857;border-color:#059669">💳 My Plan</button>
-  <button type="button" class="bar-btn danger" onclick="logoutPortal()">🚪 Logout</button></span>
+  <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><button type="button" class="bar-btn" onclick="openPlans()" style="color:#047857;border-color:#059669"><span style="display:inline-flex;align-items:center;font-size:14px;line-height:1">💳</span><span>My Plan</span></button>
+  <button type="button" class="bar-btn danger" onclick="logoutPortal()"><span style="display:inline-flex;align-items:center;font-size:14px;line-height:1">🚪</span><span>Logout</span></button></span>
 </div>
 <div id="liuPhotoRow" class="no-print" style="display:flex;align-items:center;gap:10px;background:#f7faff;border-bottom:1px solid #d8e0ee;padding:8px 16px;">
   <div class="liu-photo-wrap"><img id="liuPhotoImg" style="display:none;" src="" alt="User Photo"><div class="liu-photo-ph" id="liuPh">👤</div><span class="liu-live-dot" title="Live"></span></div>
@@ -988,6 +988,29 @@ function openPlans(){
       : 'No plan activity yet.';
   }).catch(function(){ var box = $('dvPlanHist'); if (box) box.textContent = ''; });
 }
+/* A UPI / PhonePe payment can succeed even when the checkout window never calls back (the user is in the UPI app, or the window closed).
+   So after any dismiss we ask the server — which asks Razorpay — whether the order was paid, and activate the plan if it was. */
+var PENDING_KEY = 'dv_plan_pending_order';
+function pollOrder(orderId, tries, gap){
+  return new Promise(function(resolve){
+    var n = 0;
+    (function once(){
+      api('/dv/plan/status?orderId=' + encodeURIComponent(orderId)).then(function(r){
+        if (r.paid) return resolve(r.sub);
+        if (++n >= tries) return resolve(null);
+        setTimeout(once, gap);
+      }).catch(function(){ if (++n >= tries) return resolve(null); setTimeout(once, gap); });
+    })();
+  });
+}
+function recoverPendingPlan(){
+  var oid = null; try { oid = localStorage.getItem(PENDING_KEY); } catch (e) {}
+  if (!oid) return;
+  pollOrder(oid, 3, 2000).then(function(sub){
+    if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (e) {} SUB = sub; renderPlan(); toast('✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
+  });
+}
+document.addEventListener('visibilitychange', function(){ if (!document.hidden && TOKEN) recoverPendingPlan(); });
 function buyPlan(id, btn){
   var msg = $('dvPlanMsg'); msg.textContent = ''; btn.disabled = true; var t = btn.innerHTML; btn.textContent = 'Please wait…';
   var fail = function(m){ msg.textContent = m; btn.disabled = false; btn.innerHTML = t; };
@@ -995,7 +1018,8 @@ function buyPlan(id, btn){
   api('/dv/plan/order', { method: 'POST', body: JSON.stringify({ planId: id }) }).then(function(o){
     if (o.free) return ok(o.sub, '✅ Plan activated.');
     return loadScriptOnce('https://checkout.razorpay.com/v1/checkout.js', function(){ return typeof Razorpay !== 'undefined'; }).then(function(){
-    var paid = false;
+    var paid = false, orderId = o.orderId;
+    try { localStorage.setItem(PENDING_KEY, orderId); } catch (e) {}
     var rz = new Razorpay({
       key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
       description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
@@ -1003,12 +1027,25 @@ function buyPlan(id, btn){
       handler: function(r){
         paid = true; msg.style.color = '#0f6e56'; msg.textContent = 'Verifying payment…';
         api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
-          .then(function(v){ ok(v.sub, '✅ Payment received — your plan is active until ' + fmtDate(v.sub.expires) + '. Billing is unlocked.'); })
-          .catch(function(e){ msg.style.color = '#b42318'; fail('Payment could not be verified: ' + e.message + ' If money was deducted it will be refunded in 5–7 days, or contact the administrator.'); });
+          .then(function(v){ try { localStorage.removeItem(PENDING_KEY); } catch (e) {} ok(v.sub, '✅ Payment received — your plan is active until ' + fmtDate(v.sub.expires) + '. Billing is unlocked.'); })
+          .catch(function(e){   // the browser verify failed — ask the server to confirm with Razorpay before giving up (UPI / slow network)
+            msg.textContent = 'Confirming your payment…';
+            pollOrder(orderId, 6, 2500).then(function(sub){
+              if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
+              else { msg.style.color = '#b42318'; fail('Payment could not be confirmed yet: ' + e.message + ' If money was deducted your plan activates automatically within a few minutes, or contact the administrator.'); }
+            });
+          });
       },
-      modal: { ondismiss: function(){ if (!paid) fail('Payment cancelled — your plan was not changed.'); } }
+      modal: { ondismiss: function(){
+        if (paid) return;
+        msg.style.color = '#0f6e56'; msg.textContent = 'Checking your payment…';
+        pollOrder(orderId, 5, 2000).then(function(sub){
+          if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
+          else { msg.style.color = '#b42318'; fail('Payment was not completed — your plan was not changed.'); }
+        });
+      } }
     });
-    rz.on('payment.failed', function(){ if (!paid) fail('Payment failed — your plan was not changed.'); });
+    rz.on('payment.failed', function(){ msg.style.color = '#b42318'; msg.textContent = 'That payment attempt failed — you can retry in the payment window.'; });
     rz.open();
     }, function(){ fail('Unable to load the Razorpay checkout. Check your internet connection and try again.'); });
   }).catch(function(e){ fail(e.message); });
@@ -1055,6 +1092,7 @@ function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(
   if (!TOKEN) return toLogin();
   api('/dv/me').then(function(me){
     ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
+    setTimeout(recoverPendingPlan, 800);
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
