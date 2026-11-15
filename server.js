@@ -5969,6 +5969,7 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
     try {
         if (event === 'payment.authorized' && pay) {
             await razorpayConfirmPayment(orderId, paymentId);   // captures the authorized payment (no auto-refund)
+            try { if (await dvInvoice.settlePlanOrder(orderId, paymentId, Number(pay.amount) / 100)) console.log('✅ ' + tag + ' Session B plan activated from the webhook.'); } catch (e) { console.error('❌ ' + tag + ' Session B plan settle failed:', e.message); throw e; }
         } else if ((event === 'payment.captured' || event === 'order.paid') && orderId) {
             const paidRs = pay ? Number(pay.amount) / 100 : (ord ? Number(ord.amount_paid) / 100 : null);
             const rows = await dbq('SELECT status, amount FROM material_invoice_payments WHERE order_id=?', [orderId]);
