@@ -388,13 +388,13 @@
 </style>
 <style id="anmol-uniform-actions">
   /* Uniform action buttons — identical height, padding, font, radius, centred content; responsive grid */
-  .act-bar{display:grid !important;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:stretch;justify-content:stretch;width:100%;}
-  @media (max-width:1099px){ .act-bar{grid-template-columns:repeat(3,minmax(0,1fr));} }
-  @media (max-width:520px){ .act-bar{grid-template-columns:repeat(2,minmax(0,1fr));} .act-btn{font-size:11.5px !important;padding:0 4px !important} }
+  .act-bar{display:grid !important;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:stretch;justify-content:stretch;width:100%;}
+  @media (max-width:1099px){ .act-bar{grid-template-columns:repeat(2,minmax(0,1fr));} .act-bar > :last-child:nth-child(odd){grid-column:1 / -1;} }
+  @media (max-width:520px){ .act-bar{grid-template-columns:minmax(0,1fr);} }
   .act-btn, #invoiceViewerBar .ivb, #cloudResetBtn{
     box-sizing:border-box !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:6px;
-    min-height:38px !important; height:38px !important; padding:0 8px !important; border-radius:8px !important;
-    font-size:12px !important; font-weight:700 !important; line-height:1.2 !important; text-align:center; white-space:nowrap;
+    min-height:44px !important; height:44px !important; padding:0 18px !important; border-radius:8px !important;
+    font-size:13px !important; font-weight:700 !important; line-height:1.2 !important; text-align:center; white-space:nowrap;
     cursor:pointer; margin:0 !important;
   }
   .act-btn{ width:100%; }
@@ -469,7 +469,8 @@
 
 <div id="loggedInUserBar" class="no-print" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#eef3fb;border-bottom:1px solid #d8e0ee;padding:7px 16px;flex-wrap:wrap">
   <span style="font-size:12px;font-weight:700;color:var(--gov-navy)">👤 Logged in <span class="sess-pill">SESSION B</span></span>
-  <button type="button" class="bar-btn danger" onclick="logoutPortal()">🚪 Logout</button>
+  <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><button type="button" class="bar-btn" onclick="openPlans()" style="color:#047857;border-color:#059669">💳 My Plan</button>
+  <button type="button" class="bar-btn danger" onclick="logoutPortal()">🚪 Logout</button></span>
 </div>
 <div id="liuPhotoRow" class="no-print" style="display:flex;align-items:center;gap:10px;background:#f7faff;border-bottom:1px solid #d8e0ee;padding:8px 16px;">
   <div class="liu-photo-wrap"><img id="liuPhotoImg" style="display:none;" src="" alt="User Photo"><div class="liu-photo-ph" id="liuPh">👤</div><span class="liu-live-dot" title="Live"></span></div>
@@ -485,14 +486,6 @@
 <main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
   <div id="lockNote" class="login-error" style="display:block;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">🔒 Company, bank and tax details are your locked Session B business profile, set by the administrator. Just enter the customer and material details.</div>
   <div id="planBanner"></div>
-  <section class="act-bar">
-    <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
-    <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
-    <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
-    <button type="button" onclick="openPlans()" class="act-btn border border-emerald-600 text-emerald-700 hover:bg-emerald-50">💳 My Plan</button>
-    <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
-    <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
-  </section>
   <div id="pageError" class="login-error"></div>
 
   <section class="gov-card bg-white rounded-sm overflow-hidden">
@@ -572,6 +565,13 @@
     </div>
   </section>
 
+  <section class="act-bar">
+    <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
+    <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
+    <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
+    <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
+    <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
+  </section>
   <section id="devCredit" class="no-print text-center py-2"><p class="text-[11px] text-gray-400">Developer: <span class="font-semibold text-gray-500">Anmol Kumar</span> &nbsp;|&nbsp; Helping Number: <span class="font-semibold text-gray-500">6202119756</span></p></section>
 </main>
 
