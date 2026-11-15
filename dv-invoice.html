@@ -229,11 +229,6 @@
   #invoiceArea .inv-noborder{ border:none !important; }
   #invoiceArea .inv-sig-box{ height:70px; }
   #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
-  #invoiceArea .inv-bk-title{ font-size:11px; font-weight:800; text-align:center; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid #888; padding-bottom:2px; margin-bottom:3px; }
-  #invoiceArea .inv-bk-row{ display:flex; gap:6px; font-size:10.5px; line-height:1.5; }
-  #invoiceArea .inv-bk-row span{ flex:0 0 92px; white-space:nowrap; color:#333; font-weight:600; }
-  #invoiceArea .inv-bk-row span:after{ content:' :'; }
-  #invoiceArea .inv-bk-row b{ flex:1; font-weight:800; color:#000; word-break:break-all; }
   #invoiceArea .inv-items th{ white-space:nowrap !important; word-break:keep-all !important; overflow-wrap:normal !important; word-wrap:normal !important; padding:3px 2px; font-size:9.5px; letter-spacing:0; overflow:hidden; }
   #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
   #invoiceArea .inv-items td.inv-num{ text-align:right; }
@@ -581,6 +576,13 @@
 </main>
 
 <style>@media (min-width:640px){ #sidebarOverlay{ display:none !important; } }  /* Saved Bills stays beside the form; it closes only with × / Back */</style>
+<style>.sb-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.sb-actions button{display:flex;align-items:center;justify-content:center;white-space:nowrap;height:30px;padding:0 4px;font-size:11px;font-weight:700;line-height:1;border-radius:6px;border:1px solid #cbd3de;background:#fff;cursor:pointer;transition:background .15s}
+.sb-actions .a-edit{background:#1d4ed8;border-color:#1d4ed8;color:#fff}.sb-actions .a-edit:hover{background:#1e40af}
+.sb-actions .a-print{border-color:#3b82f6;color:#1d4ed8}.sb-actions .a-print:hover{background:#eff6ff}
+.sb-actions .a-pdf{border-color:#059669;color:#047857}.sb-actions .a-pdf:hover{background:#ecfdf5}
+.sb-actions .a-del{border-color:#f87171;color:#dc2626}.sb-actions .a-del:hover{background:#fef2f2}
+</style>
 <div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40"></div>
 <aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
   <div class="sticky top-0 z-10">
@@ -626,13 +628,15 @@
     <tfoot><tr class="inv-bold"><td colspan="5" class="inv-right">Total :-</td><td id="i-tTax" class="inv-num"></td><td></td><td id="i-tCgst" class="inv-num"></td><td></td><td id="i-tSgst" class="inv-num"></td><td id="i-tGrand" class="inv-num"></td></tr></tfoot>
   </table>
   <table class="inv-block"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tr>
-    <td style="vertical-align:top;padding:5px 8px;">
-      <div class="inv-bk-title" id="i-company2"></div>
-      <div class="inv-bk-row"><span>Bank Name</span><b id="i-bank"></b></div>
-      <div class="inv-bk-row"><span>Branch</span><b id="i-branch"></b></div>
-      <div class="inv-bk-row"><span>IFSC Code</span><b id="i-ifsc"></b></div>
-      <div class="inv-bk-row"><span>A/C No.</span><b id="i-acc"></b></div>
-    </td>
+    <td style="padding:0; vertical-align:top;">
+        <table style="height:100%">
+          <tr><td colspan="2" class="inv-center" style="text-transform:uppercase;"><span id="i-company2"></span></td></tr>
+          <tr><td>Bank Name :-</td><td id="i-bank"></td></tr>
+          <tr><td>Branch :-</td><td id="i-branch"></td></tr>
+          <tr><td>IFSC Code :-</td><td id="i-ifsc"></td></tr>
+          <tr><td>A/C No. :-</td><td id="i-acc"></td></tr>
+        </table>
+      </td>
     <td style="padding:0;vertical-align:top;"><table>
       <tr><td>Taxable Amount :-</td><td class="inv-num" id="i-bTax"></td></tr>
       <tr><td>CGST :-</td><td class="inv-num" id="i-bCgst"></td></tr>
@@ -877,7 +881,7 @@ function loadSaved(){
     $('savedList').innerHTML = rows.length ? rows.map(function(r){
       return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
         + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
-        + '<div class="flex gap-2 mt-2"><button class="sb-btn" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="sb-btn" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="sb-btn" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="sb-btn del" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️</button></div></div>';
+        + '<div class="sb-actions"><button class="a-edit" title="Edit this bill" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="a-print" title="Print this bill" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="a-pdf" title="Download as PDF" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="a-del" title="Delete this bill" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️ Delete</button></div></div>';
     }).join('') : '<p class="text-xs text-gray-500 text-center py-6">' + (q ? 'No bill matches “' + esc(q) + '”.' : 'No saved bills yet.') + '</p>';
   }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
 }
@@ -963,7 +967,7 @@ function renderPlan(){
   var dl = SUB.daysLeft, till = fmtDate(SUB.expires), nm = esc(SUB.planName || 'Plan');
   if (st === 'active') { b.className = 'show ok'; b.innerHTML = '✅ <span>' + nm + ' — valid till <b>' + till + '</b> (' + dl + ' days left)</span>'; }
   else if (st === 'expiring') { b.className = 'show warn'; b.innerHTML = '⚠️ <span>Your ' + nm + ' ' + (dl === 0 ? 'expires <b>today</b>' : 'expires in <b>' + dl + ' day' + (dl === 1 ? '' : 's') + '</b> (' + till + ')') + '. Renew now to avoid interruption.</span><button onclick="openPlans()">Renew now</button>'; }
-  else { b.className = 'show bad'; b.innerHTML = '🔒 <span>Your ' + nm + ' expired on <b>' + till + '</b>. Billing is locked — your saved bills are safe and can still be viewed, printed and downloaded. Renew to unlock instantly.</span><button onclick="openPlans()">Renew &amp; unlock</button>'; }
+  else { b.className = 'show bad'; b.innerHTML = '🔒 <span><b>Please activate your plan to continue.</b> Your ' + nm + ' expired on <b>' + till + '</b>. Saving and editing bills is paused — all your saved bills, company profile and data are safe and can still be viewed, printed and downloaded. Activate to resume instantly.</span><button onclick="openPlans()">Activate plan</button>'; }
 }
 function openPlans(){
   var old = $('dvPlanOv'); if (old) old.remove();
@@ -971,7 +975,7 @@ function openPlans(){
   var cur = SUB && SUB.state !== 'none' ? '<p style="font-size:13px;margin:6px 0 0;color:#475569">Current: <b>' + esc(SUB.planName || 'Plan') + '</b> — ' + (SUB.locked ? '<span style="color:#b42318;font-weight:800">expired on ' : 'valid till <b>') + fmtDate(SUB.expires) + (SUB.locked ? '</span>' : '</b>') + '</p>' : '';
   var list = (PLANS || []).map(function(p){
     return '<div class="dv-plan"><div><b>' + esc(p.name) + '</b><div style="font-size:12px;color:#475569">' + esc(p.description || (p.days + ' days')) + '</div><div style="font-size:11px;color:#64748b">' + p.days + ' days</div></div>'
-      + '<div style="margin-left:auto;text-align:right"><div class="pr">' + (p.price > 0 ? '₹' + money(p.price).replace(/\.00$/, '') : 'Free') + '</div><button style="margin:6px 0 0" onclick="buyPlan(' + p.id + ',this)">' + (SUB && SUB.locked ? 'Pay &amp; unlock' : (SUB && SUB.state !== 'none' ? 'Renew / Upgrade' : 'Buy')) + '</button></div></div>';
+      + '<div style="margin-left:auto;text-align:right"><div class="pr">' + (p.price > 0 ? '₹' + money(p.price).replace(/\.00$/, '') : 'Free') + '</div><button style="margin:6px 0 0" onclick="buyPlan(' + p.id + ',this)">' + (SUB && SUB.locked ? 'Activate &amp; unlock' : (SUB && SUB.state !== 'none' ? 'Renew / Upgrade' : 'Buy')) + '</button></div></div>';
   }).join('') || '<p style="font-size:13px;color:#64748b;margin-top:12px">No plans are available right now. Please contact the administrator.</p>';
   ov.innerHTML = '<div class="dv-dlg"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:18px;font-weight:800">💳 Invoice Plans</h3><button onclick="document.getElementById(\'dvPlanOv\').remove()" style="border:none;background:none;font-size:24px;cursor:pointer" aria-label="Close">&times;</button></div>' + cur
     + '<p style="font-size:12px;color:#64748b;margin:4px 0 0">Renewing early adds the new days to your remaining time. Saved bills are never deleted.</p>' + list + '<div id="dvPlanMsg" style="margin-top:10px;font-size:12px;font-weight:700;color:#b42318"></div>'

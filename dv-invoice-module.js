@@ -93,7 +93,11 @@ const SCHEMA_SQL = [
         source VARCHAR(12) NOT NULL,
         expires_after DATE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
+    )`,
+    // The standard ₹199 / 30-day VIP plan — created once, only while NO plan exists yet (the Super Admin can edit / replace it later)
+    `INSERT INTO dv_plans (name, description, days, price, active)
+        SELECT 'VIP Plan', '30 Days VIP — unlimited invoices, bills & PDFs for ₹199', 30, 199, TRUE
+        WHERE NOT EXISTS (SELECT 1 FROM dv_plans)`
 ];
 
 /* ───────── plan / expiry date helpers (all in IST, whole days; a plan is valid THROUGH its expiry date) ───────── */
@@ -358,7 +362,7 @@ function install(app, ctx) {
     const dvActive = asyncRoute(async function (req, res, next) {
         const st = subState(await loadSub(req.dvUser.userId));
         if (st.locked) {
-            return res.status(402).json({ error: 'Your Invoice Plan expired on ' + st.expires + '. Renew it to continue billing — all your saved bills are safe.', code: 'PLAN_EXPIRED', expires: st.expires });
+            return res.status(402).json({ error: 'Please activate your plan to continue. Your Invoice Plan expired on ' + st.expires + '; all your saved bills and data are safe.', code: 'PLAN_EXPIRED', expires: st.expires });
         }
         next();
     });

@@ -216,11 +216,6 @@
   #invoiceArea .inv-noborder{ border:none !important; }
   #invoiceArea .inv-sig-box{ height:70px; }
   #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
-  #invoiceArea .inv-bk-title{ font-size:11px; font-weight:800; text-align:center; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid #888; padding-bottom:2px; margin-bottom:3px; }
-  #invoiceArea .inv-bk-row{ display:flex; gap:6px; font-size:10.5px; line-height:1.5; }
-  #invoiceArea .inv-bk-row span{ flex:0 0 92px; white-space:nowrap; color:#333; font-weight:600; }
-  #invoiceArea .inv-bk-row span:after{ content:' :'; }
-  #invoiceArea .inv-bk-row b{ flex:1; font-weight:800; color:#000; word-break:break-all; }
   #invoiceArea .inv-items th{ white-space:nowrap !important; word-break:keep-all !important; overflow-wrap:normal !important; word-wrap:normal !important; padding:3px 2px; font-size:9.5px; letter-spacing:0; overflow:hidden; }
   #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
   #invoiceArea .inv-items td.inv-num{ text-align:right; }
@@ -1419,6 +1414,13 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
 
 <!-- ============ SAVED BILLS SIDEBAR ============ -->
 <style>@media (min-width:640px){ #sidebarOverlay{ display:none !important; } }  /* Saved Bills stays beside the form; it closes only with × / Back */</style>
+<style>.sb-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.sb-actions button{display:flex;align-items:center;justify-content:center;white-space:nowrap;height:30px;padding:0 4px;font-size:11px;font-weight:700;line-height:1;border-radius:6px;border:1px solid #cbd3de;background:#fff;cursor:pointer;transition:background .15s}
+.sb-actions .a-edit{background:#1d4ed8;border-color:#1d4ed8;color:#fff}.sb-actions .a-edit:hover{background:#1e40af}
+.sb-actions .a-print{border-color:#3b82f6;color:#1d4ed8}.sb-actions .a-print:hover{background:#eff6ff}
+.sb-actions .a-pdf{border-color:#059669;color:#047857}.sb-actions .a-pdf:hover{background:#ecfdf5}
+.sb-actions .a-del{border-color:#f87171;color:#dc2626}.sb-actions .a-del:hover{background:#fef2f2}
+</style>
 <div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40"></div>
 <aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
   <div class="sticky top-0 z-10">
@@ -1538,12 +1540,14 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
   <table class="inv-block">
     <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
     <tr>
-      <td class="inv-bank" style="vertical-align:top; padding:5px 8px;">
-        <div class="inv-bk-title"><span id="inv-businessName3"></span></div>
-        <div class="inv-bk-row"><span>Bank Name</span><b id="inv-bankName"></b></div>
-        <div class="inv-bk-row"><span>Account Holder</span><b id="inv-branch"></b></div>
-        <div class="inv-bk-row"><span>IFSC Code</span><b id="inv-ifsc"></b></div>
-        <div class="inv-bk-row"><span>A/C No.</span><b id="inv-acNo"></b></div>
+      <td style="padding:0; vertical-align:top;">
+        <table style="height:100%">
+          <tr><td colspan="2" class="inv-center" style="text-transform:uppercase;"><span id="inv-businessName3"></span></td></tr>
+          <tr><td>Bank Name :-</td><td id="inv-bankName"></td></tr>
+          <tr><td>Account Holder :-</td><td id="inv-branch"></td></tr>
+          <tr><td>IFSC Code :-</td><td id="inv-ifsc"></td></tr>
+          <tr><td>A/C No. :-</td><td id="inv-acNo"></td></tr>
+        </table>
       </td>
       <td style="padding:0; vertical-align:top;">
         <table>
@@ -3019,11 +3023,11 @@ function renderSidebar(){
         ${client ? `<p class="text-[11px] text-gray-700">Client / Work: ${_sbEsc(client)}</p>` : ''}
         <p class="text-[11px] text-gray-600">Bill No: ${_sbEsc(b.billNo) || '—'} &nbsp;|&nbsp; Date: ${_sbEsc(b.billDate) || '—'}</p>
         <p class="text-[10px] text-gray-400">☁️ Saved: ${_sbEsc(dt)}</p>
-        <div class="flex gap-2 mt-1.5">
-          <button onclick="loadBill(${i})" class="flex-1 text-[11px] font-semibold px-2 py-1 rounded bg-[var(--gov-blue)] text-white hover:opacity-90">✏️ Edit</button>
-          <button onclick="printSavedBill(${i})" title="Print this bill" class="text-[11px] font-semibold px-2 py-1 rounded border border-blue-500 text-blue-700 hover:bg-blue-50">🖨️ Print</button>
-          <button onclick="savePdfSavedBill(${i})" title="Download this bill as a PDF" class="text-[11px] font-semibold px-2 py-1 rounded border border-emerald-600 text-emerald-700 hover:bg-emerald-50">⬇️ Save PDF</button>
-          <button onclick="deleteBill(${i})" class="text-[11px] font-semibold px-2 py-1 rounded border border-red-400 text-red-600 hover:bg-red-50">Delete</button>
+        <div class="sb-actions">
+          <button onclick="loadBill(${i})" title="Edit this bill" class="a-edit">✏️ Edit</button>
+          <button onclick="printSavedBill(${i})" title="Print this bill" class="a-print">🖨️ Print</button>
+          <button onclick="savePdfSavedBill(${i})" title="Download this bill as a PDF" class="a-pdf">⬇️ PDF</button>
+          <button onclick="deleteBill(${i})" title="Delete this bill" class="a-del">🗑️ Delete</button>
         </div>
       </div>
     `;
