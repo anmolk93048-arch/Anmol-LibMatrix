@@ -414,7 +414,10 @@ function install(app, ctx) {
         if (x.length !== y.length || !crypto.timingSafeEqual(x, y)) return res.status(400).json({ error: 'Payment signature mismatch — the plan was not activated.' });
         const uid = req.dvUser.userId;
         const row = (await dbq('SELECT order_id, plan_id, plan_name, days, amount, status, payment_id FROM dv_plan_payments WHERE order_id = ? AND LOWER(user_id) = LOWER(?)', [oid, uid]))[0];
-        if (!row) return res.status(400).json({ error: 'This payment order was not found for your account.' });
+        if (!row) {
+            const other = (await dbq('SELECT purpose FROM material_invoice_payments WHERE order_id = ?', [oid]).catch(() => []))[0];
+            return res.status(400).json({ error: other ? 'This payment is for a Session A ' + (String(other.purpose) === 'topup' ? 'wallet recharge' : 'invoice fee') + ', not a Session B plan. The plan was not changed.' : 'This payment order was not found for your account.' });
+        }
         if (row.status === 'paid') {                          // idempotent: a repeated verify never adds days twice
             if (row.payment_id !== pid) return res.status(400).json({ error: 'This order was already paid with a different payment.' });
             return res.json({ success: true, already: true, sub: subState(await loadSub(uid)) });

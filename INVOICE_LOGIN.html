@@ -2302,14 +2302,28 @@ async function walletTopUp(amount){
       image:(location.origin + '/anmol_libmatrix_logo.png'),
       theme:{ color:'#0f6e56' },
       handler:function(r){
+        if(!r || !r.razorpay_signature){   // some UPI / PhonePe returns omit the signature → the server confirms the order with Razorpay itself
+          paid = true; return pollTopup(1);
+        }
         paid = true;
         API.post('/material/wallet/topup/verify', { razorpay_order_id:r.razorpay_order_id, razorpay_payment_id:r.razorpay_payment_id, razorpay_signature:r.razorpay_signature })
           .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); resolve(walletBalance); })
           .catch(function(e){ reject(new Error('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.')); });
       },
-      modal:{ ondismiss:function(){ if(!paid) reject(new Error('Payment cancelled — no credit was added.')); } }
+      modal:{ ondismiss:function(){ if(!paid) pollTopup(0); } }
     });
-    rz.on('payment.failed', function(){ if(!paid) reject(new Error('Payment failed — no credit was added.')); });
+    /* UPI / PhonePe can succeed although the checkout never calls back → ask the server (which asks Razorpay) before giving up */
+    function pollTopup(wasPaid){
+      let n = 0;
+      (function once(){
+        API.get('/material/wallet/topup/status?orderId=' + encodeURIComponent(o.orderId) + '&_=' + Date.now()).then(function(r){
+          if(r.paid){ walletBalance = Number(r.balance) || 0; updateWalletChip(); return resolve(walletBalance); }
+          if(++n >= (wasPaid ? 8 : 4)) return reject(new Error(wasPaid ? 'Your payment is being confirmed — the credit will appear in your wallet within a few minutes.' : 'Payment cancelled — no credit was added.'));
+          setTimeout(once, 2000);
+        }).catch(function(){ if(++n >= 4) return reject(new Error('Payment cancelled — no credit was added.')); setTimeout(once, 2000); });
+      })();
+    }
+    rz.on('payment.failed', function(){ /* the customer can retry inside the checkout window */ });
     rz.open();
   });
 }

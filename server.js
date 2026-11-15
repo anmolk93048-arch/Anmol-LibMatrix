@@ -5969,14 +5969,17 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
     try {
         if (event === 'payment.authorized' && pay) {
             await razorpayConfirmPayment(orderId, paymentId);   // captures the authorized payment (no auto-refund)
-            try { if (await dvInvoice.settlePlanOrder(orderId, paymentId, Number(pay.amount) / 100)) console.log('✅ ' + tag + ' Session B plan activated from the webhook.'); } catch (e) { console.error('❌ ' + tag + ' Session B plan settle failed:', e.message); throw e; }
+            try { const sr = await settleRazorpayOrder(orderId, paymentId, Number(pay.amount) / 100); if (sr.ok) console.log('✅ ' + tag + ' ' + sr.kind + ' settled from the webhook.'); } catch (e) { console.error('❌ ' + tag + ' settle failed:', e.message); throw e; }
         } else if ((event === 'payment.captured' || event === 'order.paid') && orderId) {
             const paidRs = pay ? Number(pay.amount) / 100 : (ord ? Number(ord.amount_paid) / 100 : null);
-            const rows = await dbq('SELECT status, amount FROM material_invoice_payments WHERE order_id=?', [orderId]);
-            if (!rows.length) {
+            const rows = await dbq('SELECT status, amount, purpose FROM material_invoice_payments WHERE order_id=?', [orderId]);
+            if (rows.length && String(rows[0].purpose || '') === 'topup') {
+                const cr = await creditTopupOrder(orderId, paymentId, paidRs);
+                console.log((cr && cr.credited ? '✅ ' : 'ℹ️ ') + tag + (cr && cr.credited ? ' Session A wallet credited ₹' + cr.credited + ' (balance ₹' + cr.balance + ').' : cr && cr.mismatch ? ' amount mismatch — wallet NOT credited.' : ' wallet top-up already credited.'));
+            } else if (!rows.length) {
                 let planDone = false;
                 try { planDone = await dvInvoice.settlePlanOrder(orderId, paymentId, paidRs); } catch (e) { console.error('❌ ' + tag + ' Session B plan settle failed:', e.message); throw e; }
-                console.log('ℹ️ ' + tag + (planDone ? ' Session B plan order settled / already active.' : ' not a material-invoice or plan order — nothing to mark here.'));
+                console.log('ℹ️ ' + tag + (planDone ? ' Session B plan order settled / already active.' : ' not a material-invoice, wallet or plan order — nothing to mark here.'));
             } else if (paidRs !== null && Math.abs(Number(rows[0].amount) - paidRs) > 0.001) {
                 console.error('❌ ' + tag + ' AMOUNT MISMATCH — Razorpay received ₹' + paidRs + ', order was created for ₹' + rows[0].amount + '. Invoice NOT marked Paid.');
             } else if (rows[0].status === 'created') {
@@ -6159,10 +6162,11 @@ app.post('/api/material/invoice-payment/order', requireActiveMaterialUser, async
     if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET) {
         return res.status(501).json({ error: 'Payment keys are not set in the Render Environment.' });
     }
+    if (await isSessionBUser(owner)) return res.status(400).json({ error: 'Session B works on the fixed monthly plan — per-bill payment is only for Session A. Please use "My Plan" instead.' });
     const purpose = String((req.body && req.body.purpose) || 'generate') === 'update' ? 'update' : 'generate';
     let order;
     try {
-        order = await razorpayRequest('/v1/orders', { amount: Math.round(f.fee * 100), currency: 'INR', receipt: ('inv_' + owner + '_' + Date.now()).slice(0, 40) });
+        order = await razorpayRequest('/v1/orders', { amount: Math.round(f.fee * 100), currency: 'INR', receipt: ('inv_' + owner + '_' + Date.now()).slice(0, 40), notes: { model: 'session_a_invoice_fee', userId: String(owner), purpose: purpose } });
     } catch (e) { return res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }); }
     await dbq('INSERT INTO material_invoice_payments (order_id, owner_user_id, amount, purpose) VALUES (?,?,?,?)', [order.id, owner, f.fee, purpose]);
     res.json({ free: false, orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, fee: f.fee });
@@ -6184,6 +6188,7 @@ app.post('/api/material/invoice-payment/verify', requireActiveMaterialUser, asyn
     }
     // Order ID + amount must match what was fixed server-side when this order was created.
     const ordRow = (await dbq("SELECT amount, status FROM material_invoice_payments WHERE order_id=? AND owner_user_id=? AND COALESCE(purpose,'') <> 'topup'", [razorpay_order_id, owner]))[0];
+    if (!ordRow) { const kk = await orderKindOf(razorpay_order_id); if (kk) return res.status(400).json({ error: 'This payment is for ' + KIND_TEXT[kk] + ', not an invoice fee.' }); }
     if (!ordRow) { console.error('❌ invoice verify: order ' + razorpay_order_id + ' not found for owner ' + owner + ' (order id sent at initialization does not match).'); return res.status(400).json({ error: 'This payment order was not found or was already processed.' }); }
     try { await razorpayConfirmPayment(razorpay_order_id, razorpay_payment_id, Number(ordRow.amount)); }   // captures if still "authorized"
     catch (e) { console.error('❌ invoice verify rejected — order=' + razorpay_order_id + ' owner=' + owner + ':', e.message); return res.status(402).json({ error: e.message }); }
@@ -6258,6 +6263,56 @@ app.get('/api/material/wallet', noStore, requireActiveMaterialUser, asyncRoute(a
     const txns = await dbq('SELECT type, amount, balance_after AS "balanceAfter", note, created_at AS "createdAt" FROM material_wallet_txns WHERE owner_user_id = ? ORDER BY id DESC LIMIT 10', [owner]);
     res.json({ balance: await walletBalanceOf(owner), fee: f.fee, paymentRequired: f.paymentRequired, txns });
 }));
+// ── Order-type separation: Session A = prepaid wallet (per-bill fee deducted from credit), Session B = fixed monthly plan ──
+async function isSessionBUser(userId) {
+    const r = await dbq('SELECT invoice_version FROM material_users WHERE userid = ?', [String(userId || '')]);
+    return !!(r[0] && String(r[0].invoice_version || 'A').toUpperCase() === 'B');
+}
+// Which payment model does a Razorpay order id belong to?  'wallet_topup' | 'invoice_fee' | 'session_b_plan' | null
+async function orderKindOf(orderId) {
+    const a = (await dbq('SELECT purpose FROM material_invoice_payments WHERE order_id=?', [String(orderId)]))[0];
+    if (a) return String(a.purpose || '') === 'topup' ? 'wallet_topup' : 'invoice_fee';
+    const b = (await dbq('SELECT order_id FROM dv_plan_payments WHERE order_id=?', [String(orderId)]).catch(() => []))[0];
+    return b ? 'session_b_plan' : null;
+}
+const KIND_TEXT = { wallet_topup: 'a Session A wallet recharge', invoice_fee: 'a Session A invoice fee', session_b_plan: 'a Session B monthly plan' };
+// Credit a paid Session A wallet top-up exactly once (browser verify, webhook and status check can all call this safely).
+async function creditTopupOrder(orderId, paymentId, paidRs) {
+    const ord = (await dbq("SELECT owner_user_id, amount, status FROM material_invoice_payments WHERE order_id=? AND purpose='topup'", [String(orderId)]))[0];
+    if (!ord) return null;
+    if (ord.status === 'used') return { already: true };
+    if (paidRs != null && Math.round(Number(ord.amount) * 100) !== Math.round(Number(paidRs) * 100)) {
+        console.error('❌ wallet top-up ' + orderId + ': paid ₹' + paidRs + ' but ₹' + ord.amount + ' was ordered — wallet NOT credited.');
+        return { mismatch: true };
+    }
+    const claimed = await dbq("UPDATE material_invoice_payments SET status='used', payment_id=?, paid_at=COALESCE(paid_at, CURRENT_TIMESTAMP), used_at=CURRENT_TIMESTAMP WHERE order_id=? AND purpose='topup' AND status IN ('created','paid') RETURNING amount", [paymentId || null, String(orderId)]);
+    if (!claimed.length) return { already: true };
+    const bal = await walletCredit(ord.owner_user_id, Number(claimed[0].amount), 'Wallet top-up (Razorpay)', paymentId || orderId);
+    return { credited: Number(claimed[0].amount), balance: bal, userId: ord.owner_user_id };
+}
+// One entry point for "this Razorpay order is paid": routes it to the right model and updates the right user record.
+async function settleRazorpayOrder(orderId, paymentId, paidRs) {
+    const kind = await orderKindOf(orderId);
+    if (kind === 'wallet_topup') { const r = await creditTopupOrder(orderId, paymentId, paidRs); return { kind, ok: !!r && !r.mismatch, detail: r }; }
+    if (kind === 'session_b_plan') { const ok = await dvInvoice.settlePlanOrder(orderId, paymentId, paidRs); return { kind, ok }; }
+    return { kind, ok: false };
+}
+// Browser asks "was my wallet top-up paid?" (UPI / PhonePe return, closed window) — the server asks Razorpay and credits once.
+app.get('/api/material/wallet/topup/status', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
+    const { owner } = invoiceOwnerFromReq(req);
+    const oid = cleanText(req.query.orderId, 80);
+    const ord = (await dbq("SELECT amount, status FROM material_invoice_payments WHERE order_id=? AND owner_user_id=? AND purpose='topup'", [oid, owner]))[0];
+    if (!ord) return res.status(404).json({ error: 'Top-up order not found.' });
+    if (ord.status !== 'used') {
+        try {
+            const list = await razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
+            const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
+            if (p) { await razorpayConfirmPayment(oid, p.id, Number(ord.amount)); await creditTopupOrder(oid, p.id, Number(p.amount) / 100); }
+        } catch (e) { console.error('wallet top-up status check:', e.message); }
+    }
+    const now = (await dbq("SELECT status FROM material_invoice_payments WHERE order_id=?", [oid]))[0];
+    res.json({ paid: !!now && now.status === 'used', balance: await walletBalanceOf(owner) });
+}));
 // Top-up via Razorpay — the user chooses the amount; the order is created and fixed server-side.
 app.post('/api/material/wallet/topup/order', requireActiveMaterialUser, asyncRoute(async (req, res) => {
     const { owner } = invoiceOwnerFromReq(req);
@@ -6265,8 +6320,9 @@ app.post('/api/material/wallet/topup/order', requireActiveMaterialUser, asyncRou
     const amt = Math.round(Number(req.body && req.body.amount) * 100) / 100;
     if (!isFinite(amt) || amt < 1 || amt > 50000) return res.status(400).json({ error: 'Please enter an amount between ₹1 and ₹50,000.' });
     if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET) return res.status(501).json({ error: 'Payment keys are not set in the Render Environment.' });
+    if (await isSessionBUser(owner)) return res.status(400).json({ error: 'Session B works on the fixed monthly plan — wallet recharge is only for Session A. Please use "My Plan" instead.' });
     let order;
-    try { order = await razorpayRequest('/v1/orders', { amount: Math.round(amt * 100), currency: 'INR', receipt: ('wal_' + owner + '_' + Date.now()).slice(0, 40) }); }
+    try { order = await razorpayRequest('/v1/orders', { amount: Math.round(amt * 100), currency: 'INR', receipt: ('wal_' + owner + '_' + Date.now()).slice(0, 40), notes: { model: 'session_a_wallet_topup', userId: String(owner), credit: String(amt) } }); }
     catch (e) { return res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }); }
     await dbq('INSERT INTO material_invoice_payments (order_id, owner_user_id, amount, purpose) VALUES (?,?,?,?)', [order.id, owner, amt, 'topup']);
     res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, topup: amt });
@@ -6281,15 +6337,14 @@ app.post('/api/material/wallet/topup/verify', requireActiveMaterialUser, asyncRo
     const a = Buffer.from(expected), b = Buffer.from(String(razorpay_signature));
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(400).json({ error: 'Payment verification failed (signature mismatch). Nothing was added.' });
     const ord = (await dbq("SELECT amount, status FROM material_invoice_payments WHERE order_id=? AND owner_user_id=? AND purpose='topup'", [razorpay_order_id, owner]))[0];
-    if (!ord) return res.status(400).json({ error: 'This top-up order was not found.' });
+    if (!ord) { const k = await orderKindOf(razorpay_order_id); return res.status(400).json({ error: k ? 'This payment is for ' + KIND_TEXT[k] + ', not a wallet recharge. Nothing was added.' : 'This top-up order was not found.' }); }
     if (ord.status === 'used') return res.json({ success: true, already: true, balance: await walletBalanceOf(owner) });
     try { await razorpayConfirmPayment(razorpay_order_id, razorpay_payment_id, Number(ord.amount)); }
     catch (e) { return res.status(402).json({ error: e.message }); }
-    // single-use: only the request that flips the order to 'used' credits the wallet
-    const claimed = await dbq("UPDATE material_invoice_payments SET status='used', payment_id=?, paid_at=COALESCE(paid_at, CURRENT_TIMESTAMP), used_at=CURRENT_TIMESTAMP WHERE order_id=? AND owner_user_id=? AND purpose='topup' AND status IN ('created','paid') RETURNING amount", [razorpay_payment_id, razorpay_order_id, owner]);
-    if (!claimed.length) return res.json({ success: true, already: true, balance: await walletBalanceOf(owner) });
-    const bal = await walletCredit(owner, Number(claimed[0].amount), 'Wallet top-up (Razorpay)', razorpay_payment_id);
-    res.json({ success: true, balance: bal, added: Number(claimed[0].amount) });
+    // single-use: only the request that flips the order to 'used' credits the wallet (shared with the webhook / status check)
+    const cr = await creditTopupOrder(razorpay_order_id, razorpay_payment_id, Number(ord.amount));
+    if (!cr || cr.already) return res.json({ success: true, already: true, balance: await walletBalanceOf(owner) });
+    res.json({ success: true, balance: cr.balance, added: cr.credited });
 }));
 // Ask the Super Admin for a credit top-up
 app.post('/api/material/wallet/request', requireActiveMaterialUser, asyncRoute(async (req, res) => {
