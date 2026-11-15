@@ -1025,6 +1025,13 @@ function buyPlan(id, btn){
       description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
       prefill: { name: (ME && ME.name) || (SETTINGS && SETTINGS.companyName) || '', contact: String((ME && ME.mobile) || '').replace(/\D/g, '').slice(-10) },
       handler: function(r){
+        if (!r || !r.razorpay_signature) {   // some UPI / PhonePe returns omit the signature — the server confirms the order with Razorpay itself
+          msg.style.color = '#0f6e56'; msg.textContent = 'Confirming your payment…';
+          return pollOrder(orderId, 8, 2000).then(function(sub){
+            if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
+            else { msg.style.color = '#b42318'; fail('Payment is being confirmed. Your plan activates automatically within a few minutes — reopen My Plan to check.'); }
+          });
+        }
         paid = true; msg.style.color = '#0f6e56'; msg.textContent = 'Verifying payment…';
         api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
           .then(function(v){ try { localStorage.removeItem(PENDING_KEY); } catch (e) {} ok(v.sub, '✅ Payment received — your plan is active until ' + fmtDate(v.sub.expires) + '. Billing is unlocked.'); })

@@ -381,7 +381,8 @@ function install(app, ctx) {
     app.post('/api/dv/plan/order', dvUser, asyncRoute(async (req, res) => {
         const plan = (await dbq('SELECT id, name, days, price FROM dv_plans WHERE id = ? AND active = TRUE', [parseInt(req.body && req.body.planId, 10) || 0]))[0];
         if (!plan) return res.status(404).json({ error: 'This plan is not available.' });
-        const amt = Math.round(Number(plan.price) * 100) / 100;
+        const paise = Math.round(Number(plan.price) * 100);          // ONE integer amount (paise) is used for the order, the DB row and every later check
+        const amt = paise / 100;
         const uid = req.dvUser.userId;
         if (amt <= 0) {                                      // a free plan activates at once
             const exp = await grantDays(uid, plan.id, plan.name, Number(plan.days));
@@ -393,9 +394,13 @@ function install(app, ctx) {
             return res.status(501).json({ error: 'Payment is temporarily unavailable — the administrator must add the Razorpay keys to the server settings (' + (miss || 'Razorpay helper') + '). Your data and plan are unchanged.' });
         }
         let order;
-        try { order = await ctx.razorpayRequest('/v1/orders', { amount: Math.round(amt * 100), currency: 'INR', receipt: ('dvp_' + uid + '_' + Date.now()).slice(0, 40) }); }
+        try { order = await ctx.razorpayRequest('/v1/orders', { amount: paise, currency: 'INR', receipt: ('dvp_' + uid + '_' + Date.now()).slice(0, 40), notes: { userId: String(uid), planId: String(plan.id), plan: String(plan.name).slice(0, 40), days: String(plan.days) } }); }
         catch (e) { return res.status(502).json({ error: 'Could not create the payment order: ' + e.message }); }
-        await dbq('INSERT INTO dv_plan_payments (order_id, user_id, plan_id, plan_name, days, amount) VALUES (?,?,?,?,?,?)', [order.id, uid, plan.id, plan.name, Number(plan.days), amt]);
+        if (Number(order.amount) !== paise || (order.currency && order.currency !== 'INR')) {
+            console.error('❌ Razorpay returned order ' + order.id + ' with ' + order.amount + ' ' + order.currency + ' but ' + paise + ' INR paise was requested.');
+            return res.status(502).json({ error: 'The payment gateway returned an unexpected amount. Nothing was charged — please try again.' });
+        }
+        await dbq('INSERT INTO dv_plan_payments (order_id, user_id, plan_id, plan_name, days, amount) VALUES (?,?,?,?,?,?)', [order.id, uid, plan.id, plan.name, Number(plan.days), Number(order.amount) / 100]);
         res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, plan: { name: plan.name, days: Number(plan.days), price: amt } });
     }));
     app.post('/api/dv/plan/verify', dvUser, asyncRoute(async (req, res) => {
@@ -430,7 +435,7 @@ function install(app, ctx) {
         const row = (await dbq('SELECT order_id, user_id, plan_id, plan_name, days, amount, status FROM dv_plan_payments WHERE order_id = ?', [String(oid)]))[0];
         if (!row) return false;
         if (row.status === 'paid') return true;
-        if (paidRs != null && Math.abs(Number(row.amount) - Number(paidRs)) > 0.001) { console.error('❌ plan order ' + oid + ': paid ₹' + paidRs + ' but ₹' + row.amount + ' expected — not activated'); return false; }
+        if (paidRs != null && Math.round(Number(row.amount) * 100) !== Math.round(Number(paidRs) * 100)) { console.error('❌ plan order ' + oid + ': paid ₹' + paidRs + ' but ₹' + row.amount + ' expected — not activated'); return false; }
         const claimed = await dbq("UPDATE dv_plan_payments SET status='paid', payment_id=?, paid_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='created' RETURNING order_id", [pid || null, String(oid)]);
         if (claimed.length) { await grantDays(row.user_id, row.plan_id, row.plan_name, Number(row.days), 'razorpay', Number(row.amount)); try { audit({ headers: {}, ip: '' }, 'dv_plan_paid', row.user_id, 'plan=' + row.plan_name + ' amount=' + row.amount + ' via=webhook/status'); } catch (e) {} }
         return true;
