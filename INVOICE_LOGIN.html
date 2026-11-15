@@ -216,6 +216,11 @@
   #invoiceArea .inv-noborder{ border:none !important; }
   #invoiceArea .inv-sig-box{ height:70px; }
   #invoiceArea .inv-items th, #invoiceArea .inv-items td{ font-size:10px; padding:3px 4px; text-align:center; }
+  #invoiceArea .inv-bk-title{ font-size:11px; font-weight:800; text-align:center; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid #888; padding-bottom:2px; margin-bottom:3px; }
+  #invoiceArea .inv-bk-row{ display:flex; gap:6px; font-size:10.5px; line-height:1.5; }
+  #invoiceArea .inv-bk-row span{ flex:0 0 92px; white-space:nowrap; color:#333; font-weight:600; }
+  #invoiceArea .inv-bk-row span:after{ content:' :'; }
+  #invoiceArea .inv-bk-row b{ flex:1; font-weight:800; color:#000; word-break:break-all; }
   #invoiceArea .inv-items th{ white-space:nowrap !important; word-break:keep-all !important; overflow-wrap:normal !important; word-wrap:normal !important; padding:3px 2px; font-size:9.5px; letter-spacing:0; overflow:hidden; }
   #invoiceArea .inv-items td.inv-particulars{ text-align:left; }
   #invoiceArea .inv-items td.inv-num{ text-align:right; }
@@ -1296,7 +1301,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
             <th class="w-28">Price (₹)</th>
             <th class="w-24">Quantity</th>
             <th class="w-28">Amount (₹)</th>
-            <th class="w-24">GST Slab</th>
+            <th class="w-28">GST %</th>
             <th class="w-10 no-print"></th>
           </tr>
         </thead>
@@ -1413,7 +1418,8 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
 
 
 <!-- ============ SAVED BILLS SIDEBAR ============ -->
-<div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40" onclick="toggleSidebar()"></div>
+<style>@media (min-width:640px){ #sidebarOverlay{ display:none !important; } }  /* Saved Bills stays beside the form; it closes only with × / Back */</style>
+<div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40"></div>
 <aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
   <div class="sticky top-0 z-10">
     <div class="bg-[var(--gov-navy)] text-white px-4 py-3 flex items-center justify-between">
@@ -1532,12 +1538,12 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
   <table class="inv-block">
     <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
     <tr>
-      <td class="inv-bank" style="vertical-align:middle; font-size:12px; font-weight:700; padding:8px 10px;">
-        <p class="inv-bold inv-center" style="font-size:13px; margin:0 0 5px;"><span id="inv-businessName3"></span></p>
-        <p class="inv-center" style="margin:0 0 3px; line-height:1.4;">Bank Name :- <span id="inv-bankName"></span></p>
-        <p class="inv-center" style="margin:0 0 3px; line-height:1.4;">Bank Holder Name :- <span id="inv-branch"></span></p>
-        <p class="inv-center" style="margin:0 0 3px; line-height:1.4;">IFSC :- <span id="inv-ifsc"></span></p>
-        <p class="inv-center" style="margin:0; line-height:1.4;">A/C No. :- <span id="inv-acNo"></span></p>
+      <td class="inv-bank" style="vertical-align:top; padding:5px 8px;">
+        <div class="inv-bk-title"><span id="inv-businessName3"></span></div>
+        <div class="inv-bk-row"><span>Bank Name</span><b id="inv-bankName"></b></div>
+        <div class="inv-bk-row"><span>Account Holder</span><b id="inv-branch"></b></div>
+        <div class="inv-bk-row"><span>IFSC Code</span><b id="inv-ifsc"></b></div>
+        <div class="inv-bk-row"><span>A/C No.</span><b id="inv-acNo"></b></div>
       </td>
       <td style="padding:0; vertical-align:top;">
         <table>
@@ -1659,6 +1665,7 @@ function startBillsSync(){
         renderSidebar();
       });
   }
+  window._billsPullNow = _pull;
   _pull();
   _billsSyncTimer = setInterval(_pull, 10000);
 }
@@ -1984,36 +1991,16 @@ function gstOptions(selectedVal){
   return opts;
 }
 
-/* GST cell ko select ya editable input ke roop me banata hai, gstVal ke hisaab se */
+/* GST % — a plain number box per item (type 5, 12, 18 ... ); no slab drop-down */
 function gstCellHTML(gstVal){
-  const num = Number(gstVal);
-  if(GST_SLABS.includes(num)){
-    return `<select class="gst-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm" onchange="onGstChange(this)">${gstOptions(num)}</select>`;
-  }
-  return `<div class="flex items-center gap-0.5">
-      <input type="number" min="0" step="0.01" class="gst-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${num}" oninput="calculateAll()">
-      <span class="text-[10px]">%</span>
-      <button type="button" onclick="resetGstToSlab(this)" title="Select from slab list" class="text-[10px] text-blue-700 underline shrink-0">list</button>
+  const n = Number(gstVal) || 0;
+  return `<div class="flex items-center gap-1">
+      <input type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="GST %" class="gst-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${n ? n : ''}" oninput="calculateAll()">
+      <span class="text-xs text-gray-600">%</span>
     </div>`;
 }
-
-function onGstChange(sel){
-  const tr = sel.closest('tr');
-  const gstTd = tr.children[7];
-  if(sel.value === 'custom'){
-    gstTd.innerHTML = gstCellHTML(0.001); // 0.001 forces the "not in slab" (custom) branch even if 0%
-    const input = gstTd.querySelector('input.gst-select');
-    input.value = 0;
-    input.focus();
-  }
-  calculateAll();
-}
-
-function resetGstToSlab(btn){
-  const tr = btn.closest('tr');
-  tr.children[7].innerHTML = gstCellHTML(GST_SLABS[0]);
-  calculateAll();
-}
+function onGstChange(){ calculateAll(); }
+function resetGstToSlab(){ calculateAll(); }
 
 function addRow(prefill){
   rowCounter++;
@@ -2866,6 +2853,7 @@ async function persistBill(token){
     }
   }
   _savedSig = _billSig();   // saved → from now on printing is free until the invoice is edited again
+  try{ if(window._billsPullNow) window._billsPullNow(); }catch(e){}   // refresh the Saved Bills list right away; the panel itself is left exactly as it was
 }
 function saveCurrentBill(){ generateInvoice('save'); }
 
@@ -2943,7 +2931,7 @@ function loadBill(idx){
   // seedhe UPDATE ho (naya duplicate bill na bane)।
   currentEditingBillId = bill.id; _origBillNo = bill.billNo || '';
   SHOW_EDIT_MODE_BANNER(bill);
-  toggleSidebar();
+  if(window.innerWidth < 640) toggleSidebar();   // on phones the panel covers the form; on larger screens it stays open until × / Back
   window.scrollTo({top:0, behavior:'smooth'});
 }
 

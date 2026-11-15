@@ -3660,6 +3660,10 @@ html,body,#admin-app{width:100%;min-width:0;}
 
           <div class="sa-card">
             <h3>🔗 Map User IDs to Session B</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+              <select class="sa-in" id="isb-pick" style="flex:1;min-width:240px"></select>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.addPicked()">＋ Add selected user</button>
+            </div>
             <textarea class="sa-in" id="isb-ids" rows="2" placeholder="User IDs separated by commas, spaces or new lines — e.g. INV001, INV002" style="resize:vertical"></textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
               <button class="btn btn-gold btn-sm" type="button" onclick="ISB.mapTyped('B')">➜ Map to Session B</button>
@@ -3673,6 +3677,16 @@ html,body,#admin-app{width:100%;min-width:0;}
             <div class="tbl-wrap"><table>
               <thead><tr><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Company profile</th><th>Plan</th><th>Bills</th><th>Action</th></tr></thead>
               <tbody id="isb-body"></tbody>
+            </table></div>
+          </div>
+
+          <div class="sa-card" style="margin-top:18px">
+            <h3>📜 Plan History &amp; Status <span style="font-size:11px;font-weight:600;opacity:.7">— purchases and admin grants of one user</span></h3>
+            <div style="max-width:520px"><select class="sa-in" id="hist-user" onchange="PLN.history()"></select></div>
+            <div id="hist-status" style="margin:8px 0;font-size:13px"></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Date (IST)</th><th>Plan</th><th>By</th><th>Action</th><th>Days</th><th>Paid (₹)</th><th>Valid till</th></tr></thead>
+              <tbody id="hist-body"></tbody>
             </table></div>
           </div>
 
@@ -16504,7 +16518,7 @@ window.GLOBAL_SEARCH=function(value){
   }
   window.ISB={
     load:function(){
-      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();ISB.fillTargets();PLN.fillSelect();})
+      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();ISB.fillTargets();ISB.fillPick();PLN.fillSelect();PLN.fillHist();})
         .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="6" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
     },
     render:function(){
@@ -16519,7 +16533,7 @@ window.GLOBAL_SEARCH=function(value){
           +'<td>'+(u.profile?esc(u.profile):'<span style="opacity:.6">Default template</span>')+'</td>'
           +'<td>'+planCell(u.plan)+'</td><td>'+u.invoices+'</td>'
           +'<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="ISB.edit(\''+id+'\')">🏢 Profile</button> '
-          +'<button class="btn btn-sm btn-ghost" onclick="PLN.pick(\''+id+'\')">💳 Plan</button> '
+          +'<button class="btn btn-sm btn-ghost" onclick="PLN.pick(\''+id+'\')">💳 Plan</button> <button class="btn btn-sm btn-ghost" onclick="PLN.showHist(\''+id+'\')">📜 History</button> '
           +'<button class="btn btn-sm btn-ghost" onclick="ISB.one(\''+id+'\',\'A\')">↩ To A</button></td></tr>';
       }).join(''):'<tr><td colspan="6" style="text-align:center;padding:26px;color:var(--text-muted)">No users are on Session B yet — add User IDs above.</td></tr>';
     },
@@ -16531,6 +16545,15 @@ window.GLOBAL_SEARCH=function(value){
       sel.innerHTML=opts;
       sel.value=Array.prototype.some.call(sel.options,function(o){return o.value===keep;})?keep:'__default__';
       ISB.loadProfile();
+    },
+    fillPick:function(){
+      var s=$('isb-pick');if(!s)return;
+      s.innerHTML='<option value="">— Select a registered user —</option>'+rows.filter(function(u){return u.session!=='B';}).map(function(u){
+        return '<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+(u.village?' ('+esc(u.village)+')':'')+'</option>';}).join('');
+    },
+    addPicked:function(){
+      var v=$('isb-pick').value;if(!v)return;var t=$('isb-ids'),cur=(t.value||'').split(/[\s,;]+/).filter(Boolean);
+      if(cur.indexOf(v)<0)cur.push(v);t.value=cur.join(', ');$('isb-pick').value='';
     },
     edit:function(id){var sel=$('dv-target');sel.value=id;ISB.loadProfile();sel.scrollIntoView({behavior:'smooth',block:'center'});},
     loadProfile:function(){
@@ -16586,6 +16609,20 @@ window.GLOBAL_SEARCH=function(value){
     },
     del:function(id){if(!confirm('Delete this plan? Users who already have it keep their expiry date.'))return;
       apiFetch('/admin/dv-plans/'+id,{method:'DELETE'}).then(PLN.load).catch(function(e){say('pln-msg',e.message);});},
+    fillHist:function(){
+      var s=$('hist-user');if(!s)return;var k=s.value;
+      s.innerHTML='<option value="">— Select a Session B user —</option>'+rows.filter(function(u){return u.session==='B';}).map(function(u){return '<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+'</option>';}).join('');
+      s.value=k;
+    },
+    showHist:function(id){var s=$('hist-user');s.value=id;PLN.history();s.scrollIntoView({behavior:'smooth',block:'center'});},
+    history:function(){
+      var id=$('hist-user').value,b=$('hist-body'),st=$('hist-status');
+      if(!id){b.innerHTML='';st.innerHTML='';return;}
+      apiFetch('/admin/dv-history/'+encodeURIComponent(id)).then(function(r){
+        st.innerHTML=planCell(r.sub);
+        b.innerHTML=r.history.length?r.history.map(function(x){return '<tr><td>'+esc(x.at)+'</td><td>'+esc(x.plan||'—')+'</td><td>'+(x.source==='razorpay'?'💳 User (Razorpay)':'🛡️ Admin')+'</td><td>'+esc(x.action)+'</td><td>'+(x.days||'—')+'</td><td>'+(x.amount!=null?'₹'+x.amount:'—')+'</td><td>'+fdate(x.expires)+'</td></tr>';}).join(''):'<tr><td colspan="7" style="text-align:center;padding:16px;color:var(--text-muted)">No plan activity yet.</td></tr>';
+      }).catch(function(e){b.innerHTML='<tr><td colspan="7" style="color:#f87171;padding:14px">'+esc(e.message||'Unable to load history.')+'</td></tr>';});
+    },
     pick:function(id){var t=$('sub-ids');t.value=id;t.scrollIntoView({behavior:'smooth',block:'center'});t.focus();},
     assign:function(){
       var b={userIds:$('sub-ids').value,planId:$('sub-plan').value||undefined,days:$('sub-days').value||undefined,mode:$('sub-mode').value};
