@@ -388,13 +388,13 @@
 </style>
 <style id="anmol-uniform-actions">
   /* Uniform action buttons — identical height, padding, font, radius, centred content; responsive grid */
-  .act-bar{display:grid !important;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:stretch;justify-content:stretch;width:100%;}
-  @media (max-width:1099px){ .act-bar{grid-template-columns:repeat(2,minmax(0,1fr));} .act-bar > :last-child:nth-child(odd){grid-column:1 / -1;} }
-  @media (max-width:520px){ .act-bar{grid-template-columns:minmax(0,1fr);} }
+  .act-bar{display:grid !important;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:stretch;justify-content:stretch;width:100%;}
+  @media (max-width:1099px){ .act-bar{grid-template-columns:repeat(3,minmax(0,1fr));} }
+  @media (max-width:520px){ .act-bar{grid-template-columns:repeat(2,minmax(0,1fr));} .act-btn{font-size:11.5px !important;padding:0 4px !important} }
   .act-btn, #invoiceViewerBar .ivb, #cloudResetBtn{
     box-sizing:border-box !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:6px;
-    min-height:44px !important; height:44px !important; padding:0 18px !important; border-radius:8px !important;
-    font-size:13px !important; font-weight:700 !important; line-height:1.2 !important; text-align:center; white-space:nowrap;
+    min-height:38px !important; height:38px !important; padding:0 8px !important; border-radius:8px !important;
+    font-size:12px !important; font-weight:700 !important; line-height:1.2 !important; text-align:center; white-space:nowrap;
     cursor:pointer; margin:0 !important;
   }
   .act-btn{ width:100%; }
@@ -485,6 +485,14 @@
 <main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
   <div id="lockNote" class="login-error" style="display:block;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">🔒 Company, bank and tax details are your locked Session B business profile, set by the administrator. Just enter the customer and material details.</div>
   <div id="planBanner"></div>
+  <section class="act-bar">
+    <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
+    <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
+    <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
+    <button type="button" onclick="openPlans()" class="act-btn border border-emerald-600 text-emerald-700 hover:bg-emerald-50">💳 My Plan</button>
+    <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
+    <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
+  </section>
   <div id="pageError" class="login-error"></div>
 
   <section class="gov-card bg-white rounded-sm overflow-hidden">
@@ -564,14 +572,6 @@
     </div>
   </section>
 
-  <section class="act-bar">
-    <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
-    <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
-    <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
-    <button type="button" onclick="openPlans()" class="act-btn border border-emerald-600 text-emerald-700 hover:bg-emerald-50">💳 My Plan</button>
-    <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
-    <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
-  </section>
   <section id="devCredit" class="no-print text-center py-2"><p class="text-[11px] text-gray-400">Developer: <span class="font-semibold text-gray-500">Anmol Kumar</span> &nbsp;|&nbsp; Helping Number: <span class="font-semibold text-gray-500">6202119756</span></p></section>
 </main>
 
@@ -994,12 +994,12 @@ function buyPlan(id, btn){
   var ok = function(sub, text){ SUB = sub; renderPlan(); var o = $('dvPlanOv'); if (o) o.remove(); toast(text); };
   api('/dv/plan/order', { method: 'POST', body: JSON.stringify({ planId: id }) }).then(function(o){
     if (o.free) return ok(o.sub, '✅ Plan activated.');
-    if (typeof Razorpay === 'undefined') return fail('Unable to load the payment gateway. Check your internet connection and try again.');
+    return loadScriptOnce('https://checkout.razorpay.com/v1/checkout.js', function(){ return typeof Razorpay !== 'undefined'; }).then(function(){
     var paid = false;
     var rz = new Razorpay({
       key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
       description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
-      prefill: { name: ME && ME.name || '', contact: ME && ME.mobile || '' },
+      prefill: { name: (ME && ME.name) || (SETTINGS && SETTINGS.companyName) || '', contact: String((ME && ME.mobile) || '').replace(/\D/g, '').slice(-10) },
       handler: function(r){
         paid = true; msg.style.color = '#0f6e56'; msg.textContent = 'Verifying payment…';
         api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
@@ -1010,6 +1010,7 @@ function buyPlan(id, btn){
     });
     rz.on('payment.failed', function(){ if (!paid) fail('Payment failed — your plan was not changed.'); });
     rz.open();
+    }, function(){ fail('Unable to load the Razorpay checkout. Check your internet connection and try again.'); });
   }).catch(function(e){ fail(e.message); });
 }
 

@@ -2,8 +2,8 @@ try { require('dotenv').config(); } catch (e) { console.log('dotenv not installe
 // Friendly env-var aliases (Razorpay / App2SMS / Supabase naming) -> the names used below.
 (function () {
     const E = process.env, alias = (to, ...from) => { if (!E[to]) for (const f of from) if (E[f]) { E[to] = E[f]; break; } };
-    alias('PAYMENT_API_KEY', 'RAZORPAY_KEY_ID', 'RAZORPAY_API_KEY');
-    alias('PAYMENT_API_SECRET', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_API_SECRET');
+    alias('PAYMENT_API_KEY', 'RAZORPAY_KEY_ID', 'RAZORPAY_API_KEY', 'RAZORPAY_KEY', 'RAZORPAY_ID');
+    alias('PAYMENT_API_SECRET', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_API_SECRET', 'RAZORPAY_SECRET');
     alias('DATABASE_URL', 'POSTGRES_URL_NON_POOLING', 'POSTGRES_URL', 'SUPABASE_DB_URL');
     alias('SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
     alias('SMS_API_KEY', 'APP2SMS_API_KEY');
@@ -149,7 +149,9 @@ const routeMask = require('./route-mask').create({
 // 🧾 OPTION B — DV Enterprises custom invoice. Fully separate module: no Option A (wallet / Razorpay) route is touched.
 const dvInvoice = require('./dv-invoice-module');
 dvInvoice.install(app, { dbq: dbq, requireRole: requireRole, getAuthUser: getAuthUser, asyncRoute: asyncRoute, noStore: noStore,
-                         escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); } });
+                         escapeLike: escapeLike, findStaticFile: findStaticFile, auditPii: function () { return auditPii.apply(null, arguments); },
+                         razorpayRequest: function () { return razorpayRequest.apply(null, arguments); },
+                         razorpayConfirmPayment: function () { return razorpayConfirmPayment.apply(null, arguments); } });
 // ▲ RENDER-URL REWRITE (safety net): any page/script served by THIS server that still contains the old Render origin
 //   (theme.js, config.js, portal pages ...) gets it replaced by the current site's own origin → every API call becomes
 //   same-origin (no CORS, no "Failed to fetch"). Fix the source files too; this keeps old copies working meanwhile.

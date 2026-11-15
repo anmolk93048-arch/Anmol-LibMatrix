@@ -387,7 +387,9 @@ function install(app, ctx) {
             return res.json({ free: true, sub: subState({ plan_name: plan.name, expires: exp }) });
         }
         if (!process.env.PAYMENT_API_KEY || !process.env.PAYMENT_API_SECRET || !ctx.razorpayRequest) {
-            return res.status(501).json({ error: 'Online payment is not set up yet. Please contact the administrator.' });
+            const miss = [!process.env.PAYMENT_API_KEY && 'PAYMENT_API_KEY (Razorpay Key ID)', !process.env.PAYMENT_API_SECRET && 'PAYMENT_API_SECRET (Razorpay Key Secret)'].filter(Boolean).join(' and ');
+            console.error('❌ Session B plan payment: ' + (miss || 'Razorpay helper missing') + ' not set in the server environment.');
+            return res.status(501).json({ error: 'Payment is temporarily unavailable — the administrator must add the Razorpay keys to the server settings (' + (miss || 'Razorpay helper') + '). Your data and plan are unchanged.' });
         }
         let order;
         try { order = await ctx.razorpayRequest('/v1/orders', { amount: Math.round(amt * 100), currency: 'INR', receipt: ('dvp_' + uid + '_' + Date.now()).slice(0, 40) }); }
@@ -397,7 +399,7 @@ function install(app, ctx) {
     }));
     app.post('/api/dv/plan/verify', dvUser, asyncRoute(async (req, res) => {
         const secret = process.env.PAYMENT_API_SECRET;
-        if (!secret) return res.status(501).json({ error: 'Online payment is not set up yet.' });
+        if (!secret) return res.status(501).json({ error: 'Payment verification is unavailable — PAYMENT_API_SECRET is not set on the server.' });
         const b = req.body || {};
         const oid = String(b.razorpay_order_id || ''), pid = String(b.razorpay_payment_id || ''), sig = String(b.razorpay_signature || '');
         if (!oid || !pid || !sig) return res.status(400).json({ error: 'Order ID, Payment ID and Signature are all required.' });
