@@ -2293,7 +2293,18 @@ async function loadWalletBalance(){
 /* Remove any leftover payment overlay (our wallet dialog + Razorpay's container) so the user is back on the dashboard */
 function _wlClearOverlays(){
   try{ const ov = document.getElementById('wl-overlay'); if(ov) ov.remove(); }catch(e){}
-  try{ document.querySelectorAll('.razorpay-container').forEach(function(n){ n.style.display = 'none'; }); document.body.style.overflow = ''; }catch(e){}
+  try{ document.body.style.overflow = ''; setTimeout(function(){ document.querySelectorAll('.razorpay-container').forEach(function(n){ n.remove(); }); document.body.style.overflow = ''; }, 700); }catch(e){}
+}
+/* "Paid on your phone? Check now" — shown only while the Razorpay window is open; one tap asks the server whether the order was paid */
+function _wlPaidBar(show, onCheck){
+  let b = document.getElementById('wl-paidbar');
+  if(!show){ if(b) b.remove(); return; }
+  if(b) b.remove();
+  b = document.createElement('button'); b.id = 'wl-paidbar'; b.type = 'button';
+  b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483647;background:#0f6e56;color:#fff;border:0;border-radius:999px;padding:11px 20px;font:700 13px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35);cursor:pointer';
+  b.textContent = '✅ Paid on your phone? Tap here to check';
+  b.onclick = function(){ b.textContent = '⏳ Checking…'; b.disabled = true; onCheck(function(){ b.textContent = '✅ Paid on your phone? Tap here to check'; b.disabled = false; }); };
+  document.body.appendChild(b);
 }
 /* SESSION A — wallet top-up (independent of Session B).
    The moment Razorpay reports success: close the window, verify with the server (payment_id / order_id / signature), show the new balance. */
@@ -2309,18 +2320,26 @@ async function walletTopUp(amount){
       theme:{ color:'#0f6e56' },
       handler:function(response){
         paid = true;                                   // set first so closing the window below is not treated as "cancelled"
-        try{ rz.close(); }catch(e){}                   // close the Razorpay window instantly
+        _wlPaidBar(false);
+        try{ rz.close(); }catch(e){ console.warn('Razorpay close:', e); }   // close the Razorpay window instantly
         _wlClearOverlays();
         _wlToast('⏳ Payment received — updating your wallet…');
         API.post('/material/wallet/topup/verify', { razorpay_order_id:response.razorpay_order_id, razorpay_payment_id:response.razorpay_payment_id, razorpay_signature:response.razorpay_signature })
           .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); _wlClearOverlays(); _wlToast('✅ Payment successful. New balance: ' + _rs(walletBalance)); resolve(walletBalance); })
           .catch(function(e){ reject(new Error('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.')); });
       },
-      modal:{ ondismiss:function(){ if(!paid) reject(new Error('Payment cancelled — no credit was added.')); } }
+      modal:{ ondismiss:function(){ _wlPaidBar(false); if(!paid) reject(new Error('Payment cancelled — no credit was added.')); } }
     };
     rz = new Razorpay(options);
-    rz.on('payment.failed', function(){ if(!paid) reject(new Error('Payment failed — no credit was added.')); });
+    rz.on('payment.failed', function(){ /* the customer may retry inside the checkout window */ });
     rz.open();
+    _wlPaidBar(true, function(reset){      // manual check (no background polling)
+      API.get('/material/wallet/topup/status?orderId=' + encodeURIComponent(o.orderId) + '&_=' + Date.now()).then(function(r){
+        if(r && r.paid && !paid){ paid = true; _wlPaidBar(false); try{ rz.close(); }catch(e){} _wlClearOverlays();
+          walletBalance = Number(r.balance) || 0; updateWalletChip(); _wlToast('✅ Payment successful. New balance: ' + _rs(walletBalance)); resolve(walletBalance); }
+        else { reset(); _wlToast('Payment not received yet — please wait a few seconds and tap again.'); }
+      }).catch(function(){ reset(); });
+    });
   });
 }
 async function walletRequestAdmin(amount){
