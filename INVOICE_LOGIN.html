@@ -2278,17 +2278,27 @@ let _invoiceUnlockToken = null; // payment verify hone ke baad short-lived token
    so Razorpay is only used to top the balance up — not for every single invoice. */
 let walletBalance = null;
 function _rs(n){ return '₹' + (Math.round((Number(n) || 0) * 100) / 100).toString(); }
+function _wlCacheKey(){ return 'anmol_wallet_' + (loggedInUser && loggedInUser.userId ? loggedInUser.userId : ''); }
+function _wlHydrateFromCache(){      // last known balance is shown at once while the fresh one loads
+  if(walletBalance != null || !loggedInUser) return;
+  try{ const c = localStorage.getItem(_wlCacheKey()); if(c !== null && c !== '' && isFinite(Number(c))) walletBalance = Number(c); }catch(e){}
+}
 function updateWalletChip(){
   const el = document.getElementById('walletChip'); if(!el) return;
-  el.textContent = 'Credit: ' + (walletBalance == null ? '…' : _rs(walletBalance));
+  if(walletBalance != null && loggedInUser){ try{ localStorage.setItem(_wlCacheKey(), String(walletBalance)); }catch(e){} }
+  el.textContent = 'Credit: ' + (walletBalance == null ? '₹ --' : _rs(walletBalance));
   const pill = document.getElementById('walletPill'); if(pill) pill.classList.toggle('low', walletBalance != null && walletBalance <= 0);
 }
 async function loadWalletBalance(){
   if(!loggedInUser) return null;
-  try{
-    const w = await API.get('/material/wallet?_=' + Date.now());
-    walletBalance = Number(w.balance) || 0; updateWalletChip(); return w;
-  }catch(e){ return null; }
+  _wlHydrateFromCache(); updateWalletChip();           // instant: cached balance (or a clean "₹ --") while the fresh value is fetched
+  for(let attempt = 0; attempt < 3; attempt++){        // a slow / failed first request is retried automatically — no manual refresh needed
+    try{
+      const w = await API.get('/material/wallet?_=' + Date.now());
+      walletBalance = Number(w.balance) || 0; updateWalletChip(); return w;
+    }catch(e){ if(attempt < 2) await new Promise(function(r){ setTimeout(r, 800 * (attempt + 1)); }); }
+  }
+  return null;
 }
 /* Remove any leftover payment overlay (our wallet dialog + Razorpay's container) so the user is back on the dashboard */
 function _wlClearOverlays(){
@@ -3145,9 +3155,9 @@ function enterPortal(userDoc){
   // Hide the login gate first and unconditionally (even if a later step fails, the portal must open)
   document.getElementById('loginGate').style.setProperty('display', 'none', 'important');
   document.body.classList.remove('locked');
+  try{ loadWalletBalance(); }catch(e){}
   try{ updateLoggedInUserBar(); }catch(e){ console.error('updateLoggedInUserBar failed:', e); }
   try{ startBillsSync(); }catch(e){ console.error('startBillsSync failed:', e); }
-  try{ loadWalletBalance(); }catch(e){}
   try{ PORTAL_IDLE.start(); }catch(e){ console.error('idle timer failed:', e); }
 }
 
