@@ -6259,7 +6259,6 @@ function refundInvoiceToken(gate) {
 app.get('/api/material/wallet', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
     const { owner } = invoiceOwnerFromReq(req);
     if (!owner) return res.status(400).json({ error: 'ownerUserId is required.' });
-    try { await reconcileTopups(owner); } catch (e) { console.error('reconcileTopups:', e.message); }
     const f = await materialInvoiceFeeFor(owner);
     const txns = await dbq('SELECT type, amount, balance_after AS "balanceAfter", note, created_at AS "createdAt" FROM material_wallet_txns WHERE owner_user_id = ? ORDER BY id DESC LIMIT 10', [owner]);
     res.json({ balance: await walletBalanceOf(owner), fee: f.fee, paymentRequired: f.paymentRequired, txns });
