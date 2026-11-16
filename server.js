@@ -6332,7 +6332,11 @@ app.post('/api/material/wallet/topup/order', requireActiveMaterialUser, asyncRou
     let order;
     try { order = await razorpayRequest('/v1/orders', { amount: Math.round(amt * 100), currency: 'INR', receipt: ('wal_' + owner + '_' + Date.now()).slice(0, 40), notes: { model: 'session_a_wallet_topup', userId: String(owner), credit: String(amt) } }); }
     catch (e) { return res.status(502).json({ error: 'Error while creating the Razorpay order: ' + e.message }); }
-    await dbq('INSERT INTO material_invoice_payments (order_id, owner_user_id, amount, purpose) VALUES (?,?,?,?)', [order.id, owner, amt, 'topup']);
+    if (Number(order.amount) !== Math.round(amt * 100) || (order.currency && order.currency !== 'INR')) {
+        console.error('❌ wallet top-up: Razorpay created order ' + order.id + ' for ' + order.amount + ' ' + order.currency + ', requested ' + Math.round(amt * 100) + ' INR paise.');
+        return res.status(502).json({ error: 'The payment gateway returned an unexpected amount. Nothing was charged — please try again.' });
+    }
+    await dbq('INSERT INTO material_invoice_payments (order_id, owner_user_id, amount, purpose) VALUES (?,?,?,?)', [order.id, owner, Number(order.amount) / 100, 'topup']);
     res.json({ orderId: order.id, amount: order.amount, currency: order.currency, key: process.env.PAYMENT_API_KEY, topup: amt });
 }));
 app.post('/api/material/wallet/topup/verify', requireActiveMaterialUser, asyncRoute(async (req, res) => {

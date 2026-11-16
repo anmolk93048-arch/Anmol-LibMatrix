@@ -1018,7 +1018,7 @@ function buyPlan(id, btn){
         toast('✅ Payment successful — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); refreshMe();
       };
       rz = new Razorpay({
-        key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
+        key: o.key, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',   // amount + currency come from the order itself (never sent from here, so they cannot differ)
         description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
         prefill: { name: (ME && ME.name) || (SETTINGS && SETTINGS.companyName) || '', contact: String((ME && ME.mobile) || '').replace(/\D/g, '').slice(-10) },
         handler: function(response){

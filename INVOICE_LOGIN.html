@@ -2314,7 +2314,7 @@ async function walletTopUp(amount){
   return await new Promise(function(resolve, reject){
     let paid = false, rz = null;
     const options = {
-      key:o.key, amount:o.amount, currency:o.currency, order_id:o.orderId,
+      key:o.key, order_id:o.orderId,   // amount + currency are deliberately NOT sent: Razorpay takes them from the order itself, so they can never differ from it
       name:'Anmol LibMatrix Invoice Portal', description:'Add credit to wallet — ' + _rs(amount),
       image:(location.origin + '/anmol_libmatrix_logo.png'),
       theme:{ color:'#0f6e56' },
@@ -3498,7 +3498,7 @@ async function _regFeeGate(mobile, aadhaar){
   return await new Promise(function(resolve, reject){
     let paid = false;
     const rz = new Razorpay({
-      key:o.key, amount:o.amount, currency:o.currency || 'INR', order_id:o.orderId,
+      key:o.key, order_id:o.orderId,
       name:'Anmol LibMatrix Invoice Portal', image:(location.origin + '/anmol_libmatrix_logo.png'), description:'Registration fee', theme:{ color:'#0f6e56' },
       handler:function(r){ paid = true; resolve({ orderId:r.razorpay_order_id, paymentId:r.razorpay_payment_id, signature:r.razorpay_signature }); },
       modal:{ ondismiss:function(){ if(!paid) reject(new Error('Payment cancelled — the registration was not submitted.')); } }
