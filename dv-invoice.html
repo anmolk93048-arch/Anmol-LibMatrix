@@ -988,72 +988,53 @@ function openPlans(){
       : 'No plan activity yet.';
   }).catch(function(){ var box = $('dvPlanHist'); if (box) box.textContent = ''; });
 }
-/* A UPI / PhonePe payment can succeed even when the checkout window never calls back (the user is in the UPI app, or the window closed).
-   So after any dismiss we ask the server — which asks Razorpay — whether the order was paid, and activate the plan if it was. */
-var PENDING_KEY = 'dv_plan_pending_order';
-function pollOrder(orderId, tries, gap){
-  return new Promise(function(resolve){
-    var n = 0;
-    (function once(){
-      api('/dv/plan/status?orderId=' + encodeURIComponent(orderId)).then(function(r){
-        if (r.paid) return resolve(r.sub);
-        if (++n >= tries) return resolve(null);
-        setTimeout(once, gap);
-      }).catch(function(){ if (++n >= tries) return resolve(null); setTimeout(once, gap); });
-    })();
-  });
-}
-function recoverPendingPlan(){
-  var oid = null; try { oid = localStorage.getItem(PENDING_KEY); } catch (e) {}
-  if (!oid) return;
-  pollOrder(oid, 3, 2000).then(function(sub){
-    if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (e) {} SUB = sub; renderPlan(); toast('✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
-  });
-}
-document.addEventListener('visibilitychange', function(){ if (!document.hidden && TOKEN) { recoverPendingPlan(); refreshMe().then(function(){ renderPlan(); }).catch(function(){}); } });
+/* Razorpay checkout for a plan. Success is detected two ways (whichever is first; the server activates an order only once):
+   1) handler(response): the window is closed at once and razorpay_payment_id / razorpay_order_id / razorpay_signature are POSTed to the server;
+   2) while the window is open the page asks the server every 3 s whether the order is paid — a UPI QR / PhonePe payment made on the PHONE
+      can leave this window waiting, and this closes it as soon as the money has arrived. */
 function buyPlan(id, btn){
   var msg = $('dvPlanMsg'); msg.textContent = ''; btn.disabled = true; var t = btn.innerHTML; btn.textContent = 'Please wait…';
-  var fail = function(m){ msg.textContent = m; btn.disabled = false; btn.innerHTML = t; };
-  var ok = function(sub, text){ SUB = sub; renderPlan(); var o = $('dvPlanOv'); if (o) o.remove(); toast(text); };
+  var fail = function(m){ msg.style.color = '#b42318'; msg.textContent = m; btn.disabled = false; btn.innerHTML = t; };
   api('/dv/plan/order', { method: 'POST', body: JSON.stringify({ planId: id }) }).then(function(o){
-    if (o.free) return ok(o.sub, '✅ Plan activated.');
+    if (o.free) { SUB = o.sub; renderPlan(); var ov0 = $('dvPlanOv'); if (ov0) ov0.remove(); return toast('✅ Plan activated.'); }
     return loadScriptOnce('https://checkout.razorpay.com/v1/checkout.js', function(){ return typeof Razorpay !== 'undefined'; }).then(function(){
-    var paid = false, orderId = o.orderId;
-    try { localStorage.setItem(PENDING_KEY, orderId); } catch (e) {}
-    var rz = new Razorpay({
-      key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
-      description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
-      prefill: { name: (ME && ME.name) || (SETTINGS && SETTINGS.companyName) || '', contact: String((ME && ME.mobile) || '').replace(/\D/g, '').slice(-10) },
-      handler: function(r){
-        if (!r || !r.razorpay_signature) {   // some UPI / PhonePe returns omit the signature — the server confirms the order with Razorpay itself
-          msg.style.color = '#0f6e56'; msg.textContent = 'Confirming your payment…';
-          return pollOrder(orderId, 8, 2000).then(function(sub){
-            if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
-            else { msg.style.color = '#b42318'; fail('Payment is being confirmed. Your plan activates automatically within a few minutes — reopen My Plan to check.'); }
+      var paid = false, done = false, timer = null, rz = null;
+      var stopPolling = function(){ if (timer) { clearInterval(timer); timer = null; } };
+      var closeModal = function(){
+        try { if (rz) rz.close(); } catch (e) {}
+        try { document.querySelectorAll('.razorpay-container').forEach(function(n){ n.style.display = 'none'; }); document.body.style.overflow = ''; } catch (e) {}
+      };
+      var success = function(sub){
+        if (done) return; done = true; paid = true; stopPolling(); closeModal();
+        SUB = sub; renderPlan(); var ov = $('dvPlanOv'); if (ov) ov.remove();               // plan active, plan window + payment overlay gone
+        toast('✅ Payment successful — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.');
+        refreshMe();
+      };
+      var failure = function(m){ if (done) return; done = true; stopPolling(); closeModal(); fail(m); };
+      var verifyPayment = function(r){
+        paid = true; stopPolling(); closeModal();                                           // close the checkout window immediately
+        msg.style.color = '#0f6e56'; msg.textContent = 'Payment received — activating your plan…';
+        return api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
+          .then(function(v){ success(v.sub); })
+          .catch(function(e){   // one server-side re-check with Razorpay before reporting a problem (e.g. a UPI return without a signature)
+            api('/dv/plan/status?orderId=' + encodeURIComponent(o.orderId)).then(function(st){ if (st && st.paid) success(st.sub); else throw new Error('x'); })
+              .catch(function(){ failure('Payment could not be confirmed: ' + e.message + ' If money was deducted your plan activates automatically within a few minutes, or contact the administrator.'); });
           });
-        }
-        paid = true; msg.style.color = '#0f6e56'; msg.textContent = 'Verifying payment…';
-        api('/dv/plan/verify', { method: 'POST', body: JSON.stringify({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature }) })
-          .then(function(v){ try { localStorage.removeItem(PENDING_KEY); } catch (e) {} ok(v.sub, '✅ Payment received — your plan is active until ' + fmtDate(v.sub.expires) + '. Billing is unlocked.'); })
-          .catch(function(e){   // the browser verify failed — ask the server to confirm with Razorpay before giving up (UPI / slow network)
-            msg.textContent = 'Confirming your payment…';
-            pollOrder(orderId, 6, 2500).then(function(sub){
-              if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
-              else { msg.style.color = '#b42318'; fail('Payment could not be confirmed yet: ' + e.message + ' If money was deducted your plan activates automatically within a few minutes, or contact the administrator.'); }
-            });
-          });
-      },
-      modal: { ondismiss: function(){
-        if (paid) return;
-        msg.style.color = '#0f6e56'; msg.textContent = 'Checking your payment…';
-        pollOrder(orderId, 5, 2000).then(function(sub){
-          if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (x) {} ok(sub, '✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
-          else { msg.style.color = '#b42318'; fail('Payment was not completed — your plan was not changed.'); }
-        });
-      } }
-    });
-    rz.on('payment.failed', function(){ msg.style.color = '#b42318'; msg.textContent = 'That payment attempt failed — you can retry in the payment window.'; });
-    rz.open();
+      };
+      rz = new Razorpay({
+        key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'Anmol LibMatrix Invoice Portal',
+        description: o.plan.name + ' — ' + o.plan.days + ' days', theme: { color: '#0f6e56' },
+        prefill: { name: (ME && ME.name) || (SETTINGS && SETTINGS.companyName) || '', contact: String((ME && ME.mobile) || '').replace(/\D/g, '').slice(-10) },
+        handler: function(response){ verifyPayment(response); },
+        modal: { ondismiss: function(){ if (!paid && !done) failure('Payment was not completed — your plan was not changed.'); } }
+      });
+      rz.on('payment.failed', function(){ msg.style.color = '#b42318'; msg.textContent = 'That payment attempt failed — you can retry in the payment window.'; });
+      rz.open();
+      var started = Date.now();
+      timer = setInterval(function(){
+        if (done || paid || Date.now() - started > 600000) return stopPolling();
+        api('/dv/plan/status?orderId=' + encodeURIComponent(o.orderId)).then(function(r){ if (r && r.paid && !done) success(r.sub); }).catch(function(){});
+      }, 3000);
     }, function(){ fail('Unable to load the Razorpay checkout. Check your internet connection and try again.'); });
   }).catch(function(e){ fail(e.message); });
 }
@@ -1099,7 +1080,6 @@ function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(
   if (!TOKEN) return toLogin();
   api('/dv/me').then(function(me){
     ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
-    setTimeout(recoverPendingPlan, 800);
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }

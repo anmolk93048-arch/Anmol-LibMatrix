@@ -374,7 +374,6 @@ function install(app, ctx) {
 
     // ── Who am I + MY company profile (read-only for the user) + my plan status + plans I can buy
     app.get('/api/dv/me', noStore, dvUser, asyncRoute(async (req, res) => {
-        try { await reconcilePlans(req.dvUser.userId); } catch (e) { console.error('reconcilePlans:', e.message); }
         res.json({ user: req.dvUser, settings: await loadSettings(req.dvUser.userId), sub: subState(await loadSub(req.dvUser.userId)), plans: await plansForUser() });
     }));
 
