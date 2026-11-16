@@ -2311,7 +2311,7 @@ async function walletTopUp(amount){
         paid = true;
         API.post('/material/wallet/topup/verify', { razorpay_order_id:r.razorpay_order_id, razorpay_payment_id:r.razorpay_payment_id, razorpay_signature:r.razorpay_signature })
           .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); resolve(walletBalance); })
-          .catch(function(e){ reject(new Error('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.')); });
+          .catch(function(e){ pollTopup(1); });   // verify failed / slow → the server checks the order with Razorpay itself and credits it
       },
       modal:{ ondismiss:function(){ if(!paid) pollTopup(0); } }
     });
