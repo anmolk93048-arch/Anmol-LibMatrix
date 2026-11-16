@@ -5969,17 +5969,11 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
     try {
         if (event === 'payment.authorized' && pay) {
             await razorpayConfirmPayment(orderId, paymentId);   // captures the authorized payment (no auto-refund)
-            try { const sr = await settleRazorpayOrder(orderId, paymentId, Number(pay.amount) / 100); if (sr.ok) console.log('✅ ' + tag + ' ' + sr.kind + ' settled from the webhook.'); } catch (e) { console.error('❌ ' + tag + ' settle failed:', e.message); throw e; }
         } else if ((event === 'payment.captured' || event === 'order.paid') && orderId) {
             const paidRs = pay ? Number(pay.amount) / 100 : (ord ? Number(ord.amount_paid) / 100 : null);
-            const rows = await dbq('SELECT status, amount, purpose FROM material_invoice_payments WHERE order_id=?', [orderId]);
-            if (rows.length && String(rows[0].purpose || '') === 'topup') {
-                const cr = await creditTopupOrder(orderId, paymentId, paidRs);
-                console.log((cr && cr.credited ? '✅ ' : 'ℹ️ ') + tag + (cr && cr.credited ? ' Session A wallet credited ₹' + cr.credited + ' (balance ₹' + cr.balance + ').' : cr && cr.mismatch ? ' amount mismatch — wallet NOT credited.' : ' wallet top-up already credited.'));
-            } else if (!rows.length) {
-                let planDone = false;
-                try { planDone = await dvInvoice.settlePlanOrder(orderId, paymentId, paidRs); } catch (e) { console.error('❌ ' + tag + ' Session B plan settle failed:', e.message); throw e; }
-                console.log('ℹ️ ' + tag + (planDone ? ' Session B plan order settled / already active.' : ' not a material-invoice, wallet or plan order — nothing to mark here.'));
+            const rows = await dbq('SELECT status, amount FROM material_invoice_payments WHERE order_id=?', [orderId]);
+            if (!rows.length) {
+                console.log('ℹ️ ' + tag + ' not a material-invoice order — nothing to mark here.');
             } else if (paidRs !== null && Math.abs(Number(rows[0].amount) - paidRs) > 0.001) {
                 console.error('❌ ' + tag + ' AMOUNT MISMATCH — Razorpay received ₹' + paidRs + ', order was created for ₹' + rows[0].amount + '. Invoice NOT marked Paid.');
             } else if (rows[0].status === 'created') {

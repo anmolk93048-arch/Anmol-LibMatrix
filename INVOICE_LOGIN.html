@@ -2295,56 +2295,32 @@ function _wlClearOverlays(){
   try{ const ov = document.getElementById('wl-overlay'); if(ov) ov.remove(); }catch(e){}
   try{ document.querySelectorAll('.razorpay-container').forEach(function(n){ n.style.display = 'none'; }); document.body.style.overflow = ''; }catch(e){}
 }
-/* Add credit through Razorpay → resolves with the new balance.
-   Success is detected two ways, whichever comes first (each credits the wallet only once on the server):
-   1) Razorpay's handler(response) → we send razorpay_payment_id / razorpay_order_id / razorpay_signature to the server at once;
-   2) while the window is open we also ask the server every 3 s whether the order is paid — a UPI QR / PhonePe payment made on the PHONE
-      can leave the laptop's checkout window waiting, and this closes it as soon as the money has arrived. */
+/* SESSION A — wallet top-up (independent of Session B).
+   The moment Razorpay reports success: close the window, verify with the server (payment_id / order_id / signature), show the new balance. */
 async function walletTopUp(amount){
   if(typeof Razorpay === 'undefined') throw new Error('Unable to load the payment gateway. Please check your internet connection and refresh the page.');
   const o = await API.post('/material/wallet/topup/order', { amount });
   return await new Promise(function(resolve, reject){
-    let paid = false, done = false, timer = null, rz = null;
-    const stopPolling = function(){ if(timer){ clearInterval(timer); timer = null; } };
-    const closeModal = function(){ try{ if(rz) rz.close(); }catch(e){} _wlClearOverlays(); };
-    const success = function(balance){
-      if(done) return; done = true; paid = true; stopPolling(); closeModal();
-      walletBalance = Number(balance) || 0; updateWalletChip();
-      _wlToast('✅ Payment successful. Credit added — new balance: ' + _rs(walletBalance));
-      resolve(walletBalance);
-    };
-    const failure = function(msg){ if(done) return; done = true; stopPolling(); closeModal(); reject(new Error(msg)); };
-    /* send payment_id / order_id / signature to the backend; on success → close modal, refresh balance, show message */
-    const verifyPayment = function(r){
-      paid = true; stopPolling(); closeModal();                       // close the checkout window immediately
-      _wlToast('⏳ Payment received — updating your wallet…');
-      return API.post('/material/wallet/topup/verify', { razorpay_order_id:r.razorpay_order_id, razorpay_payment_id:r.razorpay_payment_id, razorpay_signature:r.razorpay_signature })
-        .then(function(v){ success(v.balance); })
-        .catch(function(e){   // one server-side re-check with Razorpay before reporting a problem (e.g. a UPI return without a signature)
-          API.get('/material/wallet/topup/status?orderId=' + encodeURIComponent(o.orderId) + '&_=' + Date.now())
-            .then(function(st){ if(st && st.paid) success(st.balance); else throw new Error('x'); })
-            .catch(function(){ failure('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.'); });
-        });
-    };
+    let paid = false, rz = null;
     const options = {
       key:o.key, amount:o.amount, currency:o.currency, order_id:o.orderId,
       name:'Anmol LibMatrix Invoice Portal', description:'Add credit to wallet — ' + _rs(amount),
       image:(location.origin + '/anmol_libmatrix_logo.png'),
       theme:{ color:'#0f6e56' },
-      handler:function(response){ verifyPayment(response); },
-      modal:{ ondismiss:function(){ if(!paid && !done) failure('Payment cancelled — no credit was added.'); } }
+      handler:function(response){
+        paid = true;                                   // set first so closing the window below is not treated as "cancelled"
+        try{ rz.close(); }catch(e){}                   // close the Razorpay window instantly
+        _wlClearOverlays();
+        _wlToast('⏳ Payment received — updating your wallet…');
+        API.post('/material/wallet/topup/verify', { razorpay_order_id:response.razorpay_order_id, razorpay_payment_id:response.razorpay_payment_id, razorpay_signature:response.razorpay_signature })
+          .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); _wlClearOverlays(); _wlToast('✅ Payment successful. New balance: ' + _rs(walletBalance)); resolve(walletBalance); })
+          .catch(function(e){ reject(new Error('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.')); });
+      },
+      modal:{ ondismiss:function(){ if(!paid) reject(new Error('Payment cancelled — no credit was added.')); } }
     };
     rz = new Razorpay(options);
-    rz.on('payment.failed', function(){ /* the customer may retry inside the checkout window */ });
+    rz.on('payment.failed', function(){ if(!paid) reject(new Error('Payment failed — no credit was added.')); });
     rz.open();
-    /* light status check while the window is open (max 10 min) */
-    const started = Date.now();
-    timer = setInterval(function(){
-      if(done || paid || Date.now() - started > 600000) return stopPolling();
-      API.get('/material/wallet/topup/status?orderId=' + encodeURIComponent(o.orderId) + '&_=' + Date.now())
-        .then(function(r){ if(r && r.paid && !done) success(r.balance); })
-        .catch(function(){});
-    }, 3000);
   });
 }
 async function walletRequestAdmin(amount){
