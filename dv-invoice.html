@@ -1010,7 +1010,7 @@ function recoverPendingPlan(){
     if (sub) { try { localStorage.removeItem(PENDING_KEY); } catch (e) {} SUB = sub; renderPlan(); toast('✅ Payment received — your plan is active until ' + fmtDate(sub.expires) + '. Billing is unlocked.'); }
   });
 }
-document.addEventListener('visibilitychange', function(){ if (!document.hidden && TOKEN) recoverPendingPlan(); });
+document.addEventListener('visibilitychange', function(){ if (!document.hidden && TOKEN) { recoverPendingPlan(); refreshMe().then(function(){ renderPlan(); }).catch(function(){}); } });
 function buyPlan(id, btn){
   var msg = $('dvPlanMsg'); msg.textContent = ''; btn.disabled = true; var t = btn.innerHTML; btn.textContent = 'Please wait…';
   var fail = function(m){ msg.textContent = m; btn.disabled = false; btn.innerHTML = t; };

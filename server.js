@@ -6259,6 +6259,7 @@ function refundInvoiceToken(gate) {
 app.get('/api/material/wallet', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
     const { owner } = invoiceOwnerFromReq(req);
     if (!owner) return res.status(400).json({ error: 'ownerUserId is required.' });
+    try { await reconcileTopups(owner); } catch (e) { console.error('reconcileTopups:', e.message); }
     const f = await materialInvoiceFeeFor(owner);
     const txns = await dbq('SELECT type, amount, balance_after AS "balanceAfter", note, created_at AS "createdAt" FROM material_wallet_txns WHERE owner_user_id = ? ORDER BY id DESC LIMIT 10', [owner]);
     res.json({ balance: await walletBalanceOf(owner), fee: f.fee, paymentRequired: f.paymentRequired, txns });
@@ -6297,19 +6298,33 @@ async function settleRazorpayOrder(orderId, paymentId, paidRs) {
     if (kind === 'session_b_plan') { const ok = await dvInvoice.settlePlanOrder(orderId, paymentId, paidRs); return { kind, ok }; }
     return { kind, ok: false };
 }
+// Ask Razorpay itself whether this top-up order was paid; if so capture (when still "authorized") and credit once. No signature needed.
+async function checkTopupOrder(oid, amountRs) {
+    try {
+        const list = await razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
+        const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
+        if (!p) return false;
+        await razorpayConfirmPayment(oid, p.id, Number(amountRs));
+        const r = await creditTopupOrder(oid, p.id, Number(p.amount) / 100);
+        return !!(r && (r.credited || r.already));
+    } catch (e) { console.error('wallet top-up check ' + oid + ':', e.message); return false; }
+}
+// Self-healing: every wallet read re-checks this user's recent unfinished top-ups (also fixes ones the old flow left uncredited).
+const _topupRecentCheck = {};
+async function reconcileTopups(owner) {
+    const now = Date.now();
+    if (_topupRecentCheck[owner] && now - _topupRecentCheck[owner] < 15000) return;
+    _topupRecentCheck[owner] = now;
+    const rows = await dbq("SELECT order_id, amount FROM material_invoice_payments WHERE owner_user_id=? AND purpose='topup' AND status IN ('created','paid') AND created_at > NOW() - INTERVAL '3 days' ORDER BY created_at DESC LIMIT 5", [String(owner)]);
+    for (const r of rows) await checkTopupOrder(r.order_id, r.amount);
+}
 // Browser asks "was my wallet top-up paid?" (UPI / PhonePe return, closed window) — the server asks Razorpay and credits once.
 app.get('/api/material/wallet/topup/status', noStore, requireActiveMaterialUser, asyncRoute(async (req, res) => {
     const { owner } = invoiceOwnerFromReq(req);
     const oid = cleanText(req.query.orderId, 80);
     const ord = (await dbq("SELECT amount, status FROM material_invoice_payments WHERE order_id=? AND owner_user_id=? AND purpose='topup'", [oid, owner]))[0];
     if (!ord) return res.status(404).json({ error: 'Top-up order not found.' });
-    if (ord.status !== 'used') {
-        try {
-            const list = await razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
-            const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
-            if (p) { await razorpayConfirmPayment(oid, p.id, Number(ord.amount)); await creditTopupOrder(oid, p.id, Number(p.amount) / 100); }
-        } catch (e) { console.error('wallet top-up status check:', e.message); }
-    }
+    if (ord.status !== 'used') await checkTopupOrder(oid, ord.amount);
     const now = (await dbq("SELECT status FROM material_invoice_payments WHERE order_id=?", [oid]))[0];
     res.json({ paid: !!now && now.status === 'used', balance: await walletBalanceOf(owner) });
 }));

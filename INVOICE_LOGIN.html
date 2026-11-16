@@ -2290,6 +2290,9 @@ async function loadWalletBalance(){
     walletBalance = Number(w.balance) || 0; updateWalletChip(); return w;
   }catch(e){ return null; }
 }
+/* Coming back from the UPI / PhonePe app (or any tab switch): re-read the wallet — the server re-checks unfinished top-ups with Razorpay and credits them */
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && loggedInUser){ try{ loadWalletBalance(); }catch(e){} } });
+window.addEventListener('pageshow', function(){ if(loggedInUser){ try{ loadWalletBalance(); }catch(e){} } });
 /* Add credit through Razorpay → resolves with the new balance */
 async function walletTopUp(amount){
   if(typeof Razorpay === 'undefined') throw new Error('Unable to load the payment gateway. Please check your internet connection and refresh the page.');
@@ -2318,7 +2321,7 @@ async function walletTopUp(amount){
       (function once(){
         API.get('/material/wallet/topup/status?orderId=' + encodeURIComponent(o.orderId) + '&_=' + Date.now()).then(function(r){
           if(r.paid){ walletBalance = Number(r.balance) || 0; updateWalletChip(); return resolve(walletBalance); }
-          if(++n >= (wasPaid ? 8 : 4)) return reject(new Error(wasPaid ? 'Your payment is being confirmed — the credit will appear in your wallet within a few minutes.' : 'Payment cancelled — no credit was added.'));
+          if(++n >= (wasPaid ? 8 : 4)){ try{ loadWalletBalance(); }catch(e){} return reject(new Error(wasPaid ? 'Your payment is being confirmed — the credit will appear in your wallet within a few minutes.' : 'Payment cancelled — no credit was added.')); }
           setTimeout(once, 2000);
         }).catch(function(){ if(++n >= 4) return reject(new Error('Payment cancelled — no credit was added.')); setTimeout(once, 2000); });
       })();

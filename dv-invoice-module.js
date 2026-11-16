@@ -374,6 +374,7 @@ function install(app, ctx) {
 
     // ── Who am I + MY company profile (read-only for the user) + my plan status + plans I can buy
     app.get('/api/dv/me', noStore, dvUser, asyncRoute(async (req, res) => {
+        try { await reconcilePlans(req.dvUser.userId); } catch (e) { console.error('reconcilePlans:', e.message); }
         res.json({ user: req.dvUser, settings: await loadSettings(req.dvUser.userId), sub: subState(await loadSub(req.dvUser.userId)), plans: await plansForUser() });
     }));
 
@@ -444,21 +445,32 @@ function install(app, ctx) {
         return true;
     }
     _settle = settleOrder;
+    // Ask Razorpay itself whether a plan order was paid and activate it (no signature needed). Returns true when active.
+    async function checkPlanOrder(oid, amountRs) {
+        if (!ctx.razorpayCall) return false;
+        try {
+            const list = await ctx.razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
+            const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
+            if (!p) return false;
+            if (ctx.razorpayConfirmPayment) await ctx.razorpayConfirmPayment(oid, p.id, Number(amountRs));   // captures an authorized payment
+            return await settleOrder(oid, p.id, Number(p.amount) / 100);
+        } catch (e) { console.error('plan order check ' + oid + ':', e.message); return false; }
+    }
+    // Self-healing: loading the page / My Plan re-checks this user's recent unfinished plan orders.
+    const _planRecent = {};
+    async function reconcilePlans(uid) {
+        const k = String(uid).toLowerCase(), now = Date.now();
+        if (_planRecent[k] && now - _planRecent[k] < 15000) return;
+        _planRecent[k] = now;
+        const rows = await dbq("SELECT order_id, amount FROM dv_plan_payments WHERE LOWER(user_id) = LOWER(?) AND status = 'created' AND created_at > NOW() - INTERVAL '3 days' ORDER BY created_at DESC LIMIT 5", [String(uid)]);
+        for (const r of rows) await checkPlanOrder(r.order_id, r.amount);
+    }
     // Browser asks "was this order paid?" (after a UPI app / PhonePe redirect, a closed window, or a slow callback) — the server asks Razorpay itself.
     app.get('/api/dv/plan/status', noStore, dvUser, asyncRoute(async (req, res) => {
         const oid = cleanText(req.query.orderId, 80), uid = req.dvUser.userId;
         const row = (await dbq('SELECT order_id, status, amount FROM dv_plan_payments WHERE order_id = ? AND LOWER(user_id) = LOWER(?)', [oid, uid]))[0];
         if (!row) return res.status(404).json({ error: 'Order not found.' });
-        if (row.status !== 'paid' && ctx.razorpayCall) {
-            try {
-                const list = await ctx.razorpayCall('GET', '/v1/orders/' + encodeURIComponent(oid) + '/payments');
-                const p = ((list && list.items) || []).filter(x => x.status === 'captured' || x.status === 'authorized')[0];
-                if (p) {
-                    if (ctx.razorpayConfirmPayment) await ctx.razorpayConfirmPayment(oid, p.id, Number(row.amount));   // captures an authorized payment
-                    await settleOrder(oid, p.id, Number(p.amount) / 100);
-                }
-            } catch (e) { console.error('plan status check:', e.message); }
-        }
+        if (row.status !== 'paid') await checkPlanOrder(oid, row.amount);
         const now = (await dbq('SELECT status FROM dv_plan_payments WHERE order_id = ?', [oid]))[0];
         res.json({ paid: !!now && now.status === 'paid', sub: subState(await loadSub(uid)) });
     }));
