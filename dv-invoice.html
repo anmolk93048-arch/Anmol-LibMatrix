@@ -988,16 +988,6 @@ function openPlans(){
       : 'No plan activity yet.';
   }).catch(function(){ var box = $('dvPlanHist'); if (box) box.textContent = ''; });
 }
-/* "Paid on your phone? Check now" — shown only while the Razorpay window is open; one tap asks the server whether the order was paid */
-function paidBar(show, onCheck){
-  var b = document.getElementById('dvPaidBar'); if (b) b.remove();
-  if (!show) return;
-  b = document.createElement('button'); b.id = 'dvPaidBar'; b.type = 'button';
-  b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483647;background:#0f6e56;color:#fff;border:0;border-radius:999px;padding:11px 20px;font:700 13px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.35);cursor:pointer';
-  var label = '✅ Paid on your phone? Tap here to check'; b.textContent = label;
-  b.onclick = function(){ b.textContent = '⏳ Checking…'; b.disabled = true; onCheck(function(){ b.textContent = label; b.disabled = false; }); };
-  document.body.appendChild(b);
-}
 /* SESSION B — monthly plan checkout (independent of Session A's wallet).
    The moment Razorpay reports success: close the window, verify with the server (payment_id / order_id / signature),
    activate the plan, update the banner and remove the plan window. */
@@ -1007,9 +997,10 @@ function buyPlan(id, btn){
   api('/dv/plan/order', { method: 'POST', body: JSON.stringify({ planId: id }) }).then(function(o){
     if (o.free) { SUB = o.sub; renderPlan(); var ov0 = $('dvPlanOv'); if (ov0) ov0.remove(); return toast('✅ Plan activated.'); }
     return loadScriptOnce('https://checkout.razorpay.com/v1/checkout.js', function(){ return typeof Razorpay !== 'undefined'; }).then(function(){
-      var paid = false, rz = null;
+      var paid = false, rz = null, auto = null;
+      var stopAuto = function(){ if (auto) { clearInterval(auto); auto = null; } };
       var closeModal = function(){
-        paidBar(false);
+        stopAuto();
         try { if (rz) rz.close(); } catch (e) { console.warn('Razorpay close:', e); }
         try { document.body.style.overflow = ''; setTimeout(function(){ document.querySelectorAll('.razorpay-container').forEach(function(n){ n.remove(); }); document.body.style.overflow = ''; }, 700); } catch (e) {}
       };
@@ -1032,15 +1023,16 @@ function buyPlan(id, btn){
             })
             .catch(function(e){ fail('Payment could not be verified: ' + e.message + ' If money was deducted it will be refunded in 5–7 days, or contact the administrator.'); });
         },
-        modal: { ondismiss: function(){ paidBar(false); if (!paid) fail('Payment was not completed — your plan was not changed.'); } }
+        modal: { ondismiss: function(){ stopAuto(); if (!paid) fail('Payment was not completed — your plan was not changed.'); } }
       });
       rz.on('payment.failed', function(){ msg.style.color = '#b42318'; msg.textContent = 'That payment attempt failed — you can retry in the payment window.'; });
       rz.open();
-      paidBar(true, function(reset){      // manual check (no background polling)
-        api('/dv/plan/status?orderId=' + encodeURIComponent(o.orderId)).then(function(r){
-          if (r && r.paid && !paid) onPaid(r.sub); else { reset(); toast('Payment not received yet — please wait a few seconds and tap again.'); }
-        }).catch(function(){ reset(); });
-      });
+      /* automatic, invisible success detection while the window is open (QR / phone payments): no button, stops on success / close / 10 min */
+      var t0 = Date.now();
+      auto = setInterval(function(){
+        if (paid || Date.now() - t0 > 600000) return stopAuto();
+        api('/dv/plan/status?orderId=' + encodeURIComponent(o.orderId)).then(function(r){ if (r && r.paid && !paid) onPaid(r.sub); }).catch(function(){});
+      }, 3000);
     }, function(){ fail('Unable to load the Razorpay checkout. Check your internet connection and try again.'); });
   }).catch(function(e){ fail(e.message); });
 }
