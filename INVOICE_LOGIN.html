@@ -2290,6 +2290,11 @@ async function loadWalletBalance(){
     walletBalance = Number(w.balance) || 0; updateWalletChip(); return w;
   }catch(e){ return null; }
 }
+/* Remove any leftover payment overlay (our wallet dialog + Razorpay's container) so the user is back on the dashboard */
+function _wlClearOverlays(){
+  try{ const ov = document.getElementById('wl-overlay'); if(ov) ov.remove(); }catch(e){}
+  try{ document.querySelectorAll('.razorpay-container').forEach(function(n){ n.style.display = 'none'; }); document.body.style.overflow = ''; }catch(e){}
+}
 /* Add credit through Razorpay → resolves with the new balance (instant: the moment Razorpay confirms the payment the wallet is credited and the chip updates) */
 async function walletTopUp(amount){
   if(typeof Razorpay === 'undefined') throw new Error('Unable to load the payment gateway. Please check your internet connection and refresh the page.');
@@ -2302,9 +2307,11 @@ async function walletTopUp(amount){
       image:(location.origin + '/anmol_libmatrix_logo.png'),
       theme:{ color:'#0f6e56' },
       handler:function(r){
-        paid = true;
+        paid = true;                                   // set first so closing the window below is not treated as "cancelled"
+        try{ rz.close(); }catch(e){}                   // close the Razorpay checkout window right away
+        _wlClearOverlays();                            // and make sure no payment / wallet overlay is left on screen
         API.post('/material/wallet/topup/verify', { razorpay_order_id:r.razorpay_order_id, razorpay_payment_id:r.razorpay_payment_id, razorpay_signature:r.razorpay_signature })
-          .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); resolve(walletBalance); })
+          .then(function(v){ walletBalance = Number(v.balance) || 0; updateWalletChip(); _wlClearOverlays(); resolve(walletBalance); })
           .catch(function(e){ reject(new Error('Payment could not be verified: ' + e.message + '\n\nIf any amount was deducted it will be refunded within 5 to 7 days.')); });
       },
       modal:{ ondismiss:function(){ if(!paid) reject(new Error('Payment cancelled — no credit was added.')); } }
