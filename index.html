@@ -500,6 +500,21 @@ header{position:sticky;top:38px;z-index:90;}
 .live-dashboard .metric-card .metric-pulse{animation:none !important;transform:none !important;}
 .live-dashboard .metric-card > div{transform:none !important;}
 </style>
+<style id="mobile-nav-fix">
+/* Login + App stay visible on phones (the old rule hid Login below 850px) and their menus open inside the screen */
+@media(max-width:850px){
+  .nav{gap:6px}
+  .nav-actions{display:flex !important;gap:6px;flex:none}
+  .nav-actions .login-btn,.nav-actions .app-btn{display:inline-flex !important;align-items:center;gap:4px;padding:9px 11px;font-size:11px;border-radius:9px;white-space:nowrap}
+  .nav-actions .mobile{padding:8px 10px}
+  .brand img{width:46px}.brand strong{font-size:16px;line-height:1.05}
+  .nav-dropdown{position:static}
+  .dropdown-panel,.dropdown-panel.app-panel{position:fixed !important;top:76px;left:10px !important;right:10px !important;width:auto !important;max-height:72vh;z-index:300}
+}
+@media(max-width:400px){ .dropdown-toggle span{display:none} .nav-actions .login-btn,.nav-actions .app-btn{padding:8px 9px} .brand strong{font-size:14px} }
+/* floating dark/light theme button removed */
+[data-theme-toggle],.theme-toggle,#theme-toggle,#themeToggle,.theme-fab,#theme-fab,.theme-switch{display:none !important}
+</style>
 </head>
 <body>
 <div class="topbar"><div class="container row"><div class="ticker ticker-fixed" id="latestUpdates" onclick="openUpdates()" title="Click to view all latest updates"><b>📢 Latest Updates:</b><div class="ticker-window-fixed"><div class="ticker-static" aria-label="Latest updates"><span>Library will remain closed on 1st May 2025 (Labour Day).</span><span>New e-Books added in Digital Library.</span><span>Students can now pay fees online through PFMS.</span><span>KYC verification is mandatory for all students.</span><span>Digital Library resources are available through the Smart Future portal.</span><span>For any help, contact Admin.</span></div></div><button aria-label="View all updates" class="ticker-next" onclick="openUpdates();event.stopPropagation()" type="button">›</button></div><div class="live">▣ <span id="liveDate">-- --- ----</span> &nbsp; | &nbsp; <span id="liveTime">--:--:--</span> &nbsp; <i id="liveDot"></i><span id="liveStatus">Live</span></div></div></div>
@@ -637,8 +652,8 @@ header{position:sticky;top:38px;z-index:90;}
 </div>
 <div class="footer-contact" id="contact">
 <h3>Contact Us</h3>
-<p><b>Village:</b> Pansalla<br><b>Post Office:</b> Pansalla<br><b>District:</b> Begusarai<br><b>PIN Code:</b> 848202</p>
-<p style="margin-top:8px"><b style="color:#fff">Email:</b> <a href="mailto:anmolkumar201817@gmail.com">anmolkumar201817@gmail.com</a></p>
+<p><b>Village:</b> <span id="ftVillage">Pansalla</span><br><b>Post Office:</b> <span id="ftPostOffice">Pansalla</span><br><b>District:</b> <span id="ftDistrict">Begusarai</span><br><b>PIN Code:</b> <span id="ftPin">848202</span></p>
+<p style="margin-top:8px"><b style="color:#fff">Email:</b> <a href="mailto:anmolkumar201817@gmail.com" id="ftEmail">anmolkumar201817@gmail.com</a></p>
 </div>
 </div>
 </div>
@@ -819,6 +834,13 @@ renderUpdates();
   function applyFooter(f){
     if(!f) return;
     if(f.copyright){ var c=document.getElementById('footerCopyright'); if(c) c.textContent=f.copyright; }
+    /* 📍 Contact details edited in Super Admin → Website / Index Control → Contact (key: footer.contact) */
+    var ct=f.contact||{};
+    [['ftVillage',ct.village],['ftPostOffice',ct.postOffice],['ftDistrict',ct.district],['ftPin',ct.pin]].forEach(function(p){
+      var el=document.getElementById(p[0]), v=String(p[1]==null?'':p[1]).trim(); if(el&&v) el.textContent=v;
+    });
+    var em=String(ct.email||'').trim(), ea=document.getElementById('ftEmail');
+    if(ea&&/^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(em)){ ea.textContent=em; ea.setAttribute('href','mailto:'+em); }
     var s=f.social||{};
     applySocialLink('socialFacebook', s.facebook);
     applySocialLink('socialTwitter', s.twitter);
@@ -1169,6 +1191,21 @@ refreshMetrics();setInterval(refreshMetrics,5000);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
   setTimeout(load, 600); setInterval(load, 8000);
+})();
+</script>
+<script id="remove-theme-fab">
+/* Removes the floating moon / sun theme button (injected by theme.js) wherever it appears */
+(function(){
+  function kill(){
+    document.querySelectorAll('[data-theme-toggle],.theme-toggle,#theme-toggle,#themeToggle,.theme-fab,#theme-fab,.theme-switch').forEach(function(n){ n.remove(); });
+    document.querySelectorAll('button,a,div').forEach(function(n){
+      if(n.children.length>1) return;
+      var t=(n.textContent||'').trim(); if(!/^(🌙|☀️?|🌞|🌓|🌗|☾|☼)$/.test(t)) return;
+      var cs=getComputedStyle(n); if(cs.position==='fixed') n.remove();
+    });
+  }
+  kill(); setTimeout(kill,300); setTimeout(kill,1200); setTimeout(kill,3000);
+  try{ new MutationObserver(kill).observe(document.body,{childList:true}); }catch(e){}
 })();
 </script>
 </body>

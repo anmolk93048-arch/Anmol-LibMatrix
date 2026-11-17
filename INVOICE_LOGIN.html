@@ -1849,7 +1849,7 @@ function loadMaterialCategories(){
       if(!m) return;
       tr.dataset.mid = m.id ? String(m.id) : '';
       const unitEl = tr.querySelector('.unit-field');
-      if(unitEl) unitEl.value = m.unit == null ? '' : String(m.unit);
+      if(unitEl && !_isOtherSel(matSel)) unitEl.value = m.unit == null ? '' : String(m.unit);   // 'Other' keeps what the user typed
       // GST / default price follow the Master unless the user typed their own value in this row
       const gstEl = tr.querySelector('.gst-select');
       if(prev && gstEl && Number(gstEl.value) === Number(prev.gst) && Number(prev.gst) !== Number(m.gst)){
@@ -1917,6 +1917,7 @@ function onWorkCategoryChange(){
       if(m){
         p.tr.dataset.mid = m.id ? String(m.id) : '';
         p.tr.querySelector('.unit-field').value = m.unit == null ? '' : String(m.unit);
+        syncOtherRow(p.tr);
         const _h2 = p.tr.querySelector('.hsn-field'); if(_h2) _h2.value = m.hsn || '';
         p.tr.querySelector('.price-field').value = Number(m.price) || 0;
         p.tr.children[7].innerHTML = gstCellHTML(Number(m.gst) || 0);
@@ -2019,9 +2020,10 @@ function addRow(prefill){
       <select class="mat-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm" onchange="onMaterialChange(this)">
         ${materialOptions(matIdx)}
       </select>
+      <input type="text" maxlength="80" class="mat-custom w-full border border-gray-300 rounded px-1.5 py-1 text-sm mt-1" placeholder="Type material name" style="display:none" oninput="calculateAll()">
     </td>
     <td><input type="text" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" class="hsn-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm" value="${_unitAttr(ACTIVE_CATALOG[matIdx].hsn || '')}" oninput="calculateAll()"></td>
-    <td><input type="text" class="unit-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm bg-gray-50" value="${_unitAttr(ACTIVE_CATALOG[matIdx].unit)}" readonly></td>
+    <td><input type="text" maxlength="12" class="unit-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm bg-gray-50" value="${_unitAttr(ACTIVE_CATALOG[matIdx].unit)}" readonly oninput="calculateAll()"></td>
     <td><input type="number" min="0" step="0.01" class="price-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${Number(ACTIVE_CATALOG[matIdx].price)||0}" oninput="calculateAll()"></td>
     <td><input type="number" min="0" step="0.01" class="qty-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="0" oninput="calculateAll()"></td>
     <td class="amount-field text-right font-semibold">0.00</td>
@@ -2033,14 +2035,35 @@ function addRow(prefill){
     </td>
   `;
   tbody.appendChild(tr);
+  syncOtherRow(tr);
   calculateAll();
 }
 
+/* "Other (Specify Manually)": the name box appears and the unit becomes a normal, editable field. */
+function _isOtherSel(sel){ var t=((sel&&sel.selectedOptions&&sel.selectedOptions[0])||{}).textContent||''; return /^\s*Other\s*\(Specify/i.test(t); }
+function _escHtmlLite(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function syncOtherRow(tr){
+  const sel=tr.querySelector('.mat-select'), nm=tr.querySelector('.mat-custom'), un=tr.querySelector('.unit-field');
+  if(!sel||!nm||!un) return;
+  const other=_isOtherSel(sel);
+  nm.style.display=other?'':'none'; nm.disabled=!other; nm.readOnly=false;
+  un.readOnly=!other; un.disabled=false; un.classList.toggle('bg-gray-50',!other);
+  un.style.cursor=other?'text':''; un.style.background=other?'#fff':''; un.style.color=other?'':'';
+  if(other){ nm.focus && setTimeout(function(){ try{ nm.focus(); }catch(e){} },0); }
+  else { nm.value=''; }
+}
+function _rowMatName(tr){
+  const sel=tr.querySelector('.mat-select'), nm=tr.querySelector('.mat-custom');
+  const base=((sel&&sel.selectedOptions[0])||{}).textContent||'';
+  if(sel && _isOtherSel(sel)){ const v=(nm&&nm.value||'').trim(); return v||base; }
+  return base;
+}
 function onMaterialChange(sel){
   const idx = parseInt(sel.value,10);
   const tr = sel.closest('tr');
   tr.dataset.mid = ACTIVE_CATALOG[idx].id ? String(ACTIVE_CATALOG[idx].id) : '';
   tr.querySelector('.unit-field').value = ACTIVE_CATALOG[idx].unit;
+  syncOtherRow(tr);
   const _hs = tr.querySelector('.hsn-field'); if(_hs) _hs.value = ACTIVE_CATALOG[idx].hsn || '';   // auto-filled from the Material Master, user can still edit it
   tr.children[7].innerHTML = gstCellHTML(ACTIVE_CATALOG[idx].gst);
   const dp = Number(ACTIVE_CATALOG[idx].price) || 0;   // default price set by Super Admin
@@ -2592,6 +2615,7 @@ function generateInvoice(mode){
   for(const tr of _rows){
     const sel = tr.querySelector('.mat-select');
     if(!sel || !String(sel.value).trim() || !((sel.selectedOptions[0]||{}).textContent||'').trim()){ _fail('Item description cannot be left blank.'); return; }
+    if(_isOtherSel(sel) && !((tr.querySelector('.mat-custom')||{}).value||'').trim()){ _fail('Please type the material name for "Other (Specify Manually)".'); try{ tr.querySelector('.mat-custom').focus(); }catch(e){} return; }
     const pr = parseFloat((tr.querySelector('.price-field')||{}).value), q = parseFloat((tr.querySelector('.qty-field')||{}).value);
     if(!(pr > 0) || !(q > 0)){ _fail('Please enter valid quantity and rate values.'); return; }
     _hasItem = true;
@@ -2676,7 +2700,7 @@ function _fillInvoiceFromForm(){
   const _showHsn = _hsnOn() && Array.prototype.some.call(document.querySelectorAll('#materialBody .hsn-field'), function(e){ return _hsnIsValid(e.value); });
   _buildInvoiceItemsHead(_showHsn);
   document.querySelectorAll('#materialBody tr').forEach((tr,i)=>{
-    const matName = tr.querySelector('.mat-select option:checked').textContent;
+    const matName = _escHtmlLite(_rowMatName(tr));
     const hsnTxt = _effHsn(tr.querySelector('.hsn-field') ? tr.querySelector('.hsn-field').value : '');
     const unit = tr.querySelector('.unit-field').value;
     const price = parseFloat(tr.querySelector('.price-field').value) || 0;
@@ -2824,7 +2848,8 @@ function collectFormData(){
     // dobara load kiye, seedhe saved data se hi sahi tarike se print kar sake।
     materials.push({
       matIdx: idx,
-      name: sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : (ACTIVE_CATALOG[idx] && ACTIVE_CATALOG[idx].name) || '',
+      name: _rowMatName(tr) || (ACTIVE_CATALOG[idx] && ACTIVE_CATALOG[idx].name) || '',
+      isOther: !!(sel && _isOtherSel(sel)),
       unit: tr.querySelector('.unit-field').value,
       hsn: _effHsn(tr.querySelector('.hsn-field') ? tr.querySelector('.hsn-field').value : ''),            // "00" when HSN is switched off / empty
       hsnEntered: tr.querySelector('.hsn-field') ? tr.querySelector('.hsn-field').value.trim() : '',       // what the user typed (kept so it survives a toggle)
@@ -2939,7 +2964,9 @@ function applyFormData(data){
   rowCounter = 0;
   (data.materials || []).forEach(m=>{
     let mi = m.matIdx;
-    if(m.name){
+    const _oi = m.isOther ? ACTIVE_CATALOG.findIndex(it => /^\s*Other\s*\(Specify/i.test(it.name||'')) : -1;
+    if(_oi >= 0){ mi = _oi; }
+    else if(m.name){
       let f = ACTIVE_CATALOG.findIndex(it => _matLabel(it) === m.name || it.name === m.name);
       if(f < 0){ ACTIVE_CATALOG = ACTIVE_CATALOG.concat([{ name: m.name, unit: m.unit || '', gst: Number(m.gst) || 0, hsn: m.hsnEntered != null ? m.hsnEntered : (m.hsn === '00' ? '' : (m.hsn || '')) }]); f = ACTIVE_CATALOG.length - 1; }
       mi = f;
@@ -2948,6 +2975,7 @@ function applyFormData(data){
     const tr = document.getElementById('materialBody').lastElementChild;
     tr.querySelector('.price-field').value = m.price;
     tr.querySelector('.qty-field').value = m.qty;
+    if(m.isOther){ syncOtherRow(tr); tr.querySelector('.mat-custom').value = m.name || ''; tr.querySelector('.unit-field').value = m.unit || ''; }
     const _hf = tr.querySelector('.hsn-field');
     if(_hf) _hf.value = m.hsnEntered != null ? m.hsnEntered : (m.hsn === '00' ? '' : (m.hsn || ''));
     tr.children[7].innerHTML = gstCellHTML(m.gst);
