@@ -531,12 +531,12 @@
     <div class="p-3 overflow-x-auto">
       <table class="mat-table w-full text-sm border-collapse min-w-[980px]">
         <thead><tr>
-          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
+          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">HSN/SAC</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
           <th class="w-28">Taxable (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
         </tr></thead>
-        <tbody id="rows"></tbody>
+        <tbody id="rows"></tbody><datalist id="mat-names"></datalist>
         <tfoot><tr class="bg-blue-50 font-bold">
-          <td colspan="6" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
+          <td colspan="7" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -622,10 +622,10 @@
   <table class="inv-block"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tr>
     <td style="font-size:11px;">Block :- <span id="i-block"></span></td><td style="font-size:11px;">District :- <span id="i-district"></span></td></tr></table>
   <table class="inv-block inv-items">
-    <colgroup><col style="width:5%"><col style="width:20%"><col style="width:9%"><col style="width:6%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:9%"><col style="width:6%"><col style="width:9%"><col style="width:11%"></colgroup>
-    <thead><tr><th>Sl.<br>No.</th><th>Particulars</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Taxable<br>Amount</th><th>CGST</th><th>CGST<br>Amount</th><th>SGST</th><th>SGST<br>Amount</th><th>Total<br>Amount</th></tr></thead>
+    <colgroup><col style="width:5%"><col style="width:15%"><col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:10%"><col style="width:6%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:12%"></colgroup>
+    <thead><tr><th>Sl.<br>No.</th><th>Particulars</th><th>HSN/<br>SAC</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Taxable<br>Amount</th><th>CGST</th><th>CGST<br>Amount</th><th>SGST</th><th>SGST<br>Amount</th><th>Total<br>Amount</th></tr></thead>
     <tbody id="i-rows"></tbody>
-    <tfoot><tr class="inv-bold"><td colspan="5" class="inv-right">Total :-</td><td id="i-tTax" class="inv-num"></td><td></td><td id="i-tCgst" class="inv-num"></td><td></td><td id="i-tSgst" class="inv-num"></td><td id="i-tGrand" class="inv-num"></td></tr></tfoot>
+    <tfoot><tr class="inv-bold"><td colspan="6" class="inv-right">Total :-</td><td id="i-tTax" class="inv-num"></td><td></td><td id="i-tCgst" class="inv-num"></td><td></td><td id="i-tSgst" class="inv-num"></td><td id="i-tGrand" class="inv-num"></td></tr></tfoot>
   </table>
   <table class="inv-block"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tr>
     <td style="padding:0; vertical-align:top;">
@@ -738,7 +738,8 @@ function words(amount){
 /* ───────── form ───────── */
 function rowHtml(){
   return '<tr><td class="text-center sn"></td>'
-    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name"></td>'
+    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" list="mat-names" oninput="syncHsn(this)" onchange="syncHsn(this)"></td>'
+    + '<td><input class="inp r-hsn" maxlength="12" inputmode="numeric" placeholder="HSN/SAC" oninput="this.dataset.manual=\'1\'"></td>'
     + '<td><input class="inp r-unit" maxlength="20" placeholder="Unit"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
@@ -746,10 +747,29 @@ function rowHtml(){
     + '<td class="text-right r-tax">0.00</td><td class="text-right font-semibold r-total">0.00</td>'
     + '<td class="text-center"><button type="button" class="text-red-600 font-bold" title="Remove row" onclick="delRow(this)">✕</button></td></tr>';
 }
+/* HSN/SAC auto-fill from the Super-Admin Material Master — fills ONLY the HSN/SAC box (never price / unit / name / GST) */
+var MASTER_HSN = {};
+function _hk(s){ return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+function loadMasterHsn(){
+  return api('/dv/material-hsn').then(function(list){
+    MASTER_HSN = {}; var dl = $('mat-names'), seen = {}, opts = '';
+    (list || []).forEach(function(m){
+      [m.name, m.code ? m.code + '-' + m.name : '', m.code ? m.code + ' - ' + m.name : ''].forEach(function(k){ k = _hk(k); if (k && !MASTER_HSN[k]) MASTER_HSN[k] = m.hsn; });
+      if (!seen[_hk(m.name)]) { seen[_hk(m.name)] = 1; opts += '<option value="' + esc(m.name) + '">'; }
+    });
+    if (dl) dl.innerHTML = opts;
+    Array.prototype.forEach.call($('rows').children, function(tr){ syncHsn(tr.querySelector('.r-name')); });
+  }).catch(function(){});
+}
+function syncHsn(nameEl){
+  var tr = nameEl && nameEl.closest('tr'); if (!tr) return;
+  var h = MASTER_HSN[_hk(nameEl.value)], box = tr.querySelector('.r-hsn');
+  if (h && box) { box.value = h; box.dataset.manual = ''; }
+}
 function addRow(v){
   $('rows').insertAdjacentHTML('beforeend', rowHtml());
   var tr = $('rows').lastElementChild;
-  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; if (v.gst != null) tr.querySelector('.r-gst').value = v.gst; }
+  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-hsn').value = v.hsn || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; if (v.gst != null) tr.querySelector('.r-gst').value = v.gst; }
   recalc();
 }
 function delRow(btn){ var tr = btn.closest('tr'); tr.parentNode.removeChild(tr); if (!$('rows').children.length) addRow(); recalc(); }
@@ -758,7 +778,7 @@ function readItems(){
   Array.prototype.forEach.call($('rows').children, function(tr, i){
     var name = tr.querySelector('.r-name').value.trim(), q = tr.querySelector('.r-qty').value, r = tr.querySelector('.r-rate').value;
     if (!name && q === '' && r === '') return;
-    items.push({ name: name, unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: tr.querySelector('.r-gst').value === '' ? null : num(tr.querySelector('.r-gst').value), _tr: tr, _no: i + 1 });
+    items.push({ name: name, hsn: tr.querySelector('.r-hsn').value.trim(), unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: tr.querySelector('.r-gst').value === '' ? null : num(tr.querySelector('.r-gst').value), _tr: tr, _no: i + 1 });
   });
   return items;
 }
@@ -839,7 +859,7 @@ function askPassword(action, warn){
 
 /* ───────── save / generate ───────── */
 function payload(){
-  var items = readItems().map(function(i){ return { name: i.name, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst }; });
+  var items = readItems().map(function(i){ return { name: i.name, hsn: i.hsn, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst }; });
   return { billNo: $('billNo').value, date: $('billDate').value, customer: $('customer').value, block: $('block').value, district: $('district').value,
            transport: $('transport').value, vehicle: $('vehicle').value, items: items, company: readCompany() };
 }
@@ -911,7 +931,7 @@ function showInvoice(inv){
   set('i-billNo', inv.billNo); set('i-date', fmtDate(inv.date)); set('i-transport', inv.transport); set('i-vehicle', inv.vehicle);
   set('i-customer', inv.customer); set('i-block', inv.block); set('i-district', inv.district);
   var rows = (inv.items || []).map(function(r, i){
-    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td><td class="inv-num">' + esc(r.qty) + '</td><td>' + esc(r.unit) + '</td><td class="inv-num">' + money(r.rate)
+    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td><td>' + esc(r.hsn || '') + '</td><td class="inv-num">' + esc(r.qty) + '</td><td>' + esc(r.unit) + '</td><td class="inv-num">' + money(r.rate)
       + '</td><td class="inv-num">' + money(r.taxable) + '</td><td>' + esc(r.cgstPct) + '%</td><td class="inv-num">' + money(r.cgstAmt) + '</td><td>' + esc(r.sgstPct) + '%</td><td class="inv-num">' + money(r.sgstAmt) + '</td><td class="inv-num">' + money(r.total) + '</td></tr>';
   });
   $('i-rows').innerHTML = rows.join('');
@@ -1080,6 +1100,7 @@ function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(
     ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
+    loadMasterHsn();   // HSN/SAC auto-fill from the Super-Admin Material Master
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
     newBill(); loadSaved(); renderPlan();
