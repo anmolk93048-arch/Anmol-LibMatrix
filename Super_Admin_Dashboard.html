@@ -3614,7 +3614,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card">
             <div class="tbl-wrap">
               <table>
-                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village</th><th>Mobile</th><th>Aadhaar</th><th>Session</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village / Panchayat</th><th>State</th><th>District</th><th>Block</th><th>Pin Code</th><th>Mobile</th><th>Aadhaar</th><th>Session</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody id="material-users-table"></tbody>
               </table>
             </div>
@@ -8397,6 +8397,7 @@ function GENERIC_PRINT_REPORT(opts){
     + 'tr:nth-child(even){background:#f8fafc}'
     + '.ftr{margin-top:18px;font-size:10px;color:#888;text-align:center}'
     + '@media print{ body{padding:8px} .no-print{display:none} }'
+    + (opts.landscape?'@page{size:A4 landscape;margin:8mm} th,td{padding:5px 6px;word-break:break-word} table{table-layout:auto}':'')
     + '</style></head><body>'
     + '<div class="hdr"><div><h1>'+opts.title+' — '+libName+'</h1>'
     + (opts.subtitle?'<p>'+opts.subtitle+'</p>':'')+'</div>'
@@ -10116,7 +10117,7 @@ function MAT_REFRESH(){
     RENDER_MATERIAL_REQUESTS();
   }).catch(function(err){
     var tbody=document.getElementById('material-users-table');
-    if(tbody && !materialUsersCache.length) tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#f87171">'+MAT_ERR_HTML(err)+'</td></tr>';
+    if(tbody && !materialUsersCache.length) tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:20px;color:#f87171">'+MAT_ERR_HTML(err)+'</td></tr>';
   }).then(function(){ _matRefreshing=false; });
 }
 // Pending requests appear within ~10 seconds on every admin screen (no manual refresh)
@@ -10575,7 +10576,7 @@ function RENDER_MATERIAL_USERS(filter){
   var tbody=document.getElementById('material-users-table');
   if(!tbody) return;
   if(!list.length){
-    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-muted)">No material users found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--text-muted)">No material users found</td></tr>';
     return;
   }
   tbody.innerHTML=list.map(function(u,i){
@@ -10586,7 +10587,11 @@ function RENDER_MATERIAL_USERS(filter){
       +'<td>'+MAT_PHOTO(u,34,'linear-gradient(135deg,#A32D2D,#e04444)')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+MAT_ESC(u.userId||'—')+'</td>'
       +'<td>'+MAT_ESC(u.name||'—')+'</td>'
-      +'<td>'+MAT_LOC(u)+'</td>'
+      +'<td>'+MAT_ESC(u.village||'—')+'</td>'
+      +'<td>'+MAT_ESC(u.state||'—')+'</td>'
+      +'<td>'+MAT_ESC(u.district||'—')+'</td>'
+      +'<td>'+MAT_ESC(u.block||'—')+'</td>'
+      +'<td style="font-family:\'JetBrains Mono\',monospace">'+MAT_ESC(u.pincode||'—')+'</td>'
       +'<td>'+MAT_ESC(u.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(u.aadhaarMasked&&u.aadhaar_last4?u.aadhaarMasked:'—')+'</td>'
       +'<td><select class="form-input form-select" style="padding:4px 6px;font-size:12px;min-width:92px" title="Invoice type for this user" onchange="SET_MU_VERSION(\''+id+'\',this)">'
@@ -10866,15 +10871,16 @@ function PRINT_MATERIAL_USERS_LIST(){
   var searchVal = document.getElementById('mu-search') ? document.getElementById('mu-search').value : '';
   var list = materialUsersCache.filter(function(u){
     var f = (searchVal||'').toLowerCase();
-    return !f || (u.name||'').toLowerCase().includes(f) || (u.village||'').toLowerCase().includes(f) || (u.mobile||'').includes(f);
+    return !f || (u.name||'').toLowerCase().includes(f) || (u.village||'').toLowerCase().includes(f) || [u.block,u.district,u.state,u.pincode].join(' ').toLowerCase().includes(f) || (u.mobile||'').includes(f) || (u.userId||'').toLowerCase().includes(f);
   });
   if(list.length===0){ SHOW_TOAST('No users found to print.'); return; }
-  var rows = list.map(function(u,i){ return [i+1, u.userId||'—', u.name, u.village, u.mobile, u.status==='blocked'?'Blocked':'Active']; });
+  var rows = list.map(function(u,i){ return [i+1, u.userId||'—', u.name, u.village||'—', u.state||'—', u.district||'—', u.block||'—', u.pincode||'—', u.mobile, u.status==='blocked'?'Blocked':'Active']; });
   GENERIC_PRINT_REPORT({
     title: '🧾 Invoice Material List — Users',
     subtitle: 'Total Users: '+list.length,
-    headers: ['#','User ID','Name','Village','Mobile','Status'],
+    headers: ['#','User ID','Name','Village / Panchayat','State','District','Block','Pin Code','Mobile','Status'],
     rows: rows,
+    landscape: true,
     summary: [
       {label:'Users', value: list.length},
       {label:'Active', value: list.filter(function(u){return u.status!=='blocked';}).length},
