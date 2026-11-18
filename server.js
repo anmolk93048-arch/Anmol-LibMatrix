@@ -1695,6 +1695,25 @@ db.getConnection((err, connection) => {
     const COLUMN_FIXES = [
         ...require('./dv-invoice-module').SCHEMA_SQL,   // 🧾 Option B tables + material_users.invoice_version
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS address VARCHAR(500)",
+        // 🆕 Structured registration: First / Middle / Last name + State, District, Block, Village, PIN. `name`, `village` and `address`
+        //    stay and are re-composed from these fields, so every existing screen / invoice that reads them keeps working.
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS middle_name VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS state VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS district VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS block VARCHAR(100)",
+        "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS pincode VARCHAR(6)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS middle_name VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS state VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS district VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS block VARCHAR(100)",
+        "ALTER TABLE material_user_requests ADD COLUMN IF NOT EXISTS pincode VARCHAR(6)",
+        // one-time back-fill of old rows: split the old full name (first word = first name, last word = last name, the rest = middle)
+        "UPDATE material_users SET first_name = split_part(btrim(name), ' ', 1), last_name = CASE WHEN position(' ' in btrim(name)) > 0 THEN substring(btrim(name) from '[^ ]+$') ELSE '' END, middle_name = CASE WHEN array_length(string_to_array(btrim(name), ' '), 1) > 2 THEN btrim(substring(btrim(name) from '^[^ ]+ +(.*) +[^ ]+$')) ELSE '' END WHERE first_name IS NULL AND name IS NOT NULL",
+        "UPDATE material_user_requests SET first_name = split_part(btrim(name), ' ', 1), last_name = CASE WHEN position(' ' in btrim(name)) > 0 THEN substring(btrim(name) from '[^ ]+$') ELSE '' END, middle_name = CASE WHEN array_length(string_to_array(btrim(name), ' '), 1) > 2 THEN btrim(substring(btrim(name) from '^[^ ]+ +(.*) +[^ ]+$')) ELSE '' END WHERE first_name IS NULL AND name IS NOT NULL",
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS blockedReason VARCHAR(500)",
@@ -2004,7 +2023,32 @@ async function materialDuplicate(mobile, aadhaarHash, excludeUserRowId, excludeR
     }
     return null;
 }
-const MU_PUBLIC_COLS = 'id, userid, name, village, address, email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", invoice_version AS "invoiceVersion", created_at';
+// 🆕 Structured identity (First / Middle / Last name, State, District, Block, Village, PIN). Returns {error} or the clean
+//    fields plus the composed legacy `name`, `village` and `address` (kept so every old screen / invoice keeps working).
+const NAME_PART_RE = /^[\p{L}][\p{L} .'-]*$/u;
+function parseMaterialIdentity(b) {
+    b = b || {};
+    const first = cleanText(b.firstName, 100), middle = cleanText(b.middleName, 100), last = cleanText(b.lastName, 100);
+    const state = cleanText(b.state, 100), district = cleanText(b.district, 100), block = cleanText(b.block, 100);
+    const village = cleanText(b.village, 150), pin = String(b.pincode == null ? (b.pinCode == null ? '' : b.pinCode) : b.pincode).replace(/\D/g, '');
+    if (!first) return { error: 'First Name is required.' };
+    if (!last) return { error: 'Last Name is required.' };
+    if (!NAME_PART_RE.test(first) || (middle && !NAME_PART_RE.test(middle)) || !NAME_PART_RE.test(last)) return { error: 'Names may contain letters only.' };
+    if (!state) return { error: 'State is required.' };
+    if (!district) return { error: 'District is required.' };
+    if (!block) return { error: 'Block is required.' };
+    if (!village) return { error: 'Village / Panchayat is required.' };
+    if (!/^[1-9][0-9]{5}$/.test(pin)) return { error: 'Please enter a valid 6-digit PIN code.' };
+    return {
+        firstName: first, middleName: middle, lastName: last, state: state, district: district, block: block, village: village, pincode: pin,
+        name: [first, middle, last].filter(Boolean).join(' ').slice(0, 255),
+        address: (village + ', ' + block + ', ' + district + ', ' + state + ' - ' + pin).slice(0, 500)
+    };
+}
+const MU_IDENTITY_KEYS = ['firstName', 'middleName', 'lastName', 'state', 'district', 'block', 'pincode', 'pinCode'];
+const hasIdentityInput = (b) => !!b && MU_IDENTITY_KEYS.some(k => Object.prototype.hasOwnProperty.call(b, k));
+const MU_ID_COLS = 'first_name AS "firstName", middle_name AS "middleName", last_name AS "lastName", state, district, block, pincode';
+const MU_PUBLIC_COLS = 'id, userid, name, village, address, ' + MU_ID_COLS + ', email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", invoice_version AS "invoiceVersion", created_at';
 function muRowOut(u) {
     const o = Object.assign({ _docId: String(u.id) }, u);
     o.aadhaarMasked = maskAadhaarLast4(u.aadhaar_last4);
@@ -2018,10 +2062,12 @@ app.post('/api/material/register', noStore, asyncRoute(async (req, res) => {
         return res.status(429).json({ error: 'Too many registration attempts — please try again later.' });
     }
     const b = req.body || {};
-    const name = cleanText(b.name, 255), village = cleanText(b.village, 255), address = cleanText(b.address, 500);
+    const idn = parseMaterialIdentity(b);
+    if (idn.error) return res.status(400).json({ error: idn.error });
+    const name = idn.name, village = idn.village, address = idn.address;
     const email = cleanText(b.email, 255), mobile = normMobile10(b.mobile);
-    if (!name || !village || !email || !mobile) {
-        return res.status(400).json({ error: 'Please fill in all required fields (Name, Village, Email, Mobile and Aadhaar).' });
+    if (!email || !mobile) {
+        return res.status(400).json({ error: 'Please fill in all required fields (Email, Mobile and Aadhaar).' });
     }
     if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
@@ -2042,9 +2088,9 @@ app.post('/api/material/register', noStore, asyncRoute(async (req, res) => {
         let candidate;
         try { candidate = await nextInvTrackingId(); } catch (e) { candidate = genTrackingId('INV'); }
         try {
-            await dbq(`INSERT INTO material_user_requests (name, village, address, email, mobile, orig_mobile, photo, status, aadhaar_last4, aadhaar_hash, aadhaar_enc, tracking_id)
-                       VALUES (?,?,?,?,?,?,?, 'pending', ?,?,?,?)`,
-                [name, village, address || null, email, mobile, mobile, b.photo || null, aad.last4, aad.hash, aad.enc, candidate]);
+            await dbq(`INSERT INTO material_user_requests (name, village, address, first_name, middle_name, last_name, state, district, block, pincode, email, mobile, orig_mobile, photo, status, aadhaar_last4, aadhaar_hash, aadhaar_enc, tracking_id)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?,?)`,
+                [name, village, address || null, idn.firstName, idn.middleName, idn.lastName, idn.state, idn.district, idn.block, idn.pincode, email, mobile, mobile, b.photo || null, aad.last4, aad.hash, aad.enc, candidate]);
             trackingId = candidate;
         } catch (e) {
             if (!(e && e.code === '23505' && /tracking/i.test(e.message || ''))) throw e;
@@ -2088,7 +2134,7 @@ app.post('/api/material/register-precheck', noStore, asyncRoute(async (req, res)
 app.get('/api/material/requests', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const st = String(req.query.status || 'pending').toLowerCase();
     const where = (st === 'all') ? '' : ((['pending', 'approved', 'rejected'].indexOf(st) >= 0) ? "WHERE COALESCE(status,'pending') = '" + st + "'" : "WHERE COALESCE(status,'pending') = 'pending'");
-    const rows = await dbq(`SELECT id, name, village, address, email, mobile, photo, COALESCE(status,'pending') AS status, aadhaar_last4, created_at, reviewed_at, approved_userid, tracking_id, orig_mobile, edited_at
+    const rows = await dbq(`SELECT id, name, village, address, ${MU_ID_COLS}, email, mobile, photo, COALESCE(status,'pending') AS status, aadhaar_last4, created_at, reviewed_at, approved_userid, tracking_id, orig_mobile, edited_at
                             FROM material_user_requests ${where} ORDER BY COALESCE(reviewed_at, created_at) DESC, created_at DESC LIMIT 1000`);
     res.json(rows.map(r => Object.assign({ _docId: String(r.id), aadhaarMasked: maskAadhaarLast4(r.aadhaar_last4) }, r)));
 }));
@@ -2112,9 +2158,9 @@ app.post('/api/material/requests/:id/approve', requireRole('admin'), asyncRoute(
     const passwordHash = bcrypt.hashSync(plainPassword, 10);
     insertMaterialUserWithRetry(
         (userId) => ({
-            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
-                  VALUES (?,?,?,?,?,?,?,?, 'active', ?,?, ?,?,?, ?)`,
-            params: [userId, r.name, r.village, r.address, r.email, r.mobile, r.photo, passwordHash,
+            sql: `INSERT INTO material_users (userid, name, village, address, first_name, middle_name, last_name, state, district, block, pincode, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?,?, ?,?,?, ?)`,
+            params: [userId, r.name, r.village, r.address, r.first_name || null, r.middle_name || null, r.last_name || null, r.state || null, r.district || null, r.block || null, r.pincode || null, r.email, r.mobile, r.photo, passwordHash,
                 !!(req.body && req.body.invoicePaymentExempt), sanitizeInvoiceAmount(req.body && req.body.invoiceAmount),
                 r.aadhaar_last4 || null, r.aadhaar_hash || null, r.aadhaar_enc || null, dvInvoice.normVersion(req.body && req.body.invoiceVersion)]
         }),
@@ -2141,17 +2187,19 @@ app.put('/api/material/requests/:id', requireRole('admin'), asyncRoute(async (re
     if (!cur) return res.status(404).json({ error: 'Request not found.' });
     if (String(cur.status || 'pending') !== 'pending') return res.status(409).json({ error: 'Only a pending request can be edited.' });
     const b = req.body || {};
-    const name = cleanText(b.name, 255), village = cleanText(b.village, 255), address = cleanText(b.address, 500);
+    const idn = parseMaterialIdentity(b);
+    if (idn.error) return res.status(400).json({ error: idn.error });
+    const name = idn.name, village = idn.village, address = idn.address;
     const email = cleanText(b.email, 255), mobile = normMobile10(b.mobile);
-    if (!name || !village || !email || !mobile) return res.status(400).json({ error: 'Name, village, email and mobile number are required.' });
+    if (!email || !mobile) return res.status(400).json({ error: 'Email and mobile number are required.' });
     if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
     const aad = parseMaterialAadhaar(b, false);
     if (aad.error) return res.status(400).json({ error: aad.error });
     const dup = await materialDuplicate(mobile, aad.none ? null : aad.hash, null, req.params.id);
     if (dup) return res.status(409).json({ error: dup });
-    const sets = ['name = ?', 'village = ?', 'address = ?', 'email = ?', 'mobile = ?', 'edited_at = CURRENT_TIMESTAMP'];
-    const vals = [name, village, address || null, email, mobile];
+    const sets = ['name = ?', 'village = ?', 'address = ?', 'first_name = ?', 'middle_name = ?', 'last_name = ?', 'state = ?', 'district = ?', 'block = ?', 'pincode = ?', 'email = ?', 'mobile = ?', 'edited_at = CURRENT_TIMESTAMP'];
+    const vals = [name, village, address || null, idn.firstName, idn.middleName, idn.lastName, idn.state, idn.district, idn.block, idn.pincode, email, mobile];
     if (Object.prototype.hasOwnProperty.call(b, 'photo') && b.photo) { sets.push('photo = ?'); vals.push(b.photo); }
     if (!aad.none) { sets.push('aadhaar_last4 = ?', 'aadhaar_hash = ?', 'aadhaar_enc = ?'); vals.push(aad.last4, aad.hash, aad.enc); }
     vals.push(req.params.id);
@@ -2248,8 +2296,10 @@ app.get('/api/material/users', noStore, requireRole('admin'), asyncRoute(async (
 // 6) Admin: directly create a material user ("New Material User Register" form). Aadhaar mandatory.
 app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res) => {
     const b = req.body || {};
-    const name = cleanText(b.name, 255), village = cleanText(b.village, 255), mobile = normMobile10(b.mobile);
-    if (!name || !village || !mobile) return res.status(400).json({ error: 'Name, village and mobile number are required.' });
+    const idn = parseMaterialIdentity(b);
+    if (idn.error) return res.status(400).json({ error: idn.error });
+    const name = idn.name, village = idn.village, mobile = normMobile10(b.mobile);
+    if (!mobile) return res.status(400).json({ error: 'Mobile number is required.' });
     if (mobile.length !== 10) return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
     const aad = parseMaterialAadhaar(b, true);
     if (aad.error) return res.status(400).json({ error: aad.error });
@@ -2260,9 +2310,9 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
     const status = b.status === 'blocked' ? 'blocked' : 'active';
     insertMaterialUserWithRetry(
         (userId) => ({
-            sql: `INSERT INTO material_users (userid, name, village, address, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-            params: [userId, name, village, cleanText(b.address, 500) || null, cleanText(b.email, 255) || null, mobile, b.photo || null, passwordHash, status,
+            sql: `INSERT INTO material_users (userid, name, village, address, first_name, middle_name, last_name, state, district, block, pincode, email, mobile, photo, password_hash, status, invoicePaymentExempt, invoiceAmount, aadhaar_last4, aadhaar_hash, aadhaar_enc, invoice_version)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            params: [userId, name, village, idn.address, idn.firstName, idn.middleName, idn.lastName, idn.state, idn.district, idn.block, idn.pincode, cleanText(b.email, 255) || null, mobile, b.photo || null, passwordHash, status,
                 !!b.invoicePaymentExempt, sanitizeInvoiceAmount(b.invoiceAmount), aad.last4, aad.hash, aad.enc, dvInvoice.normVersion(b.invoiceVersion)]
         }),
         (insErr, result, userId) => {
@@ -2277,8 +2327,16 @@ app.post('/api/material/users', requireRole('admin'), asyncRoute(async (req, res
 // 7) Admin: edit / block / unblock a material user (Aadhaar optional on edit — blank keeps the existing one)
 app.put('/api/material/users/:id', requireRole('admin'), asyncRoute(async (req, res) => {
     const fields = req.body || {};
-    const allowed = ['name', 'village', 'address', 'email', 'photo', 'status', 'blockedReason', 'invoicePaymentExempt'];
+    const allowed = ['email', 'photo', 'status', 'blockedReason', 'invoicePaymentExempt'];
     const sets = [], values = [];
+    if (hasIdentityInput(fields)) {   // structured identity → recompose name / village / address too
+        const idn = parseMaterialIdentity(fields);
+        if (idn.error) return res.status(400).json({ error: idn.error });
+        [['name', idn.name], ['village', idn.village], ['address', idn.address], ['first_name', idn.firstName], ['middle_name', idn.middleName], ['last_name', idn.lastName],
+         ['state', idn.state], ['district', idn.district], ['block', idn.block], ['pincode', idn.pincode]].forEach(p => { sets.push(p[0] + ' = ?'); values.push(p[1]); });
+    } else {
+        ['name', 'village', 'address'].forEach(f => { if (Object.prototype.hasOwnProperty.call(fields, f)) { sets.push(f + ' = ?'); values.push(fields[f]); } });
+    }
     allowed.forEach(f => {
         if (Object.prototype.hasOwnProperty.call(fields, f)) { sets.push(f + ' = ?'); values.push(fields[f]); }
     });
@@ -7427,12 +7485,14 @@ app.get('/api/material/bills', noStore, (req, res) => {
 // 👑 SUPER ADMIN — every invoice in the database (with the owner's name). Reads Supabase directly; whether a
 //    material user is logged in, logged out or even deleted makes no difference to this list.
 app.get('/api/admin/material/bills', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const rows = await dbq('SELECT b.*, u.name AS owner_name FROM material_bills b LEFT JOIN material_users u ON u.userid = b.owneruserid ORDER BY b.savedAt DESC');
+    const rows = await dbq('SELECT b.*, u.name AS owner_name, u.first_name AS o_first, u.middle_name AS o_middle, u.last_name AS o_last, u.state AS o_state, u.district AS o_district, u.block AS o_block, u.village AS o_village, u.pincode AS o_pin, u.mobile AS o_mobile FROM material_bills b LEFT JOIN material_users u ON u.userid = b.owneruserid ORDER BY b.savedAt DESC');
     res.json(rows.map(r => {
         const saved = r.savedAt || r.savedat;
         const owner = r.owneruserid || r.ownerUserId || '';
-        try { return Object.assign(JSON.parse(r.data), { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '' }); }
-        catch (e) { return { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '' }; }
+        // registered owner (split name + State / District / Block / Village / PIN) so Super Admin can view / print it with the invoice
+        const ownerInfo = { firstName: r.o_first || '', middleName: r.o_middle || '', lastName: r.o_last || '', state: r.o_state || '', district: r.o_district || '', block: r.o_block || '', village: r.o_village || '', pincode: r.o_pin || '', mobile: r.o_mobile || '' };
+        try { return Object.assign(JSON.parse(r.data), { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '', ownerInfo }); }
+        catch (e) { return { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '', ownerInfo }; }
     }));
 }));
 

@@ -3568,7 +3568,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             </div>
             <div id="mm-msg" class="sa-msg"></div>
             <div class="tbl-wrap"><table>
-              <thead><tr><th>#</th><th>Code</th><th>Material Name</th><th>HSN / SAC</th><th>Unit</th><th>GST %</th><th>Default Price (₹)</th><th></th></tr></thead>
+              <thead><tr><th>#</th><th>Code</th><th>Material Name</th><th>HSN / SAC</th><th>Unit</th><th>GST %</th><th>Default Price (₹)</th><th title="Untick to hide this material from the invoice dropdown (rows already using it keep it)">Show on invoice</th><th></th></tr></thead>
               <tbody id="mm-tbody"></tbody>
             </table></div>
           </div>
@@ -5779,14 +5779,14 @@ html,body,#admin-app{width:100%;min-width:0;}
         </div>
       </div>
       <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Full Name *</label>
-          <input type="text" class="form-input" id="mu-name" placeholder="User full name">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Village / Gram Panchayat *</label>
-          <input type="text" class="form-input" id="mu-village" placeholder="Village / Panchayat">
-        </div>
+<div class="form-group"><label class="form-label">First Name *</label><input type="text" class="form-input" id="mu-first" placeholder="First Name" maxlength="100"></div>
+<div class="form-group"><label class="form-label">Middle Name</label><input type="text" class="form-input" id="mu-middle" placeholder="Optional" maxlength="100"></div>
+<div class="form-group"><label class="form-label">Last Name *</label><input type="text" class="form-input" id="mu-last" placeholder="Last Name" maxlength="100"></div>
+<div class="form-group"><label class="form-label">State *</label><select class="form-input form-select" id="mu-state"><option value="">Select State</option><option>Andaman and Nicobar Islands</option><option>Andhra Pradesh</option><option>Arunachal Pradesh</option><option>Assam</option><option>Bihar</option><option>Chandigarh</option><option>Chhattisgarh</option><option>Dadra and Nagar Haveli and Daman and Diu</option><option>Delhi</option><option>Goa</option><option>Gujarat</option><option>Haryana</option><option>Himachal Pradesh</option><option>Jammu and Kashmir</option><option>Jharkhand</option><option>Karnataka</option><option>Kerala</option><option>Ladakh</option><option>Lakshadweep</option><option>Madhya Pradesh</option><option>Maharashtra</option><option>Manipur</option><option>Meghalaya</option><option>Mizoram</option><option>Nagaland</option><option>Odisha</option><option>Puducherry</option><option>Punjab</option><option>Rajasthan</option><option>Sikkim</option><option>Tamil Nadu</option><option>Telangana</option><option>Tripura</option><option>Uttar Pradesh</option><option>Uttarakhand</option><option>West Bengal</option></select></div>
+<div class="form-group"><label class="form-label">District *</label><input type="text" class="form-input" id="mu-district" placeholder="District" maxlength="100"></div>
+<div class="form-group"><label class="form-label">Block *</label><input type="text" class="form-input" id="mu-block" placeholder="Block" maxlength="100"></div>
+<div class="form-group"><label class="form-label">Village / Panchayat *</label><input type="text" class="form-input" id="mu-village" placeholder="Village / Panchayat" maxlength="150"></div>
+<div class="form-group"><label class="form-label">Pin Code *</label><input type="text" class="form-input" id="mu-pin" placeholder="6-digit PIN" inputmode="numeric" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"></div>
         <div class="form-group">
           <label class="form-label">Mobile Number *</label>
           <input type="text" class="form-input" id="mu-mobile" placeholder="10-digit mobile" maxlength="10">
@@ -5798,10 +5798,6 @@ html,body,#admin-app{width:100%;min-width:0;}
         <div class="form-group">
           <label class="form-label">Aadhaar Number * <span id="mu-aadhaar-hint" style="font-weight:600;color:var(--text-muted)"></span></label>
           <input type="text" class="form-input" id="mu-aadhaar" placeholder="12-digit Aadhaar" maxlength="12" inputmode="numeric" autocomplete="off" oninput="this.value=this.value.replace(/\D/g,'').slice(0,12)">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Address</label>
-          <input type="text" class="form-input" id="mu-address" placeholder="Address (optional)">
         </div>
         <div class="form-group">
           <label class="form-label">Custom invoice fee (₹)</label>
@@ -5941,12 +5937,10 @@ html,body,#admin-app{width:100%;min-width:0;}
         </div>
       </div>
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Full Name *</label><input type="text" class="form-input" id="mur-name"></div>
-        <div class="form-group"><label class="form-label">Village / Gram Panchayat *</label><input type="text" class="form-input" id="mur-village"></div>
+        <div class="form-group"><label class="form-label">First Name *</label><input type="text" class="form-input" id="mur-first" placeholder="First Name" maxlength="100"></div><div class="form-group"><label class="form-label">Middle Name</label><input type="text" class="form-input" id="mur-middle" placeholder="Optional" maxlength="100"></div><div class="form-group"><label class="form-label">Last Name *</label><input type="text" class="form-input" id="mur-last" placeholder="Last Name" maxlength="100"></div><div class="form-group"><label class="form-label">State *</label><select class="form-input form-select" id="mur-state"><option value="">Select State</option><option>Andaman and Nicobar Islands</option><option>Andhra Pradesh</option><option>Arunachal Pradesh</option><option>Assam</option><option>Bihar</option><option>Chandigarh</option><option>Chhattisgarh</option><option>Dadra and Nagar Haveli and Daman and Diu</option><option>Delhi</option><option>Goa</option><option>Gujarat</option><option>Haryana</option><option>Himachal Pradesh</option><option>Jammu and Kashmir</option><option>Jharkhand</option><option>Karnataka</option><option>Kerala</option><option>Ladakh</option><option>Lakshadweep</option><option>Madhya Pradesh</option><option>Maharashtra</option><option>Manipur</option><option>Meghalaya</option><option>Mizoram</option><option>Nagaland</option><option>Odisha</option><option>Puducherry</option><option>Punjab</option><option>Rajasthan</option><option>Sikkim</option><option>Tamil Nadu</option><option>Telangana</option><option>Tripura</option><option>Uttar Pradesh</option><option>Uttarakhand</option><option>West Bengal</option></select></div><div class="form-group"><label class="form-label">District *</label><input type="text" class="form-input" id="mur-district" placeholder="District" maxlength="100"></div><div class="form-group"><label class="form-label">Block *</label><input type="text" class="form-input" id="mur-block" placeholder="Block" maxlength="100"></div><div class="form-group"><label class="form-label">Village / Panchayat *</label><input type="text" class="form-input" id="mur-village" placeholder="Village / Panchayat" maxlength="150"></div><div class="form-group"><label class="form-label">Pin Code *</label><input type="text" class="form-input" id="mur-pin" placeholder="6-digit PIN" inputmode="numeric" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"></div>
         <div class="form-group"><label class="form-label">Mobile Number *</label><input type="text" class="form-input" id="mur-mobile" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)"></div>
         <div class="form-group"><label class="form-label">Email *</label><input type="email" class="form-input" id="mur-email"></div>
         <div class="form-group"><label class="form-label">Aadhaar Number <span id="mur-aadhaar-hint" style="font-weight:600;color:var(--text-muted)"></span></label><input type="text" class="form-input" id="mur-aadhaar" maxlength="12" inputmode="numeric" autocomplete="off" oninput="this.value=this.value.replace(/\D/g,'').slice(0,12)"></div>
-        <div class="form-group"><label class="form-label">Address *</label><input type="text" class="form-input" id="mur-address"></div>
         <div class="form-group"><label class="form-label">CUSTOM INVOICE FEE (₹)</label><input type="number" min="0" step="1" class="form-input" id="mur-inv-amount" placeholder="Blank = default · 0 = free"></div>
         <div class="form-group"><label class="form-label">INVOICE PAYMENT</label><label style="display:flex;gap:8px;align-items:center;font-size:12px;padding:9px 0"><input type="checkbox" id="mur-inv-exempt" style="width:auto"> Exempt (always free)</label></div>
         <div class="form-group"><label class="form-label">INVOICE TYPE</label><select class="form-input form-select" id="mur-inv-version"><option value="A">Session A — Standard Invoice Portal</option><option value="B">Session B — Invoice Session B</option></select></div>
@@ -10139,7 +10133,7 @@ function RENDER_MATERIAL_REQUESTS(){
       +'<td>'+MAT_PHOTO(r)+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:800;color:#c9a227">'+MAT_ESC(r.tracking_id||'—')+'</td>'
       +'<td>'+MAT_ESC(r.name||'—')+'</td>'
-      +'<td>'+MAT_ESC(r.village||'—')+'</td>'
+      +'<td>'+MAT_LOC(r)+'</td>'
       +'<td style="font-size:11px">'+MAT_ESC(r.email||'—')+'</td>'
       +'<td>'+MAT_ESC(r.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(r.aadhaarMasked||'—')+'</td>'
@@ -10183,11 +10177,9 @@ function OPEN_MU_REQUEST_REVIEW(id){
   document.getElementById('mur-status-line').innerHTML=st==='approved'?'<span class="badge active">✅ Approved</span> &nbsp;User ID: <b style="font-family:monospace;color:#c9a227">'+MAT_ESC(r.approved_userid||'—')+'</b>'
     :st==='rejected'?'<span class="badge inactive">❌ Rejected</span>':'<span class="badge" style="background:rgba(201,162,39,.18);color:#c9a227">⏳ Pending</span>';
   document.getElementById('mur-submitted').textContent='Submitted: '+(r.created_at?new Date(r.created_at).toLocaleString('en-IN'):'—')+(r.edited_at?' · edited by Admin '+new Date(r.edited_at).toLocaleString('en-IN'):'');
-  document.getElementById('mur-name').value=r.name||'';
-  document.getElementById('mur-village').value=r.village||'';
+  ID_FILL('mur',r);
   document.getElementById('mur-mobile').value=r.mobile||'';
   document.getElementById('mur-email').value=r.email||'';
-  document.getElementById('mur-address').value=r.address||'';
   var a=document.getElementById('mur-aadhaar'); a.value='';
   a.placeholder=r.aadhaarMasked&&r.aadhaar_last4?r.aadhaarMasked+(pending?' (leave blank to keep)':''):'Not on file';
   document.getElementById('mur-aadhaar-hint').textContent=r.aadhaar_last4?'(on file, encrypted)':'(missing)';
@@ -10198,7 +10190,7 @@ function OPEN_MU_REQUEST_REVIEW(id){
   note.innerHTML=pending?'ℹ️ Check the details against the applicant’s documents, correct anything that is wrong, then press <b>Save &amp; Approve</b>. A User ID and Password are generated on approval and appear on the applicant’s Track Application Status screen.'+orig
     :'ℹ️ This request is '+MAT_ESC(st)+' and can no longer be edited.'+orig;
   document.getElementById('mur-inv-amount').value=''; document.getElementById('mur-inv-exempt').checked=false; document.getElementById('mur-inv-version').value='A';
-  ['mur-name','mur-village','mur-mobile','mur-email','mur-address','mur-aadhaar','mur-photo-input','mur-inv-amount','mur-inv-exempt','mur-inv-version'].forEach(function(i){ document.getElementById(i).disabled=!pending; });
+  ['mur-first','mur-middle','mur-last','mur-state','mur-district','mur-block','mur-village','mur-pin','mur-mobile','mur-email','mur-aadhaar','mur-photo-input','mur-inv-amount','mur-inv-exempt','mur-inv-version'].forEach(function(i){ document.getElementById(i).disabled=!pending; });
   ['mur-reject','mur-save','mur-approve'].forEach(function(i){ document.getElementById(i).style.display=pending?'':'none'; });
   document.getElementById('mur-err').classList.remove('show');
   OPEN_MODAL('modal-mu-request');
@@ -10223,9 +10215,9 @@ function MUR_REFRESH_ALL(){ if(window.PREG_MAT_LOAD) PREG_MAT_LOAD(true); return
 function MUR_SAVE(thenApprove){
   var id=document.getElementById('mur-docid').value, g=function(i){ return document.getElementById(i).value.trim(); };
   var err=document.getElementById('mur-err'), fail=function(m){ err.textContent=m; err.classList.add('show'); };
-  var name=g('mur-name'), village=g('mur-village'), mobile=g('mur-mobile'), email=g('mur-email'), address=g('mur-address'), aadhaar=g('mur-aadhaar').replace(/\D/g,'');
-  if(!name||!village||!mobile||!email||!address) return fail('Name, village, mobile, email and address are required.');
-  if(!/^[A-Za-z][A-Za-z .'-]*$/.test(name)) return fail('The name may contain letters only.');
+  var idn=ID_READ('mur'), name=idn.name, village=idn.village, mobile=g('mur-mobile'), email=g('mur-email'), aadhaar=g('mur-aadhaar').replace(/\D/g,'');
+  if(idn.error) return fail(idn.error);
+  if(!mobile||!email) return fail('Mobile and email are required.');
   if(!/^\d{10}$/.test(mobile)) return fail('The mobile number must be exactly 10 digits.');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Please enter a valid email address.');
   if(aadhaar&&aadhaar.length!==12) return fail('Aadhaar must be exactly 12 digits (or leave it blank to keep the one on file).');
@@ -10233,7 +10225,7 @@ function MUR_SAVE(thenApprove){
   var feeBody={ invoicePaymentExempt:document.getElementById('mur-inv-exempt').checked, invoiceAmount:invAmtRaw===''?null:Number(invAmtRaw), invoiceVersion:document.getElementById('mur-inv-version').value };
   if(thenApprove&&!confirm('Verify "'+name+'" and issue a User ID + Password?')) return;
   err.classList.remove('show');
-  var body={ name:name, village:village, mobile:mobile, email:email, address:address };
+  var body={ firstName:idn.firstName, middleName:idn.middleName, lastName:idn.lastName, state:idn.state, district:idn.district, block:idn.block, village:idn.village, pincode:idn.pincode, mobile:mobile, email:email };
   var photo=document.getElementById('mur-photo-data').value; if(photo) body.photo=photo;
   if(aadhaar) body.aadhaar=aadhaar;
   var btns=['mur-save','mur-approve','mur-reject'].map(function(i){ return document.getElementById(i); });
@@ -10430,10 +10422,51 @@ function RESET_MU_PHOTO(){
   if(area){ area.style.borderColor=''; area.style.background=''; }
 }
 
+/* ── Structured identity (First / Middle / Last name, State, District, Block, Village, PIN) — shared by the Material User form and the request-review form ── */
+function ID_SPLIT(full){ var w=String(full||'').trim().split(/\s+/).filter(Boolean); return { firstName:w[0]||'', middleName:w.length>2?w.slice(1,-1).join(' '):'', lastName:w.length>1?w[w.length-1]:'' }; }
+function ID_FILL(p,o){
+  o=o||{}; var sp=(!o.firstName&&!o.lastName&&o.name)?ID_SPLIT(o.name):{}; var set=function(k,v){ var e=document.getElementById(p+'-'+k); if(e) e.value=v||''; };
+  set('first',o.firstName||sp.firstName); set('middle',o.middleName||sp.middleName); set('last',o.lastName||sp.lastName);
+  set('district',o.district); set('block',o.block); set('village',o.village); set('pin',o.pincode);
+  var st=document.getElementById(p+'-state'); if(st){ var v=o.state||''; if(v&&![].some.call(st.options,function(x){return x.value===v;})){ var op=document.createElement('option'); op.textContent=v; st.appendChild(op); } st.value=v; }
+}
+function ID_READ(p){
+  var g=function(k){ var e=document.getElementById(p+'-'+k); return e?String(e.value||'').replace(/\s+/g,' ').trim():''; };
+  var o={ firstName:g('first'), middleName:g('middle'), lastName:g('last'), state:g('state'), district:g('district'), block:g('block'), village:g('village'), pincode:g('pin').replace(/\D/g,'') };
+  var re=/^[\p{L}][\p{L} .'-]*$/u;
+  o.name=[o.firstName,o.middleName,o.lastName].filter(Boolean).join(' ');
+  if(!o.firstName) o.error='First Name is required.';
+  else if(!o.lastName) o.error='Last Name is required.';
+  else if(!re.test(o.firstName)||(o.middleName&&!re.test(o.middleName))||!re.test(o.lastName)) o.error='Names may contain letters only.';
+  else if(!o.state) o.error='Please select the State.';
+  else if(!o.district) o.error='District is required.';
+  else if(!o.block) o.error='Block is required.';
+  else if(!o.village) o.error='Village / Panchayat is required.';
+  else if(!/^[1-9]\d{5}$/.test(o.pincode)) o.error='Please enter a valid 6-digit PIN code.';
+  return o;
+}
+function MAT_LOC(o){ o=o||{}; var sub=[o.block,o.district,o.state].filter(Boolean).join(', ')+(o.pincode?' - '+o.pincode:''); return MAT_ESC(o.village||'—')+(sub?'<div style="font-size:10px;color:var(--text-muted);line-height:1.3">'+MAT_ESC(sub)+'</div>':''); }
+/* registered owner of an invoice (split name + State / District / Block / Village / PIN): from the server, else from the loaded user list */
+function MAT_OWNER(b){
+  var o=(b&&b.ownerInfo)||{}, u=null;
+  if(!o.firstName&&!o.state&&b&&b.ownerUserId&&typeof materialUsersCache!=='undefined') u=materialUsersCache.find(function(x){ return String(x.userId||x.userid)===String(b.ownerUserId); });
+  if(u) o={ firstName:u.firstName, middleName:u.middleName, lastName:u.lastName, state:u.state, district:u.district, block:u.block, village:u.village, pincode:u.pincode, mobile:u.mobile };
+  if(!o.firstName&&!o.lastName){ var nm=(u&&u.name)||(b&&b.ownerName)||''; if(nm){ var sp=ID_SPLIT(nm); o.firstName=sp.firstName; o.middleName=sp.middleName; o.lastName=sp.lastName; } }
+  return o;
+}
+function MAT_OWNER_HTML(b){
+  var o=MAT_OWNER(b); if(!b||!b.ownerUserId) return '';
+  var c='border:1px solid #000;padding:3px 6px;font-size:10px;vertical-align:top', h='<div style="font-size:8.5px;color:#555;text-transform:uppercase;letter-spacing:.03em">', e=function(v){ return MAT_ESC(v||'—'); };
+  var cell=function(l,v,w){ return '<td style="'+c+(w?';width:'+w:'')+'">'+h+l+'</div><b>'+e(v)+'</b></td>'; };
+  return '<table style="width:100%;border-collapse:collapse;margin-top:-1px"><tr><td colspan="6" style="'+c+';background:#f2f2f2;font-weight:700">Registered User (Record)</td></tr><tr>'
+    +cell('User ID',b.ownerUserId)+cell('First Name',o.firstName)+cell('Middle Name',o.middleName)+cell('Last Name',o.lastName)+cell('Mobile',o.mobile)+cell('PIN Code',o.pincode)+'</tr><tr>'
+    +cell('State',o.state)+cell('District',o.district)+cell('Block',o.block)+'<td colspan="3" style="'+c+'">'+h+'Village / Panchayat</div><b>'+e(o.village)+'</b></td></tr></table>';
+}
+function ID_LINE(o){ o=o||{}; return [o.village,o.block,o.district,o.state].filter(Boolean).join(', ')+(o.pincode?' - '+o.pincode:''); }
 function OPEN_ADD_MATERIAL_USER(){
   document.getElementById('mu-modal-title').textContent='🧾 New Material User Register';
   document.getElementById('mu-edit-docid').value='';
-  ['mu-name','mu-village','mu-mobile','mu-email','mu-aadhaar','mu-address','mu-inv-amount'].forEach(function(i){ document.getElementById(i).value=''; });
+  ['mu-mobile','mu-email','mu-aadhaar','mu-inv-amount'].forEach(function(i){ document.getElementById(i).value=''; }); ID_FILL('mu',{});
   document.getElementById('mu-inv-exempt').checked=false;
   document.getElementById('mu-inv-version').value='A';
   document.getElementById('mu-aadhaar-hint').textContent='';
@@ -10450,11 +10483,9 @@ function EDIT_MATERIAL_USER(docId){
   if(!u){ MAT_REFRESH().then(function(){ if(materialUsersCache.some(function(x){return x._docId===String(docId);})) EDIT_MATERIAL_USER(docId); }); return; }
   document.getElementById('mu-modal-title').textContent='✏️ Edit Material User';
   document.getElementById('mu-edit-docid').value=String(docId);
-  document.getElementById('mu-name').value=u.name||'';
-  document.getElementById('mu-village').value=u.village||'';
+  ID_FILL('mu',u);
   document.getElementById('mu-mobile').value=u.mobile||'';
   document.getElementById('mu-email').value=u.email||'';
-  document.getElementById('mu-address').value=u.address||'';
   document.getElementById('mu-inv-amount').value=(u.invoiceAmount===null||u.invoiceAmount===undefined||u.invoiceAmount==='')?'':Number(u.invoiceAmount);
   document.getElementById('mu-inv-exempt').checked=!!u.invoicePaymentExempt;
   document.getElementById('mu-inv-version').value=(u.invoiceVersion==='B'?'B':'A');
@@ -10477,19 +10508,20 @@ function EDIT_MATERIAL_USER(docId){
 
 function SAVE_MATERIAL_USER(){
   var g=function(i){ return document.getElementById(i).value.trim(); };
-  var name=g('mu-name'), village=g('mu-village'), mobile=g('mu-mobile'), email=g('mu-email'), address=g('mu-address');
+  var idn=ID_READ('mu'), name=idn.name, village=idn.village, mobile=g('mu-mobile'), email=g('mu-email');
   var aadhaar=g('mu-aadhaar').replace(/\D/g,'');
   var status=document.getElementById('mu-status').value;
   var photo=document.getElementById('mu-photo-data').value||'';
   var err=document.getElementById('mu-form-err');
   var editId=document.getElementById('mu-edit-docid').value;
   var fail=function(m){ err.textContent=m; err.classList.add('show'); };
-  if(!name||!village||!mobile) return fail('Name, Village and Mobile are required.');
+  if(idn.error) return fail(idn.error);
+  if(!mobile) return fail('Mobile number is required.');
   if(mobile.length!==10||isNaN(mobile)) return fail('The mobile number must be 10 digits.');
   if(!editId||aadhaar){ if(aadhaar.length!==12) return fail('Aadhaar number is mandatory and must be exactly 12 digits.'); }
   if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Please enter a valid email address.');
   err.classList.remove('show');
-  var body={ name:name, village:village, mobile:mobile, email:email, address:address, status:status, photo:photo,
+  var body={ firstName:idn.firstName, middleName:idn.middleName, lastName:idn.lastName, state:idn.state, district:idn.district, block:idn.block, village:idn.village, pincode:idn.pincode, mobile:mobile, email:email, status:status, photo:photo,
     invoiceAmount:document.getElementById('mu-inv-amount').value.trim(), invoicePaymentExempt:document.getElementById('mu-inv-exempt').checked,
     invoiceVersion:document.getElementById('mu-inv-version').value };
   if(aadhaar) body.aadhaar=aadhaar;
@@ -10532,7 +10564,7 @@ function RENDER_MATERIAL_USERS(filter){
   filter=(filter||'').toLowerCase();
   var all=materialUsersCache;
   var list=all.filter(function(u){
-    return !filter||(u.name||'').toLowerCase().includes(filter)||(u.village||'').toLowerCase().includes(filter)||
+    return !filter||(u.name||'').toLowerCase().includes(filter)||(u.village||'').toLowerCase().includes(filter)||[u.block,u.district,u.state,u.pincode].join(' ').toLowerCase().includes(filter)||
       (u.mobile||'').includes(filter)||(u.userId||'').toLowerCase().includes(filter)||(u.aadhaar_last4&&filter===u.aadhaar_last4);
   });
   var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
@@ -10554,7 +10586,7 @@ function RENDER_MATERIAL_USERS(filter){
       +'<td>'+MAT_PHOTO(u,34,'linear-gradient(135deg,#A32D2D,#e04444)')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+MAT_ESC(u.userId||'—')+'</td>'
       +'<td>'+MAT_ESC(u.name||'—')+'</td>'
-      +'<td>'+MAT_ESC(u.village||'—')+'</td>'
+      +'<td>'+MAT_LOC(u)+'</td>'
       +'<td>'+MAT_ESC(u.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(u.aadhaarMasked&&u.aadhaar_last4?u.aadhaarMasked:'—')+'</td>'
       +'<td><select class="form-input form-select" style="padding:4px 6px;font-size:12px;min-width:92px" title="Invoice type for this user" onchange="SET_MU_VERSION(\''+id+'\',this)">'
@@ -10763,7 +10795,7 @@ function MAT_INVOICE_HTML(b){
    +'<td style="border:1px solid #000;padding:5px 8px"><b>Bill No:</b> '+MAT_ESC(b.billNo||'')+'</td><td style="border:1px solid #000;padding:5px 8px"><b>Date:</b> '+MAT_ESC(b.billDate||'')+'</td>'
    +'<td style="border:1px solid #000;padding:5px 8px"><b>Transport:</b> '+MAT_ESC(b.transportMode||'')+' '+MAT_ESC(b.vehicleNo||'')+'</td></tr>'
    +'<tr><td style="border:1px solid #000;padding:5px 8px" colspan="2"><b>Work Name:</b> '+MAT_ESC(b.customerName||'')+'</td><td style="border:1px solid #000;padding:5px 8px"><b>Work Code:</b> '+MAT_ESC(b.workCode||'')+'</td></tr>'
-   +'<tr><td style="border:1px solid #000;padding:5px 8px" colspan="3"><b>Customer:</b> '+MAT_ESC(b.vendorName||'')+' — '+MAT_ESC([b.panchayatField,b.blockField,b.districtField,b.stateField].filter(Boolean).join(', '))+'</td></tr></table>'
+   +'<tr><td style="border:1px solid #000;padding:5px 8px" colspan="3"><b>Customer:</b> '+MAT_ESC(b.vendorName||'')+' — '+MAT_ESC([b.panchayatField,b.blockField,b.districtField,b.stateField].filter(Boolean).join(', '))+'</td></tr></table>'+MAT_OWNER_HTML(b)
    +'<table style="width:100%;border-collapse:collapse;margin-top:-1px"><thead><tr>'
    +['#','Particulars'].concat(hasHsn?['HSN / SAC']:[],['Qty','Unit','Rate','Amount','CGST%','CGST','SGST%','SGST','Total']).map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
    +'</tr></thead><tbody style="font-size:10px;text-align:center">'+rows.replace(/<td/g,'<td style="border:1px solid #000;padding:3px 4px"').replace(/<td style="border:1px solid #000;padding:3px 4px" style="/g,'<td style="border:1px solid #000;padding:3px 4px;')+'</tbody></table>'
@@ -16735,7 +16767,7 @@ function MM_NORM(d){
     return {id:String(c.id),name:String(c.name),items:(Array.isArray(c.items)?c.items:[]).map(function(it){
       var code=it.code?String(it.code):'', name=String(it.name||'');
       if(!code){ var m=name.match(/^\s*(\d{2,6})\s*-\s*(.*)$/); if(m){ code=m[1]; name=m[2]; } }
-      return {id:it.id?String(it.id):MM_UID(),code:code,name:name,hsn:String(it.hsn||''),unit:String(it.unit||''),gst:Number(it.gst)||0,price:Number(it.price)||0};
+      return {id:it.id?String(it.id):MM_UID(),code:code,name:name,hsn:String(it.hsn||'').replace(/[^0-9]/g,''),unit:String(it.unit||''),gst:Number(it.gst)||0,price:Number(it.price)||0,show:it.show!==false};
     })};
   });
 }
@@ -16755,7 +16787,7 @@ function MM_RENDER(){
   var tabs=document.getElementById('mm-tabs'), tb=document.getElementById('mm-tbody'); if(!tabs||!tb||!MM_CATS) return;
   tabs.innerHTML=MM_CATS.map(function(c){ var on=c.id===MM_SEL; return '<button class="btn btn-sm '+(on?'btn-gold':'btn-ghost')+'" onclick="MM_PICK(\''+MAT_JSARG(c.id)+'\')">'+MAT_ESC(c.name)+' ('+c.items.length+')</button>'; }).join('')
     +'<button class="btn btn-sm btn-ghost" onclick="MM_ADD_CAT()">+ New Category</button>';
-  var cat=MM_CUR(); if(!cat){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Create a category to begin.</td></tr>'; return; }
+  var cat=MM_CUR(); if(!cat){ tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Create a category to begin.</td></tr>'; return; }
   var q=(document.getElementById('mm-search').value||'').toLowerCase();
   var rows=''; var shown=0;
   cat.items.forEach(function(it,i){
@@ -16763,13 +16795,14 @@ function MM_RENDER(){
     rows+='<tr><td>'+(i+1)+'</td>'
      +'<td><input class="sa-in" style="width:80px" value="'+MAT_ESC(it.code)+'" oninput="MM_SET('+i+',\'code\',this.value)"></td>'
      +'<td><input class="sa-in" style="min-width:260px" value="'+MAT_ESC(it.name)+'" oninput="MM_SET('+i+',\'name\',this.value)" onchange="MM_NAME_AUTO('+i+',this)"></td>'
-     +'<td><input class="sa-in mm-hsn" style="width:100px" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" value="'+MAT_ESC(it.hsn||'')+'" oninput="MM_SET('+i+',\'hsn\',this.value)"></td>'
+     +'<td><input class="sa-in mm-hsn" style="width:100px" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" value="'+MAT_ESC(it.hsn||'')+'" oninput="this.value=this.value.replace(/[^0-9]/g,\'\');MM_SET('+i+',\'hsn\',this.value)"></td>'
      +'<td><input class="sa-in mm-unit" style="width:90px" list="mm-units" value="'+MAT_ESC(it.unit)+'" oninput="MM_SET('+i+',\'unit\',this.value)"></td>'
      +'<td><input class="sa-in mm-gst" style="width:70px" type="number" min="0" max="100" step="0.5" value="'+it.gst+'" oninput="MM_SET('+i+',\'gst\',this.value)"></td>'
      +'<td><input class="sa-in" style="width:110px" type="number" min="0" step="0.01" value="'+it.price+'" oninput="MM_SET('+i+',\'price\',this.value)"></td>'
+     +'<td style="text-align:center"><input type="checkbox" title="Show this material in the invoice dropdown"'+(it.show!==false?' checked':'')+' onchange="MM_SET('+i+',\'show\',this.checked)"></td>'
      +'<td><button class="btn-icon" title="Delete this material" style="color:#c0262d" onclick="MM_DEL_ITEM('+i+')">🗑️</button></td></tr>';
   });
-  tb.innerHTML=rows||'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">'+(cat.items.length?'No match.':'No materials yet — click "+ Add Material".')+'</td></tr>';
+  tb.innerHTML=rows||'<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">'+(cat.items.length?'No match.':'No materials yet — click "+ Add Material".')+'</td></tr>';
 }
 function MM_PICK(id){ MM_SEL=id; MM_RENDER(); }
 var MM_EDITED=[];   // ids of materials whose Unit / GST % / HSN the admin changed by hand (in order) — propagated to same-name materials on Save
@@ -16797,7 +16830,7 @@ function MM_PROPAGATE(){
   });
   MM_EDITED=[]; return n;
 }
-function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',hsn:'',unit:'Nos',gst:18,price:0}); document.getElementById('mm-search').value=''; MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
+function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',hsn:'',unit:'Nos',gst:18,price:0,show:true}); document.getElementById('mm-search').value=''; MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
 function MM_DEL_ITEM(i){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; if(!confirm('Delete "'+(cat.items[i].name||'this material')+'" from '+cat.name+'?')) return; cat.items.splice(i,1); MM_RENDER(); MM_MSG('Deleted — click "Save All" to apply.',true); }
 function MM_ADD_CAT(){
   var n=(prompt('New category name (for example: Plantation, Road Work):')||'').trim(); if(!n) return;
@@ -16814,11 +16847,11 @@ function MM_SAVE(){
     for(var i=0;i<cat.items.length;i++){ var it=cat.items[i];
       if(!String(it.name).trim()){ MM_SEL=cat.id; MM_RENDER(); MM_MSG('Every material needs a name ('+cat.name+', row '+(i+1)+').',false); return; }
     } }
-  var payload=MM_CATS.map(function(c){ return {id:c.id,name:c.name.trim(),items:c.items.map(function(it){ return {id:it.id?String(it.id):MM_UID(),code:String(it.code||'').trim(),name:String(it.name).trim(),hsn:String(it.hsn||'').trim(),unit:String(it.unit).trim(),gst:Number(it.gst)||0,price:Number(it.price)||0}; })}; });
+  var payload=MM_CATS.map(function(c){ return {id:c.id,name:c.name.trim(),items:c.items.map(function(it){ return {id:it.id?String(it.id):MM_UID(),code:String(it.code||'').trim(),name:String(it.name).trim(),hsn:String(it.hsn||'').replace(/[^0-9]/g,''),unit:String(it.unit).trim(),gst:Number(it.gst)||0,price:Number(it.price)||0,show:it.show!==false}; })}; });
   apiFetch('/blob/material_categories',{method:'POST',body:JSON.stringify(payload)}).then(function(){
     // read-back: confirm the shared storage now really holds what was just saved
     return apiFetch('/blob/material_categories?_='+Date.now(),{cache:'no-store'}).then(function(back){
-      var norm=function(a){ return JSON.stringify((a||[]).map(function(c){ return [c.id,c.name,(c.items||[]).map(function(i){ return [i.id,i.code,i.name,String(i.hsn||''),i.unit,Number(i.gst)||0,Number(i.price)||0]; })]; })); };
+      var norm=function(a){ return JSON.stringify((a||[]).map(function(c){ return [c.id,c.name,(c.items||[]).map(function(i){ return [i.id,i.code,i.name,String(i.hsn||''),i.unit,Number(i.gst)||0,Number(i.price)||0,i.show!==false]; })]; })); };
       if(norm(back)!==norm(payload)) throw new Error('Saved, but the stored copy does not match what you entered — please click Save All again.');
     });
   }).then(function(){
@@ -16990,7 +17023,7 @@ function PREG_MAT_RENDER(){
       badge='<span class="badge" style="background:rgba(201,162,39,.18);color:#c9a227">⏳ Pending</span>';
       actions='<button class="btn btn-gold btn-sm" title="Review the details, then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+id+'\')">Approve</button><button class="btn btn-danger btn-sm" onclick="REJECT_MATERIAL_REQUEST(\''+id+'\')">Reject</button>';
     }
-    return '<tr><td>'+MAT_PHOTO(r)+'</td><td style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:800;color:#c9a227">'+MAT_ESC(r.tracking_id||'—')+'</td><td>'+MAT_ESC(r.name||'—')+'</td><td>'+MAT_ESC(r.village||'—')+'</td>'
+    return '<tr><td>'+MAT_PHOTO(r)+'</td><td style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:800;color:#c9a227">'+MAT_ESC(r.tracking_id||'—')+'</td><td>'+MAT_ESC(r.name||'—')+'</td><td>'+MAT_LOC(r)+'</td>'
       +'<td style="font-size:11px">'+MAT_ESC(r.email||'—')+'</td><td>'+MAT_ESC(r.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(r.aadhaarMasked||'—')+'</td>'
       +'<td style="font-size:10px">'+MAT_ESC(PREG_MAT_DATE(r.created_at))+'</td><td>'+badge+'</td>'

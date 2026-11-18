@@ -481,6 +481,15 @@
   @media(prefers-reduced-motion:reduce){#registrationModalOverlay #regPanel,.login-card.registration-focus-highlight{animation:none!important;}}
 </style>
 
+<style id="registration-structured-fields">
+  #registrationModalOverlay #regPanel .reg-sec-title{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#14315e;margin:2px 0 -4px}
+  #registrationModalOverlay #regPanel .reg-grid{display:grid;gap:8px}
+  #registrationModalOverlay #regPanel .reg-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #registrationModalOverlay #regPanel .reg-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #registrationModalOverlay #regPanel .reg-grid label{display:block;margin-bottom:4px;font-size:11.5px;font-weight:700;color:#475569}
+  #registrationModalOverlay #regPanel select{width:100%;min-height:41px;background:#fff;border:1px solid #cdd8ea;border-radius:10px;padding:0 10px;font-size:14px;color:#1e293b}
+  @media(max-width:520px){#registrationModalOverlay #regPanel .reg-grid-3{grid-template-columns:1fr}}
+</style>
 <style id="registration-tracking-tabs">
   #registrationModalOverlay #regPanel .reg-tabs{display:flex;gap:4px;padding:4px;background:#eef3fb;border-radius:12px;flex-shrink:0;}
   #registrationModalOverlay #regPanel .reg-tab{flex:1;min-height:36px;padding:7px 8px;border:0;border-radius:9px;background:transparent;color:#475a7a;font-size:12px;font-weight:700;line-height:1.2;}
@@ -883,17 +892,27 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
         <input type="file" id="regPhotoInput" accept="image/*" style="display:none" onchange="previewRegPhoto(this)">
         <p class="text-[10px] text-gray-400 text-center -mt-2">Upload Photo (Click to Upload)</p>
 
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Full Name <span class="text-red-600">*</span></label>
-          <input id="regName" type="text" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Your Full Name">
+        <div class="reg-sec-title">👤 Name</div>
+        <div class="reg-grid reg-grid-3">
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regFirstName">First Name <span class="text-red-600">*</span></label>
+            <input id="regFirstName" type="text" maxlength="100" autocomplete="given-name" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="First Name"></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regMiddleName">Middle Name</label>
+            <input id="regMiddleName" type="text" maxlength="100" autocomplete="additional-name" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Optional"></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regLastName">Last Name <span class="text-red-600">*</span></label>
+            <input id="regLastName" type="text" maxlength="100" autocomplete="family-name" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Last Name"></div>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Village <span class="text-red-600">*</span></label>
-          <input id="regVillage" type="text" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Village / Panchayat">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Address <span class="text-red-600">*</span></label>
-          <textarea id="regAddress" rows="2" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Full Address"></textarea>
+        <div class="reg-sec-title">📍 Location</div>
+        <div class="reg-grid reg-grid-2">
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regState">State <span class="text-red-600">*</span></label>
+            <select id="regState" class="w-full border border-gray-300 rounded px-3 py-2 text-sm"><option value="">Select State</option><option>Andaman and Nicobar Islands</option><option>Andhra Pradesh</option><option>Arunachal Pradesh</option><option>Assam</option><option>Bihar</option><option>Chandigarh</option><option>Chhattisgarh</option><option>Dadra and Nagar Haveli and Daman and Diu</option><option>Delhi</option><option>Goa</option><option>Gujarat</option><option>Haryana</option><option>Himachal Pradesh</option><option>Jammu and Kashmir</option><option>Jharkhand</option><option>Karnataka</option><option>Kerala</option><option>Ladakh</option><option>Lakshadweep</option><option>Madhya Pradesh</option><option>Maharashtra</option><option>Manipur</option><option>Meghalaya</option><option>Mizoram</option><option>Nagaland</option><option>Odisha</option><option>Puducherry</option><option>Punjab</option><option>Rajasthan</option><option>Sikkim</option><option>Tamil Nadu</option><option>Telangana</option><option>Tripura</option><option>Uttar Pradesh</option><option>Uttarakhand</option><option>West Bengal</option></select></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regDistrict">District <span class="text-red-600">*</span></label>
+            <input id="regDistrict" type="text" maxlength="100" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="District"></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regBlock">Block <span class="text-red-600">*</span></label>
+            <input id="regBlock" type="text" maxlength="100" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Block"></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regVillage">Village / Panchayat <span class="text-red-600">*</span></label>
+            <input id="regVillage" type="text" maxlength="150" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Village / Panchayat"></div>
+          <div><label class="block text-xs font-semibold text-gray-600 mb-1" for="regPincode">Pin Code <span class="text-red-600">*</span></label>
+            <input id="regPincode" type="text" inputmode="numeric" maxlength="6" autocomplete="postal-code" class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="6-digit PIN" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)"></div>
         </div>
         <div>
           <label class="block text-xs font-semibold text-gray-600 mb-1">Email ID <span class="text-red-600">*</span></label>
@@ -3572,20 +3591,27 @@ async function submitRegistrationRequest(){
   const btn = document.getElementById('regSubmitBtn');
   if(btn && btn.disabled) return; // protect against duplicate submissions
 
-  const name    = document.getElementById('regName').value.trim();
-  const village = document.getElementById('regVillage').value.trim();
-  const address = document.getElementById('regAddress').value.trim();
+  const gv = function(id){ const e=document.getElementById(id); return e ? String(e.value||'').replace(/\s+/g,' ').trim() : ''; };
+  const firstName=gv('regFirstName'), middleName=gv('regMiddleName'), lastName=gv('regLastName');
+  const state=gv('regState'), district=gv('regDistrict'), block=gv('regBlock'), village=gv('regVillage'), pincode=gv('regPincode').replace(/\D/g,'');
+  const name = [firstName, middleName, lastName].filter(Boolean).join(' ');
   const email   = document.getElementById('regEmail').value.trim();
   const mobile  = document.getElementById('regMobile').value.trim();
   const aadhaar = (document.getElementById('regAadhaar').value || '').replace(/\D/g,'');
   const photo   = document.getElementById('regPhotoPreview').style.display !== 'none'
     ? document.getElementById('regPhotoPreview').src : '';
 
-  if(!name){ showRegError('Full name is required.'); return; }
-  if(!/^[A-Za-z][A-Za-z .'-]*$/.test(name)){ showRegError('Invalid Name. Please use alphabetic characters only.'); return; }
+  if(!firstName){ showRegError('First Name is required.'); return; }
+  if(!lastName){ showRegError('Last Name is required.'); return; }
+  const nameRe=/^[\p{L}][\p{L} .'-]*$/u;
+  if(!nameRe.test(firstName) || (middleName && !nameRe.test(middleName)) || !nameRe.test(lastName)){ showRegError('Invalid Name. Please use alphabetic characters only.'); return; }
+  if(!state){ showRegError('Please select your State.'); return; }
+  if(!district){ showRegError('District is required.'); return; }
+  if(!block){ showRegError('Block is required.'); return; }
+  if(!village){ showRegError('Village / Panchayat is required.'); return; }
+  if(!/^[1-9]\d{5}$/.test(pincode)){ showRegError('Please enter a valid 6-digit PIN code.'); return; }
   if(!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showRegError('Please enter a valid email address.'); return; }
   if(!/^\d{10}$/.test(mobile)){ showRegError('Please enter a valid 10-digit mobile number.'); return; }
-  if(!village || !address){ showRegError('Please enter your village and full address.'); return; }
   if(!photo){ showRegError('Profile photo or live capture is mandatory.'); return; }
   if(aadhaar.length!==12){ showRegError('Aadhaar number is mandatory and must be exactly 12 digits.'); return; }
   hideRegError();
@@ -3602,7 +3628,7 @@ async function submitRegistrationRequest(){
     // Active registration fee (Super Admin → Supabase): ₹0 = gateway bypassed, otherwise the exact fee is charged first.
     const regPayment = await _regFeeGate(mobile, aadhaar);
     const result=await withTimeout(API.post('/material/register', {
-      name, village, address, email, mobile, aadhaar, photo, payment: regPayment
+      firstName, middleName, lastName, name, state, district, block, village, pincode, email, mobile, aadhaar, photo, payment: regPayment
     }), 15000, 'Submitting registration');
     if(result && (result.success===false || result.ok===false || result.error)){
       throw new Error(String(result.message || result.error || 'The server did not accept this registration request.'));
@@ -3614,7 +3640,7 @@ async function submitRegistrationRequest(){
       successEl.textContent = '✅ Registration request submitted — it is now pending Admin approval.';
       successEl.style.display = 'block';
     }
-    ['regName','regVillage','regAddress','regEmail','regMobile','regAadhaar'].forEach(function(id){
+    ['regFirstName','regMiddleName','regLastName','regState','regDistrict','regBlock','regVillage','regPincode','regEmail','regMobile','regAadhaar'].forEach(function(id){
       const input=document.getElementById(id);if(input)input.value='';
     });
     const photoPreview=document.getElementById('regPhotoPreview');
@@ -4332,7 +4358,7 @@ document.addEventListener('dragstart', function(e){ e.preventDefault(); });
     var success=byId('regSuccess');if(success){success.style.display='none';success.textContent='';}
     overlay.hidden=false;
     if(btn)btn.style.display='none';
-    var first=byId('regName');
+    var first=byId('regFirstName');
     window.setTimeout(function(){if(first)first.focus({preventScroll:true});panel.scrollTop=0;},40);
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initRegistrationModal,{once:true});
