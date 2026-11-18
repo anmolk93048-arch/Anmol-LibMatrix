@@ -23,14 +23,20 @@
 </script>
 
 <meta charset="utf-8"/>
+<meta name="google-site-verification" content="fZ5HvhG7XXc_TVb2CIPr8pvkaNNxLtvHW9QxsMv7HRU" />
 <link rel="icon" href="/anmol_libmatrix_logo.png"/>
 <script src="config.js"></script>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script><!-- sets window.SHDL_API_BASE (Render URL) in one place -->
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#062d68" name="theme-color"/>
-<meta content="Anmol LibMatrix — Smart Digital Library" name="description"/>
-<title>Anmol LibMatrix | Smart Digital Library</title>
+<meta name="description" content="Anmol LibMatrix provides digital billing, GST, royalty billing, and smart library management services." />
+<meta name="robots" content="index, follow" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Anmol LibMatrix" />
+<meta property="og:title" content="Anmol LibMatrix - Digital Billing &amp; Library Platform" />
+<meta property="og:description" content="Anmol LibMatrix provides digital billing, GST, royalty billing, and smart library management services." />
+<title>Anmol LibMatrix - Digital Billing &amp; Library Platform</title>
 <style>
 :root{--navy:#06306f;--blue:#0b75df;--green:#08aa67;--purple:#6d2fe0;--orange:#ff8a00;--red:#ef2d5e;--gold:#ffbd12;--ink:#17345f;--muted:#647694;--bg:#f3f8fd;--line:#dbe8f6;--shadow:0 8px 25px rgba(6,48,111,.10)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--ink);background:var(--bg)}a{text-decoration:none;color:inherit}.container{width:min(1500px,96%);margin:auto}
@@ -514,6 +520,19 @@ header{position:sticky;top:38px;z-index:90;}
 @media(max-width:400px){ .dropdown-toggle span{display:none} .nav-actions .login-btn,.nav-actions .app-btn{padding:8px 9px} .brand strong{font-size:14px} }
 /* floating dark/light theme button removed */
 [data-theme-toggle],.theme-toggle,#theme-toggle,#themeToggle,.theme-fab,#theme-fab,.theme-switch{display:none !important}
+</style>
+<style id="slider-smooth-fade">
+/* Seamless banner transitions — no blue flash.
+   Slides were switched with display:none/block, so the navy container showed for a moment while the next image painted.
+   Now every slide stays rendered; the NEXT slide fades in on top while the previous one stays fully opaque underneath
+   (it is only hidden after the fade finishes), so the container background can never show through. */
+.hero .hero-slider .slide{display:block !important;opacity:0;visibility:visible;z-index:0;pointer-events:none;
+  transition:opacity 0s linear .9s;will-change:opacity;backface-visibility:hidden;transform:translateZ(0)}
+.hero .hero-slider .slide.active{opacity:1;z-index:1;pointer-events:auto;transition:opacity .8s ease-in-out}
+.hero .hero-slider .slide img{display:block}
+.kyc-slider .kyc-slide{transition:opacity 0s linear .7s !important;z-index:0;will-change:opacity;backface-visibility:hidden}
+.kyc-slider .kyc-slide.active{transition:opacity .6s ease-in-out !important;z-index:1}
+@media(prefers-reduced-motion:reduce){.hero .hero-slider .slide.active,.kyc-slider .kyc-slide.active{transition-duration:.01s !important}}
 </style>
 </head>
 <body>
