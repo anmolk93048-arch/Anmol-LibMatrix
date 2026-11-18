@@ -1281,7 +1281,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
     <div class="section-title px-4 py-2 flex items-center justify-between">
       <span>Section C — Dynamic Material Entry</span>
       <label class="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer" title="Checked: the HSN / SAC column is printed on the tax invoice. Unchecked: HSN values become 00 and the column is hidden.">
-        <input type="checkbox" id="includeHsn" checked onchange="calculateAll()"> Include HSN / SAC on invoice
+        <input type="checkbox" id="includeHsn" checked onchange="_hsnToggled()"> Include HSN / SAC on invoice
       </label>
       <button onclick="addRow()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-2.5 py-1 rounded hover:bg-blue-50">+ ADD MATERIAL ROW</button>
     </div>
@@ -1856,10 +1856,7 @@ function loadMaterialCategories(){
         tr.children[7].innerHTML = gstCellHTML(Number(m.gst) || 0);
       }
       // HSN / SAC follows the Master unless the user typed their own code in this row
-      const hsnEl = tr.querySelector('.hsn-field');
-      if(prev && hsnEl && hsnEl.value.trim() === String(prev.hsn || '').trim() && String(prev.hsn || '').trim() !== String(m.hsn || '').trim()){
-        hsnEl.value = m.hsn || '';
-      }
+      _syncRowHsn(tr, m);
       const priceEl = tr.querySelector('.price-field');
       if(prev && priceEl && (Number(priceEl.value) || 0) === (Number(prev.price) || 0) && (Number(prev.price) || 0) !== (Number(m.price) || 0)){
         priceEl.value = Number(m.price) || 0;
@@ -1899,7 +1896,7 @@ function onWorkCategoryChange(){
     const price = parseFloat(tr.querySelector('.price-field').value) || 0;
     const gstEl = tr.querySelector('.gst-select');
     const gst = gstEl ? (parseFloat(gstEl.value) || 0) : 0;
-    const untouched = !!it && oldCatalog.indexOf(it) === 0 && qty === 0 &&
+    const untouched = !!it && oldCatalog.indexOf(it) === Math.max(0, oldCatalog.findIndex(_matVisible)) && qty === 0 &&
       price === (Number(it.price) || 0) && gst === (Number(it.gst) || 0);
     return { tr: tr, sel: sel, it: it, untouched: untouched };
   });
@@ -1912,13 +1909,13 @@ function onWorkCategoryChange(){
     if(!p.sel) return;
     if(p.untouched || !p.it){
       // fresh row: follow the new category completely (same as adding a new row)
-      const m = newCatalog[0];
-      p.sel.innerHTML = materialOptions(0);
+      const _fv = _firstVisibleIdx(), m = newCatalog[_fv];
+      p.sel.innerHTML = materialOptions(_fv);
       if(m){
         p.tr.dataset.mid = m.id ? String(m.id) : '';
         p.tr.querySelector('.unit-field').value = m.unit == null ? '' : String(m.unit);
         syncOtherRow(p.tr);
-        const _h2 = p.tr.querySelector('.hsn-field'); if(_h2) _h2.value = m.hsn || '';
+        delete p.tr.dataset.hsnManual; _syncRowHsn(p.tr, m);
         p.tr.querySelector('.price-field').value = Number(m.price) || 0;
         p.tr.children[7].innerHTML = gstCellHTML(Number(m.gst) || 0);
       }
@@ -1937,9 +1934,37 @@ function _matLabel(m){
   const name = m && m.name ? String(m.name) : '';
   return (code && name.indexOf(code) !== 0) ? (code + '-' + name) : name;
 }
+/* Material Master → invoice: per-material "Show on invoice" flag. A material hidden in the Master leaves the dropdown,
+   but a row that already uses it keeps showing it (so saved / half-filled invoices never break). */
+function _matVisible(m){ return !m || m.show !== false; }
+function _firstVisibleIdx(){ const i = ACTIVE_CATALOG.findIndex(_matVisible); return i < 0 ? 0 : i; }
 function materialOptions(selectedIdx){
-  return ACTIVE_CATALOG.map((m,i)=>`<option value="${i}" ${i===selectedIdx?'selected':''}>${_matLabel(m)}</option>`).join('');
+  return ACTIVE_CATALOG.map((m,i)=> (i===selectedIdx || _matVisible(m)) ? `<option value="${i}" ${i===selectedIdx?'selected':''}>${_matLabel(m)}</option>` : '').join('');
 }
+/* HSN / SAC from the Material Master: digits only; if this material has none, reuse the code of a same-name material in another category */
+function _normHsn(v){ return String(v == null ? '' : v).replace(/[^0-9]/g, ''); }
+function _nameKey(n){ return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+function _hsnForItem(m){
+  if(!m) return '';
+  let h = _normHsn(m.hsn); if(h) return h;
+  const k = _nameKey(m.name); if(!k) return '';
+  for(const c of WORK_CATEGORIES){ for(const it of (c.items || [])){ if(it && _nameKey(it.name) === k){ const x = _normHsn(it.hsn); if(x) return x; } } }
+  return '';
+}
+/* the row's HSN follows the Master until the user types their own code in that row */
+function _syncRowHsn(tr, m){
+  const el = tr.querySelector('.hsn-field'); if(!el || !m) return;
+  let v = _hsnForItem(m);
+  if(!v){   // "Other (Specify Manually)" row: match the typed material name against the Master (HSN only)
+    const nm = tr.querySelector('.mat-custom'), sel = tr.querySelector('.mat-select');
+    if(nm && sel && _isOtherSel(sel) && nm.value.trim()) v = _hsnForItem({ name: nm.value });
+  }
+  if(tr.dataset.hsnManual === '1' && el.value.trim()) return;
+  delete tr.dataset.hsnManual;
+  if(el.value !== v) el.value = v;
+}
+function _hsnTyped(el){ const tr = el.closest('tr'); if(!tr) return; if(el.value.trim()) tr.dataset.hsnManual = '1'; else delete tr.dataset.hsnManual; calculateAll(); }
+function _hsnToggled(){ calculateAll(); loadMaterialCategories(); }
 /* ---- Keyboard type-ahead for the material dropdowns (no extra UI) ----
    With a material <select> focused or open, typing jumps the blue highlight to the best match:
    1) label / name / code STARTS with the typed text, 2) a WORD in the name starts with it, 3) it appears anywhere.
@@ -2012,7 +2037,7 @@ function addRow(prefill){
   const tbody = document.getElementById('materialBody');
   const tr = document.createElement('tr');
   tr.dataset.rowId = rowCounter;
-  const matIdx = prefill ? prefill.matIdx : 0;
+  const matIdx = prefill ? prefill.matIdx : _firstVisibleIdx();
   tr.dataset.mid = (ACTIVE_CATALOG[matIdx] && ACTIVE_CATALOG[matIdx].id) ? String(ACTIVE_CATALOG[matIdx].id) : '';
   tr.innerHTML = `
     <td class="text-center">${rowCounter}</td>
@@ -2020,9 +2045,9 @@ function addRow(prefill){
       <select class="mat-select w-full border border-gray-300 rounded px-1.5 py-1 text-sm" onchange="onMaterialChange(this)">
         ${materialOptions(matIdx)}
       </select>
-      <input type="text" maxlength="80" class="mat-custom w-full border border-gray-300 rounded px-1.5 py-1 text-sm mt-1" placeholder="Type material name" style="display:none" oninput="calculateAll()">
+      <input type="text" maxlength="80" class="mat-custom w-full border border-gray-300 rounded px-1.5 py-1 text-sm mt-1" placeholder="Type material name" style="display:none" oninput="_syncRowHsn(this.closest('tr'), ACTIVE_CATALOG[parseInt(this.closest('tr').querySelector('.mat-select').value,10)||0]); calculateAll()">
     </td>
-    <td><input type="text" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" class="hsn-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm" value="${_unitAttr(ACTIVE_CATALOG[matIdx].hsn || '')}" oninput="calculateAll()"></td>
+    <td><input type="text" maxlength="12" inputmode="numeric" placeholder="HSN / SAC" class="hsn-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm" value="${_unitAttr(_hsnForItem(ACTIVE_CATALOG[matIdx]))}" oninput="_hsnTyped(this)"></td>
     <td><input type="text" maxlength="12" class="unit-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm bg-gray-50" value="${_unitAttr(ACTIVE_CATALOG[matIdx].unit)}" readonly oninput="calculateAll()"></td>
     <td><input type="number" min="0" step="0.01" class="price-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="${Number(ACTIVE_CATALOG[matIdx].price)||0}" oninput="calculateAll()"></td>
     <td><input type="number" min="0" step="0.01" class="qty-field w-full border border-gray-300 rounded px-1.5 py-1 text-sm text-right" value="0" oninput="calculateAll()"></td>
@@ -2064,7 +2089,7 @@ function onMaterialChange(sel){
   tr.dataset.mid = ACTIVE_CATALOG[idx].id ? String(ACTIVE_CATALOG[idx].id) : '';
   tr.querySelector('.unit-field').value = ACTIVE_CATALOG[idx].unit;
   syncOtherRow(tr);
-  const _hs = tr.querySelector('.hsn-field'); if(_hs) _hs.value = ACTIVE_CATALOG[idx].hsn || '';   // auto-filled from the Material Master, user can still edit it
+  delete tr.dataset.hsnManual; _syncRowHsn(tr, ACTIVE_CATALOG[idx]);   // auto-filled from the Material Master, user can still edit it
   tr.children[7].innerHTML = gstCellHTML(ACTIVE_CATALOG[idx].gst);
   const dp = Number(ACTIVE_CATALOG[idx].price) || 0;   // default price set by Super Admin
   if(dp > 0) tr.querySelector('.price-field').value = dp;
@@ -2537,9 +2562,9 @@ function printInvoiceNow(){
 /* ---- HSN / SAC rules ----
    Checkbox ON  → each row prints its own code (blank → "00"); the column is shown only if at least one row has a real code.
    Checkbox OFF → every row is "00" and the column is hidden completely (the table re-flows, no blank gap). */
-function _hsnIsValid(v){ v = String(v == null ? '' : v).trim(); return /^[0-9]{2,8}$/.test(v) && !/^0+$/.test(v); }
+function _hsnIsValid(v){ v = _normHsn(v); return /^[0-9]{2,8}$/.test(v) && !/^0+$/.test(v); }
 function _hsnOn(){ const c = document.getElementById('includeHsn'); return !c || c.checked; }
-function _effHsn(v){ if(!_hsnOn()) return '00'; v = String(v == null ? '' : v).trim(); return v || '00'; }
+function _effHsn(v){ if(!_hsnOn()) return '00'; v = _normHsn(v); return v || '00'; }
 
 /* Rebuilds colgroup / header / total-label of the printed items table for the chosen column set */
 function _buildInvoiceItemsHead(showHsn){
@@ -2977,7 +3002,12 @@ function applyFormData(data){
     tr.querySelector('.qty-field').value = m.qty;
     if(m.isOther){ syncOtherRow(tr); tr.querySelector('.mat-custom').value = m.name || ''; tr.querySelector('.unit-field').value = m.unit || ''; }
     const _hf = tr.querySelector('.hsn-field');
-    if(_hf) _hf.value = m.hsnEntered != null ? m.hsnEntered : (m.hsn === '00' ? '' : (m.hsn || ''));
+    if(_hf){
+      _hf.value = m.hsnEntered != null ? m.hsnEntered : (m.hsn === '00' ? '' : (m.hsn || ''));
+      const _mi = _hsnForItem(ACTIVE_CATALOG[mi]);
+      if(_hf.value.trim() && _hf.value.trim() !== _mi) tr.dataset.hsnManual = '1';   // a hand-typed code in a saved bill stays; otherwise the row follows the Master
+      else _syncRowHsn(tr, ACTIVE_CATALOG[mi]);
+    }
     tr.children[7].innerHTML = gstCellHTML(m.gst);
   });
   if(!(data.materials && data.materials.length)) addRow();
