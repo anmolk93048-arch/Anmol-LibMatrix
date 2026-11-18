@@ -540,12 +540,12 @@
     <div class="p-3 overflow-x-auto">
       <table class="mat-table w-full text-sm border-collapse min-w-[980px]">
         <thead><tr>
-          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">HSN/SAC</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
+          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
           <th class="w-28">Taxable (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
         </tr></thead>
-        <tbody id="rows"></tbody><datalist id="mat-names"></datalist>
+        <tbody id="rows"></tbody>
         <tfoot><tr class="bg-blue-50 font-bold">
-          <td colspan="7" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
+          <td colspan="5" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -754,33 +754,12 @@ function words(amount){
 /* ───────── form ───────── */
 function rowHtml(){
   return '<tr><td class="text-center sn"></td>'
-    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" list="mat-names" oninput="syncHsn(this)" onchange="syncHsn(this)"></td>'
-    + '<td><input class="inp r-hsn" maxlength="12" inputmode="numeric" placeholder="HSN/SAC" oninput="this.dataset.manual=\'1\'"></td>'
-    + '<td><input class="inp r-unit" maxlength="20" placeholder="Unit"></td>'
+    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" autocomplete="off"><input type="hidden" class="r-hsn"><input type="hidden" class="r-unit"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-gst text-right" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="GST %" oninput="recalc()"></td>'
     + '<td class="text-right r-tax">0.00</td><td class="text-right font-semibold r-total">0.00</td>'
     + '<td class="text-center"><button type="button" class="text-red-600 font-bold" title="Remove row" onclick="delRow(this)">✕</button></td></tr>';
-}
-/* HSN/SAC auto-fill from the Super-Admin Material Master — fills ONLY the HSN/SAC box (never price / unit / name / GST) */
-var MASTER_HSN = {};
-function _hk(s){ return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
-function loadMasterHsn(){
-  return api('/dv/material-hsn').then(function(list){
-    MASTER_HSN = {}; var dl = $('mat-names'), seen = {}, opts = '';
-    (list || []).forEach(function(m){
-      [m.name, m.code ? m.code + '-' + m.name : '', m.code ? m.code + ' - ' + m.name : ''].forEach(function(k){ k = _hk(k); if (k && !MASTER_HSN[k]) MASTER_HSN[k] = m.hsn; });
-      if (!seen[_hk(m.name)]) { seen[_hk(m.name)] = 1; opts += '<option value="' + esc(m.name) + '">'; }
-    });
-    if (dl) dl.innerHTML = opts;
-    Array.prototype.forEach.call($('rows').children, function(tr){ syncHsn(tr.querySelector('.r-name')); });
-  }).catch(function(){});
-}
-function syncHsn(nameEl){
-  var tr = nameEl && nameEl.closest('tr'); if (!tr) return;
-  var h = MASTER_HSN[_hk(nameEl.value)], box = tr.querySelector('.r-hsn');
-  if (h && box) { box.value = h; box.dataset.manual = ''; }
 }
 function addRow(v){
   $('rows').insertAdjacentHTML('beforeend', rowHtml());
@@ -954,8 +933,16 @@ function showInvoice(inv){
   set('i-gstin', c.gstin); set('i-mobile', c.mobile); set('i-bank', c.bankName); set('i-branch', c.branch); set('i-ifsc', c.ifsc); set('i-acc', c.accountNo);
   set('i-billNo', inv.billNo); set('i-date', fmtDate(inv.date)); set('i-transport', inv.transport); set('i-vehicle', inv.vehicle);
   set('i-customer', inv.customer); set('i-block', inv.block); set('i-district', inv.district);
+  /* HSN/SAC and Unit are no longer entered in Session B; the printed invoice only shows those columns for older bills that carry values */
+  var showH = (inv.items || []).some(function(r){ return String(r.hsn || '').trim(); }), showU = (inv.items || []).some(function(r){ return String(r.unit || '').trim(); });
+  var W = [5, 15, 8, 8, 6, 8, 10, 6, 8, 6, 8, 12], extra = (showH ? 0 : W[2]) + (showU ? 0 : W[4]); W[1] += extra;
+  var H = ['Sl.<br>No.', 'Particulars', 'HSN/<br>SAC', 'Quantity', 'Unit', 'Rate', 'Taxable<br>Amount', 'CGST', 'CGST<br>Amount', 'SGST', 'SGST<br>Amount', 'Total<br>Amount'], keep = W.map(function(_, k){ return !((k === 2 && !showH) || (k === 4 && !showU)); });
+  var tbl = $('i-rows').closest('table');
+  tbl.querySelector('colgroup').innerHTML = W.map(function(w, k){ return keep[k] ? '<col style="width:' + w + '%">' : ''; }).join('');
+  tbl.querySelector('thead tr').innerHTML = H.map(function(h, k){ return keep[k] ? '<th>' + h + '</th>' : ''; }).join('');
+  tbl.querySelector('tfoot td').setAttribute('colspan', String(6 - (showH ? 0 : 1) - (showU ? 0 : 1)));
   var rows = (inv.items || []).map(function(r, i){
-    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td><td>' + esc(r.hsn || '') + '</td><td class="inv-num">' + esc(r.qty) + '</td><td>' + esc(r.unit) + '</td><td class="inv-num">' + money(r.rate)
+    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td>' + (showH ? '<td>' + esc(r.hsn || '') + '</td>' : '') + '<td class="inv-num">' + esc(r.qty) + '</td>' + (showU ? '<td>' + esc(r.unit) + '</td>' : '') + '<td class="inv-num">' + money(r.rate)
       + '</td><td class="inv-num">' + money(r.taxable) + '</td><td>' + esc(r.cgstPct) + '%</td><td class="inv-num">' + money(r.cgstAmt) + '</td><td>' + esc(r.sgstPct) + '%</td><td class="inv-num">' + money(r.sgstAmt) + '</td><td class="inv-num">' + money(r.total) + '</td></tr>';
   });
   $('i-rows').innerHTML = rows.join('');
@@ -1142,7 +1129,6 @@ function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(
     ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
-    loadMasterHsn();   // HSN/SAC auto-fill from the Super-Admin Material Master
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
     newBill(); loadSaved(); renderPlan();
