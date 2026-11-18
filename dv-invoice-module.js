@@ -245,6 +245,8 @@ function parseInvoiceBody(b, settings) {
         if (!isFinite(qty) || qty <= 0 || qty > 1e7) return { error: 'Row ' + (i + 1) + ': quantity must be greater than 0.' };
         if (!isFinite(rate) || rate < 0 || rate > 1e8) return { error: 'Row ' + (i + 1) + ': rate must be 0 or more.' };
         const item = { name: name, qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20), rate: Math.round(rate * 100) / 100 };
+        const hsnIn = String(r.hsn == null ? '' : r.hsn).replace(/[^0-9]/g, '').slice(0, 12);   // HSN/SAC: digits only
+        if (hsnIn) item.hsn = hsnIn;
         // Per-item GST % typed by the user (split equally into CGST + SGST). Blank → the locked profile rate is used.
         if (r.gst !== '' && r.gst != null) {
             const g = Number(r.gst);
@@ -296,6 +298,31 @@ function install(app, ctx) {
     const { dbq, requireRole, getAuthUser, asyncRoute, noStore, escapeLike, findStaticFile } = ctx;
     const audit = ctx.auditPii || function () {};
     const crypto = require('crypto');
+
+    // ── HSN / SAC sync from the Super-Admin Material Master (blob 'material_categories') ──
+    // ONLY the HSN/SAC code is read from the Master. Prices, units, names, GST % and tax maths are never touched.
+    const hsnKey = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    async function loadMasterHsn() {
+        const map = {}, list = [];
+        try {
+            const rows = await dbq('SELECT value FROM kv_blob WHERE "key" = ?', ['material_categories']);
+            let cats = []; if (rows.length) { try { cats = JSON.parse(rows[0].value) || []; } catch (e) { cats = []; } }
+            (Array.isArray(cats) ? cats : []).forEach((c) => (Array.isArray(c && c.items) ? c.items : []).forEach((m) => {
+                const hsn = String(m && m.hsn != null ? m.hsn : '').replace(/[^0-9]/g, '').slice(0, 12);
+                const name = String(m && m.name || '').trim(), code = String(m && m.code || '').trim();
+                if (!name || !hsn) return;
+                list.push({ name: name, code: code, hsn: hsn });
+                [name, code ? code + '-' + name : '', code ? code + ' - ' + name : ''].forEach((k) => { k = hsnKey(k); if (k && !map[k]) map[k] = hsn; });
+            }));
+        } catch (e) { /* master unavailable → rows simply keep whatever HSN they already have */ }
+        return { map: map, list: list };
+    }
+    // Fills item.hsn from the Master by material name. Rows with no match keep their own HSN (or none).
+    async function applyMasterHsn(rows) {
+        if (!Array.isArray(rows) || !rows.length) return;
+        const m = await loadMasterHsn();
+        rows.forEach((r) => { const h = m.map[hsnKey(r.name)]; if (h) r.hsn = h; });
+    }
 
     // The DEFAULT template (Super Admin → Session B → "Default template"). Copied into a user's own profile when the user is mapped to B.
     async function loadDefaults() {
@@ -359,7 +386,7 @@ function install(app, ctx) {
         next();
     });
 
-    // After the plan has expired, creating / editing / deleting bills is blocked (HTTP 402). Listing, opening, printing and PDF still work.
+    // After the plan has expired, creating / editing / deleting bills is blocked (HTTP 402). Listing / opening bills (and so printing / PDF) are blocked too; the data itself stays in the database.
     const dvActive = asyncRoute(async function (req, res, next) {
         const st = subState(await loadSub(req.dvUser.userId));
         if (st.locked) {
@@ -475,7 +502,7 @@ function install(app, ctx) {
     }));
 
     // ── List / instant search by Bill No.  GET /api/dv/invoices?q=50
-    app.get('/api/dv/invoices', noStore, dvUser, asyncRoute(async (req, res) => {
+    app.get('/api/dv/invoices', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
         const q = cleanText(req.query.q, 40);
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
         const rows = q
@@ -485,7 +512,12 @@ function install(app, ctx) {
         res.json(rows.map(r => rowOut(r, false)));
     }));
 
-    app.get('/api/dv/invoices/:id', noStore, dvUser, asyncRoute(async (req, res) => {
+    // Material names + HSN/SAC from the Super-Admin Master (read-only; used to auto-fill the HSN/SAC column)
+    app.get('/api/dv/material-hsn', noStore, dvUser, asyncRoute(async (req, res) => {
+        res.json((await loadMasterHsn()).list);
+    }));
+
+    app.get('/api/dv/invoices/:id', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
         const rows = await dbq("SELECT " + SEL_FULL + " FROM dv_invoices WHERE id = ? AND owner_user_id = ?", [parseInt(req.params.id, 10) || 0, req.dvUser.userId]);
         if (!rows.length) return res.status(404).json({ error: 'Invoice not found.' });
         res.json(rowOut(rows[0], true));
@@ -503,6 +535,7 @@ function install(app, ctx) {
         const settings = await loadSettings(req.dvUser.userId);
         const p = parseInvoiceBody(req.body, settings);
         if (p.error) return res.status(400).json({ error: p.error });
+        await applyMasterHsn(p.value.calc.rows);
         try {
             const r = await dbq(insertSql, insertParams(req.dvUser.userId, p.value));
             return res.status(201).json({ success: true, mode: 'created', id: r[0].id, billNo: p.value.billNo });
@@ -522,6 +555,7 @@ function install(app, ctx) {
         const settings = await loadSettings(req.dvUser.userId);
         const p = parseInvoiceBody(req.body, settings);
         if (p.error) return res.status(400).json({ error: p.error });
+        await applyMasterHsn(p.value.calc.rows);
         const sameNo = String(cur[0].bill_no).toLowerCase() === p.value.billNo.toLowerCase();
         try {
             if (!sameNo) {

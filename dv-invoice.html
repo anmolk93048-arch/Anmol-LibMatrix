@@ -41,6 +41,15 @@
   #planBanner button{margin-left:auto;padding:7px 14px;border-radius:6px;border:none;background:#0b2545;color:#fff;font-weight:800;font-size:12px;cursor:pointer}
   body.plan-locked main > section:not(.act-bar){pointer-events:none;opacity:.55;filter:grayscale(.35)}
   body.plan-locked #saveBtn, body.plan-locked #genBtn{opacity:.45;cursor:not-allowed}
+  /* expired plan: full lock — nothing behind the overlay can be reached by mouse, touch or keyboard */
+  #planLockOv{position:fixed;inset:0;z-index:99990;background:rgba(13,30,61,.78);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;padding:16px}
+  body.plan-locked #planLockOv{display:flex}
+  body.plan-locked{overflow:hidden}
+  #planLockOv .lk{background:#fff;border-radius:14px;max-width:420px;width:100%;padding:24px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  #planLockOv h3{margin:6px 0 8px;font-size:20px;font-weight:800;color:#0d1e3d}
+  #planLockOv p{font-size:13.5px;color:#475569;margin:0 0 16px;line-height:1.5}
+  #planLockOv button{display:block;width:100%;padding:11px 14px;border-radius:9px;font-weight:800;font-size:14px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;margin-top:8px}
+  #planLockOv button.pri{background:#059669;border-color:#059669;color:#fff}
   .dv-ov{position:fixed;inset:0;z-index:100000;background:rgba(13,30,61,.6);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);padding:14px}
   .dv-dlg{background:#fff;color:#0d1e3d;border-radius:14px;padding:22px;max-width:460px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 14px 44px rgba(0,0,0,.35)}
   .dv-plan{border:1.5px solid #cbd5e1;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center}
@@ -531,12 +540,12 @@
     <div class="p-3 overflow-x-auto">
       <table class="mat-table w-full text-sm border-collapse min-w-[980px]">
         <thead><tr>
-          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
+          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">HSN/SAC</th><th class="w-20">Unit</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
           <th class="w-28">Taxable (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
         </tr></thead>
-        <tbody id="rows"></tbody>
+        <tbody id="rows"></tbody><datalist id="mat-names"></datalist>
         <tfoot><tr class="bg-blue-50 font-bold">
-          <td colspan="6" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
+          <td colspan="7" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -566,7 +575,7 @@
   </section>
 
   <section class="act-bar">
-    <button type="button" onclick="newBill()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
+    <button type="button" onclick="backBtn()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">← Back</button>
     <button type="button" onclick="toggleSidebar()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">📂 Saved Bills (<span id="savedCount">0</span>)</button>
     <button type="button" onclick="resetForm()" class="act-btn border border-gray-400 text-gray-700 hover:bg-gray-100">Reset Factory All</button>
     <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
@@ -583,6 +592,12 @@
 .sb-actions .a-pdf{border-color:#059669;color:#047857}.sb-actions .a-pdf:hover{background:#ecfdf5}
 .sb-actions .a-del{border-color:#f87171;color:#dc2626}.sb-actions .a-del:hover{background:#fef2f2}
 </style>
+<div id="planLockOv" class="no-print" role="alertdialog" aria-modal="true" aria-labelledby="planLockTitle">
+  <div class="lk"><div style="font-size:38px">🔒</div><h3 id="planLockTitle">Please activate your plan to continue</h3>
+    <p id="planLockMsg">Your Invoice Plan has expired. All your saved bills and data are safe and will reappear instantly once you activate a plan.</p>
+    <button type="button" class="pri" onclick="openPlans()">💳 Activate plan</button>
+    <button type="button" onclick="logoutPortal()">🚪 Logout</button></div>
+</div>
 <div id="sidebarOverlay" class="no-print hidden fixed inset-0 bg-black/30 z-40"></div>
 <aside id="savedSidebar" class="no-print fixed right-0 top-0 h-full w-full sm:w-80 bg-white border-l border-gray-300 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 overflow-y-auto">
   <div class="sticky top-0 z-10">
@@ -597,7 +612,7 @@
     <strong id="invoiceViewerTitle" style="flex:1;min-width:200px;font-size:14px;color:#065f46"></strong>
     <button type="button" class="ivb" onclick="printInvoiceNow()">🖨️ Print Invoice</button>
     <button type="button" class="ivb" style="background:#0f6e56;border-color:#0f6e56" onclick="savePdfInvoiceNow(this)">⬇️ Save PDF</button>
-    <button type="button" class="ivb back" onclick="newBill()">← Back</button>
+    <button type="button" class="ivb back" onclick="backBtn()">← Back</button>
     <button type="button" class="ivb close" onclick="closeInvoiceViewer()">✕ Close</button>
   </div>
   <div id="invoiceViewerBody"></div>
@@ -622,10 +637,10 @@
   <table class="inv-block"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tr>
     <td style="font-size:11px;">Block :- <span id="i-block"></span></td><td style="font-size:11px;">District :- <span id="i-district"></span></td></tr></table>
   <table class="inv-block inv-items">
-    <colgroup><col style="width:5%"><col style="width:20%"><col style="width:9%"><col style="width:6%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:9%"><col style="width:6%"><col style="width:9%"><col style="width:11%"></colgroup>
-    <thead><tr><th>Sl.<br>No.</th><th>Particulars</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Taxable<br>Amount</th><th>CGST</th><th>CGST<br>Amount</th><th>SGST</th><th>SGST<br>Amount</th><th>Total<br>Amount</th></tr></thead>
+    <colgroup><col style="width:5%"><col style="width:15%"><col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:10%"><col style="width:6%"><col style="width:8%"><col style="width:6%"><col style="width:8%"><col style="width:12%"></colgroup>
+    <thead><tr><th>Sl.<br>No.</th><th>Particulars</th><th>HSN/<br>SAC</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Taxable<br>Amount</th><th>CGST</th><th>CGST<br>Amount</th><th>SGST</th><th>SGST<br>Amount</th><th>Total<br>Amount</th></tr></thead>
     <tbody id="i-rows"></tbody>
-    <tfoot><tr class="inv-bold"><td colspan="5" class="inv-right">Total :-</td><td id="i-tTax" class="inv-num"></td><td></td><td id="i-tCgst" class="inv-num"></td><td></td><td id="i-tSgst" class="inv-num"></td><td id="i-tGrand" class="inv-num"></td></tr></tfoot>
+    <tfoot><tr class="inv-bold"><td colspan="6" class="inv-right">Total :-</td><td id="i-tTax" class="inv-num"></td><td></td><td id="i-tCgst" class="inv-num"></td><td></td><td id="i-tSgst" class="inv-num"></td><td id="i-tGrand" class="inv-num"></td></tr></tfoot>
   </table>
   <table class="inv-block"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><tr>
     <td style="padding:0; vertical-align:top;">
@@ -690,6 +705,7 @@ function api(path, opt){
     return res.json().catch(function(){ return null; }).then(function(data){
       if (res.status === 401) { toLogin((data && data.error) || 'Your session has expired. Please log in again.'); throw new Error('Session expired'); }
       if (res.status === 403 && data && data.code === 'NOT_OPTION_B') { toLogin('This ID is not mapped to Invoice Session B. Please log in again.'); throw new Error(data.error); }
+      if (res.status === 402 && data && data.code === 'PLAN_EXPIRED' && SUB && !SUB.locked) { SUB.locked = true; SUB.state = 'expired'; try { renderPlan(); } catch (x) {} }
       if (!res.ok) { var e = new Error((data && data.error) || 'Server error (' + res.status + ')'); e.code = data && data.code; throw e; }
       return data;
     });
@@ -738,7 +754,8 @@ function words(amount){
 /* ───────── form ───────── */
 function rowHtml(){
   return '<tr><td class="text-center sn"></td>'
-    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name"></td>'
+    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" list="mat-names" oninput="syncHsn(this)" onchange="syncHsn(this)"></td>'
+    + '<td><input class="inp r-hsn" maxlength="12" inputmode="numeric" placeholder="HSN/SAC" oninput="this.dataset.manual=\'1\'"></td>'
     + '<td><input class="inp r-unit" maxlength="20" placeholder="Unit"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
@@ -746,10 +763,29 @@ function rowHtml(){
     + '<td class="text-right r-tax">0.00</td><td class="text-right font-semibold r-total">0.00</td>'
     + '<td class="text-center"><button type="button" class="text-red-600 font-bold" title="Remove row" onclick="delRow(this)">✕</button></td></tr>';
 }
+/* HSN/SAC auto-fill from the Super-Admin Material Master — fills ONLY the HSN/SAC box (never price / unit / name / GST) */
+var MASTER_HSN = {};
+function _hk(s){ return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+function loadMasterHsn(){
+  return api('/dv/material-hsn').then(function(list){
+    MASTER_HSN = {}; var dl = $('mat-names'), seen = {}, opts = '';
+    (list || []).forEach(function(m){
+      [m.name, m.code ? m.code + '-' + m.name : '', m.code ? m.code + ' - ' + m.name : ''].forEach(function(k){ k = _hk(k); if (k && !MASTER_HSN[k]) MASTER_HSN[k] = m.hsn; });
+      if (!seen[_hk(m.name)]) { seen[_hk(m.name)] = 1; opts += '<option value="' + esc(m.name) + '">'; }
+    });
+    if (dl) dl.innerHTML = opts;
+    Array.prototype.forEach.call($('rows').children, function(tr){ syncHsn(tr.querySelector('.r-name')); });
+  }).catch(function(){});
+}
+function syncHsn(nameEl){
+  var tr = nameEl && nameEl.closest('tr'); if (!tr) return;
+  var h = MASTER_HSN[_hk(nameEl.value)], box = tr.querySelector('.r-hsn');
+  if (h && box) { box.value = h; box.dataset.manual = ''; }
+}
 function addRow(v){
   $('rows').insertAdjacentHTML('beforeend', rowHtml());
   var tr = $('rows').lastElementChild;
-  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; if (v.gst != null) tr.querySelector('.r-gst').value = v.gst; }
+  if (v) { tr.querySelector('.r-name').value = v.name || ''; tr.querySelector('.r-hsn').value = v.hsn || ''; tr.querySelector('.r-unit').value = v.unit || ''; tr.querySelector('.r-qty').value = v.qty; tr.querySelector('.r-rate').value = v.rate; if (v.gst != null) tr.querySelector('.r-gst').value = v.gst; }
   recalc();
 }
 function delRow(btn){ var tr = btn.closest('tr'); tr.parentNode.removeChild(tr); if (!$('rows').children.length) addRow(); recalc(); }
@@ -758,7 +794,7 @@ function readItems(){
   Array.prototype.forEach.call($('rows').children, function(tr, i){
     var name = tr.querySelector('.r-name').value.trim(), q = tr.querySelector('.r-qty').value, r = tr.querySelector('.r-rate').value;
     if (!name && q === '' && r === '') return;
-    items.push({ name: name, unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: tr.querySelector('.r-gst').value === '' ? null : num(tr.querySelector('.r-gst').value), _tr: tr, _no: i + 1 });
+    items.push({ name: name, hsn: tr.querySelector('.r-hsn').value.trim(), unit: tr.querySelector('.r-unit').value.trim(), qty: num(q), rate: num(r), gst: tr.querySelector('.r-gst').value === '' ? null : num(tr.querySelector('.r-gst').value), _tr: tr, _no: i + 1 });
   });
   return items;
 }
@@ -788,6 +824,8 @@ function applyLock(){
   $('lockNote').style.display = 'block';
 }
 function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function planBlocked(){ if (SUB && SUB.locked) { try { renderPlan(); } catch (e) {} return true; } return false; }
+function backBtn(){ if (planBlocked()) return; newBill(); }
 function newBill(){
   closeInvoiceViewer(); editingId = null; origBillNo = ''; showErr('');
   ['billNo','customer','block','district','transport','vehicle'].forEach(function(id){ $(id).value = ''; });
@@ -796,6 +834,7 @@ function newBill(){
   $('rows').innerHTML = ''; addRow(); applyLock(); window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function resetForm(){
+  if (planBlocked()) return;
   askPassword('Reset Factory All', 'This clears EVERY field and restores the blank form. Your saved bills are not deleted.').then(function(ok){
     if (!ok) return;
     newBill(); $('savedSearch').value = ''; loadSaved();
@@ -839,7 +878,7 @@ function askPassword(action, warn){
 
 /* ───────── save / generate ───────── */
 function payload(){
-  var items = readItems().map(function(i){ return { name: i.name, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst }; });
+  var items = readItems().map(function(i){ return { name: i.name, hsn: i.hsn, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst }; });
   return { billNo: $('billNo').value, date: $('billDate').value, customer: $('customer').value, block: $('block').value, district: $('district').value,
            transport: $('transport').value, vehicle: $('vehicle').value, items: items, company: readCompany() };
 }
@@ -853,7 +892,7 @@ function validate(){
   return '';
 }
 function submitBill(mode){
-  showErr(''); if (SUB && SUB.locked) { openPlans(); return; }
+  showErr(''); if (SUB && SUB.locked) { renderPlan(); return; }
   var bad = validate(); if (bad) return showErr(bad);
   var btns = [$('saveBtn'), $('genBtn')], txt = btns.map(function(b){ return b.innerHTML; }); btns.forEach(function(b){ b.disabled = true; });
   $(mode === 'save' ? 'saveBtn' : 'genBtn').textContent = 'Saving…';
@@ -870,11 +909,13 @@ function toast(m){ var t = document.createElement('div'); t.textContent = m; t.s
 
 /* ───────── saved bills sidebar ───────── */
 function toggleSidebar(){
+  if (planBlocked()) return;
   var sb = $('savedSidebar'), ov = $('sidebarOverlay'), open = sb.classList.contains('translate-x-full');
   sb.classList.toggle('translate-x-full', !open); ov.classList.toggle('hidden', !open); if (open) loadSaved();
 }
 function searchSaved(){ clearTimeout(savedTimer); savedTimer = setTimeout(loadSaved, 250); }
 function loadSaved(){
+  if (planBlocked()) return Promise.resolve();
   var q = $('savedSearch').value.trim();
   return api('/dv/invoices' + (q ? '?q=' + encodeURIComponent(q) : '')).then(function(rows){
     if (!q) $('savedCount').textContent = rows.length;
@@ -886,6 +927,7 @@ function loadSaved(){
   }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
 }
 function openBill(id, print){
+  if (planBlocked()) return;
   api('/dv/invoices/' + id).then(function(inv){
     if (print) return showInvoice(inv);
     editingId = inv.id; origBillNo = inv.billNo; showErr('');
@@ -899,19 +941,21 @@ function openBill(id, print){
   }).catch(function(e){ showErr(e.message); });
 }
 function delBill(id, no){
+  if (planBlocked()) return;
   if (!confirm('Delete bill ' + no + ' permanently?')) return;
   api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
 }
 
 /* ───────── invoice viewer / print ───────── */
 function showInvoice(inv){
+  if (planBlocked()) return;
   var c = inv.company || readCompany(), set = function(id, v){ $(id).textContent = v == null ? '' : v; };
   set('i-company', c.companyName); set('i-company2', c.companyName); set('i-company3', c.companyName); set('i-address', c.address);
   set('i-gstin', c.gstin); set('i-mobile', c.mobile); set('i-bank', c.bankName); set('i-branch', c.branch); set('i-ifsc', c.ifsc); set('i-acc', c.accountNo);
   set('i-billNo', inv.billNo); set('i-date', fmtDate(inv.date)); set('i-transport', inv.transport); set('i-vehicle', inv.vehicle);
   set('i-customer', inv.customer); set('i-block', inv.block); set('i-district', inv.district);
   var rows = (inv.items || []).map(function(r, i){
-    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td><td class="inv-num">' + esc(r.qty) + '</td><td>' + esc(r.unit) + '</td><td class="inv-num">' + money(r.rate)
+    return '<tr><td>' + (i + 1) + '</td><td class="inv-particulars">' + esc(r.name) + '</td><td>' + esc(r.hsn || '') + '</td><td class="inv-num">' + esc(r.qty) + '</td><td>' + esc(r.unit) + '</td><td class="inv-num">' + money(r.rate)
       + '</td><td class="inv-num">' + money(r.taxable) + '</td><td>' + esc(r.cgstPct) + '%</td><td class="inv-num">' + money(r.cgstAmt) + '</td><td>' + esc(r.sgstPct) + '%</td><td class="inv-num">' + money(r.sgstAmt) + '</td><td class="inv-num">' + money(r.total) + '</td></tr>';
   });
   $('i-rows').innerHTML = rows.join('');
@@ -935,6 +979,7 @@ function fitToPage(){
   a.style.left = Math.max(0, (pageW - pageW * s) / 2) + 'px'; a.style.top = '0px';   // centred horizontally, top-aligned
 }
 function printInvoiceNow(){
+  if (planBlocked()) return;
   var a = $('invoiceArea'), host = $('invoiceViewerBody'), viewer = $('invoiceViewer');
   document.body.appendChild(a); viewer.hidden = true; a.classList.remove('hidden');
   var restore = function(){ window.removeEventListener('afterprint', restore); host.appendChild(a); a.style.transform = 'none'; a.style.width = ''; a.style.left = ''; a.style.top = ''; viewer.hidden = false; };
@@ -959,15 +1004,31 @@ function setAvatars(src){
 /* ───────── Invoice Plan: status banner, renewal notice (5 days before), lock after expiry, Razorpay upgrade ───────── */
 var SUB = null, PLANS = [];
 function refreshMe(){ return api('/dv/me').then(function(me){ SUB = me.sub; PLANS = me.plans || []; SETTINGS = me.settings; renderPlan(); }).catch(function(){}); }
+var _wasLocked = false;
+function applyPlanLock(on){
+  document.body.classList.toggle('plan-locked', on);
+  Array.prototype.forEach.call(document.body.children, function(el){
+    if (el.id === 'planLockOv' || el.id === 'dvPlanOv' || el.classList.contains('dv-ov') || /^(SCRIPT|STYLE|LINK)$/.test(el.tagName)) return;
+    if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+  });
+  if (on) {
+    // close anything that shows saved data and wipe it from the screen (it stays safe in the database)
+    try { var sb = $('savedSidebar'); if (sb) sb.classList.add('translate-x-full'); var so = $('sidebarOverlay'); if (so) so.classList.add('hidden'); } catch (e) {}
+    try { closeInvoiceViewer(); } catch (e) {}
+    try { var sl = $('savedList'); if (sl) sl.innerHTML = ''; var sc = $('savedCount'); if (sc) sc.textContent = '–'; } catch (e) {}
+    var m = $('planLockMsg'); if (m && SUB) m.textContent = 'Your ' + (SUB.planName || 'Invoice Plan') + ' expired on ' + fmtDate(SUB.expires) + '. All your saved bills and data are safe and will reappear instantly once you activate a plan.';
+  } else if (_wasLocked) { try { loadSaved(); } catch (e) {} }
+  _wasLocked = on;
+}
 function renderPlan(){
   var b = $('planBanner'); if (!b) return;
   var st = SUB && SUB.state || 'none';
-  document.body.classList.toggle('plan-locked', !!(SUB && SUB.locked));
+  applyPlanLock(!!(SUB && SUB.locked));
   if (st === 'none') { b.className = ''; b.innerHTML = ''; return; }
   var dl = SUB.daysLeft, till = fmtDate(SUB.expires), nm = esc(SUB.planName || 'Plan');
   if (st === 'active') { b.className = 'show ok'; b.innerHTML = '✅ <span>' + nm + ' — valid till <b>' + till + '</b> (' + dl + ' days left)</span>'; }
   else if (st === 'expiring') { b.className = 'show warn'; b.innerHTML = '⚠️ <span>Your ' + nm + ' ' + (dl === 0 ? 'expires <b>today</b>' : 'expires in <b>' + dl + ' day' + (dl === 1 ? '' : 's') + '</b> (' + till + ')') + '. Renew now to avoid interruption.</span><button onclick="openPlans()">Renew now</button>'; }
-  else { b.className = 'show bad'; b.innerHTML = '🔒 <span><b>Please activate your plan to continue.</b> Your ' + nm + ' expired on <b>' + till + '</b>. Saving and editing bills is paused — all your saved bills, company profile and data are safe and can still be viewed, printed and downloaded. Activate to resume instantly.</span><button onclick="openPlans()">Activate plan</button>'; }
+  else { b.className = 'show bad'; b.innerHTML = '🔒 <span><b>Please activate your plan to continue.</b> Your ' + nm + ' expired on <b>' + till + '</b>. Everything is locked until you activate a plan — all your saved bills, company profile and data are safe and reappear instantly.</span><button onclick="openPlans()">Activate plan</button>'; }
 }
 function openPlans(){
   var old = $('dvPlanOv'); if (old) old.remove();
@@ -1048,6 +1109,7 @@ function loadScriptOnce(src, ready){
   });
 }
 function savePdfInvoiceNow(btn){
+  if (planBlocked()) return;
   var inv = $('invoiceArea'); if (!inv) return;
   var old = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparing PDF…'; }
   var bn = String($('i-billNo').textContent || '').trim().replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA';
@@ -1080,6 +1142,7 @@ function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(
     ME = me.user; SETTINGS = me.settings; SUB = me.sub; PLANS = me.plans || [];
     $('topHeaderName').textContent = ME.name || ME.userId; $('topHeaderMobile').textContent = '📱 ' + (ME.mobile || '—');
     $('liuName').textContent = ME.name || ME.userId;
+    loadMasterHsn();   // HSN/SAC auto-fill from the Super-Admin Material Master
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
     newBill(); loadSaved(); renderPlan();
