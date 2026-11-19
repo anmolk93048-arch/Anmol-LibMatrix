@@ -3543,7 +3543,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card"><div class="tbl-wrap"><table>
             <thead><tr><th>#</th><th>Bill No</th><th>Date</th><th>User ID</th><th>Business / Firm</th><th>Work Code</th><th>Total (₹)</th><th>Saved On</th><th>Actions</th></tr></thead>
             <tbody id="bills-tbody"><tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">Loading...</td></tr></tbody>
-          </table></div></div>
+          </table></div><div id="bills-pager" style="text-align:center;padding:10px 0"></div></div>
         </div>
 
         <!-- ═══ MATERIAL MASTER (Material Supply / Plantation / custom lists) ═══ -->
@@ -5971,6 +5971,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <thead><tr><th>#</th><th>Bill No</th><th>Bill Date</th><th>Vendor / Business</th><th>Work Code</th><th>Saved On</th><th>Actions</th></tr></thead>
           <tbody id="mu-entries-table"></tbody>
         </table>
+        <div id="mu-entries-pager" style="text-align:center;padding:10px 0"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -10077,10 +10078,40 @@ function SEARCH_STUDENTS(v){ RENDER_STUDENTS(v); }
 // ── Supabase (REST) — Material users + pending registrations ──
 function MAT_ESC(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function MAT_JSARG(v){ return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+/* 📷 Photos are NOT part of the user / request lists any more (that was the biggest egress item: every photo, every refresh).
+   Lists carry a hasPhoto flag; a photo is fetched once — when its row scrolls into view or its modal opens — and then kept in memory. */
+var _MAT_PH = {}, _MAT_PH_BUSY = {}, _matPhObs = null;
+function MAT_PH_KEY(r){ return (r.userid!=null?'users/':'requests/')+(r.id!=null?r.id:String(r._docId||'')); }
+function MAT_PH_OF(r){ return r ? (r.photo || _MAT_PH[MAT_PH_KEY(r)] || '') : ''; }
+function MAT_ENSURE_PHOTO(r){
+  if(!r) return Promise.resolve('');
+  var have=MAT_PH_OF(r); if(have) return Promise.resolve(have);
+  if(r.hasPhoto===false) return Promise.resolve('');
+  var k=MAT_PH_KEY(r);
+  if(_MAT_PH_BUSY[k]) return _MAT_PH_BUSY[k];
+  _MAT_PH_BUSY[k]=apiFetch('/material/'+k+'/photo').then(function(d){ var ph=(d&&d.photo)||''; _MAT_PH[k]=ph; if(ph) r.photo=ph; delete _MAT_PH_BUSY[k]; return ph; })
+    .catch(function(){ delete _MAT_PH_BUSY[k]; return ''; });
+  return _MAT_PH_BUSY[k];
+}
 function MAT_PHOTO(r,size,bg){
-  size=size||32;
-  return r.photo ? '<img src="'+MAT_ESC(r.photo)+'" style="width:'+size+'px;height:'+size+'px;border-radius:50%;object-fit:cover">'
-    : '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(bg||'#c9a227')+';display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:900">'+MAT_ESC(r.name?r.name[0].toUpperCase():'?')+'</div>';
+  size=size||32; var ph=MAT_PH_OF(r);
+  if(ph) return '<img src="'+MAT_ESC(ph)+'" style="width:'+size+'px;height:'+size+'px;border-radius:50%;object-fit:cover">';
+  return '<div'+(r.hasPhoto?' data-mph="'+MAT_ESC(MAT_PH_KEY(r))+'" data-msz="'+size+'"':'')+' style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+(bg||'#c9a227')+';display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:900">'+MAT_ESC(r.name?r.name[0].toUpperCase():'?')+'</div>';
+}
+/* call after a list is rendered: loads the photo of each avatar that is actually on screen */
+function MAT_LAZY_PHOTOS(root){
+  var nodes=(root||document).querySelectorAll('[data-mph]'); if(!nodes.length) return;
+  var load=function(el){
+    var k=el.getAttribute('data-mph'), sz=el.getAttribute('data-msz')||32; el.removeAttribute('data-mph');
+    var row=null, lists=[materialUsersCache, materialRequestsCache, window.PREG_MAT_ROWS||[]];
+    for(var i=0;i<lists.length&&!row;i++) row=lists[i].find(function(x){ return MAT_PH_KEY(x)===k; });
+    MAT_ENSURE_PHOTO(row||{ id:k.split('/')[1], userid:k.indexOf('users/')===0?'x':undefined }).then(function(ph){
+      if(!ph||!el.parentNode) return; var im=document.createElement('img'); im.src=ph; im.style.cssText='width:'+sz+'px;height:'+sz+'px;border-radius:50%;object-fit:cover'; el.parentNode.replaceChild(im,el);
+    });
+  };
+  if(!('IntersectionObserver' in window)){ nodes.forEach(load); return; }
+  if(!_matPhObs) _matPhObs=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ _matPhObs.unobserve(e.target); if(e.target.hasAttribute('data-mph')) load(e.target); } }); },{rootMargin:'80px'});
+  nodes.forEach(function(n){ _matPhObs.observe(n); });
 }
 var _matBadgeBase=0, _matBadgeApplying=false;
 function MAT_PAINT_BADGE(){
@@ -10116,13 +10147,18 @@ function MAT_REFRESH(){
     if(r[1]) materialRequestsCache=r[1].map(function(q){ return Object.assign({ requestedAt: q.created_at ? new Date(q.created_at).toLocaleString('en-IN') : '' }, q, { _docId:String(q.id) }); });
     RENDER_MATERIAL_USERS(document.getElementById('mu-search') ? document.getElementById('mu-search').value : '');
     RENDER_MATERIAL_REQUESTS();
+    MAT_LAZY_PHOTOS();
   }).catch(function(err){
     var tbody=document.getElementById('material-users-table');
     if(tbody && !materialUsersCache.length) tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:20px;color:#f87171">'+MAT_ERR_HTML(err)+'</td></tr>';
   }).then(function(){ _matRefreshing=false; });
 }
-// Pending requests appear within ~10 seconds on every admin screen (no manual refresh)
-setInterval(function(){ if(!document.hidden) MAT_REFRESH(); }, 10000);
+// 🪶 No background polling any more (it re-downloaded every user + request every 10 s). The lists load once when the panel opens,
+//    again when you press ↻ Refresh / act on a request, and when you come back to this tab after at least a minute.
+var _matLastRefresh = 0;
+(function(){ var _r=MAT_REFRESH; MAT_REFRESH=function(){ _matLastRefresh=Date.now(); return _r.apply(this,arguments); }; })();
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && Date.now()-_matLastRefresh>60000) MAT_REFRESH(); });
+['RENDER_MATERIAL_USERS','RENDER_MATERIAL_REQUESTS'].forEach(function(n){ var f=window[n]; if(typeof f!=='function') return; window[n]=function(){ var r=f.apply(this,arguments); setTimeout(MAT_LAZY_PHOTOS,0); return r; }; });
 setTimeout(MAT_REFRESH, 2500);
 
 function RENDER_MATERIAL_REQUESTS(){
@@ -10157,7 +10193,7 @@ function APPROVE_MATERIAL_REQUEST(reqId){
   apiFetch('/material/requests/'+encodeURIComponent(reqId)+'/approve',{method:'POST',body:'{}'}).then(function(d){
     LOG_ACTIVITY('✅ Material user verified & approved: '+r.name+' ['+d.userId+']');
     SHOW_TOAST('✅ '+r.name+' has been verified. ID: '+d.userId);
-    MU_SHOW_CREATED(r.name,r.village,d.userId,r.mobile,d.password,r.photo);
+    MU_SHOW_CREATED(r.name,r.village,d.userId,r.mobile,d.password,MAT_PH_OF(r));
     if(window.PREG_MAT_LOAD) PREG_MAT_LOAD(true);
     return MAT_REFRESH();
   }).catch(function(e){ SHOW_TOAST('❌ Approve failed: '+e.message); MAT_REFRESH(); });
@@ -10185,7 +10221,7 @@ function OPEN_MU_REQUEST_REVIEW(id){
   var a=document.getElementById('mur-aadhaar'); a.value='';
   a.placeholder=r.aadhaarMasked&&r.aadhaar_last4?r.aadhaarMasked+(pending?' (leave blank to keep)':''):'Not on file';
   document.getElementById('mur-aadhaar-hint').textContent=r.aadhaar_last4?'(on file, encrypted)':'(missing)';
-  MUR_SET_PHOTO(r.photo||'');
+  MUR_SET_PHOTO(MAT_PH_OF(r)); MAT_ENSURE_PHOTO(r).then(function(ph){ if(ph && !document.getElementById('mur-photo-data').value && document.getElementById('mur-docid').value===String(r._docId||r.id)) MUR_SET_PHOTO(ph); });
   document.getElementById('mur-photo-label').textContent=pending?'Click to change':'';
   var note=document.getElementById('mur-note');
   var orig=r.orig_mobile&&r.orig_mobile!==r.mobile?' The applicant originally entered mobile '+MAT_ESC(r.orig_mobile)+' — tracking works with either number.':'';
@@ -10242,7 +10278,7 @@ function MUR_SAVE(thenApprove){
       LOG_ACTIVITY('✅ Material user verified & approved: '+name+' ['+d.userId+']');
       SHOW_TOAST('✅ '+name+' has been verified. ID: '+d.userId);
       free(); CLOSE_MODAL('modal-mu-request');
-      MU_SHOW_CREATED(name,village,d.userId,mobile,d.password,d.photo||photo||(MUR_FIND(id)||{}).photo);
+      MU_SHOW_CREATED(name,village,d.userId,mobile,d.password,d.photo||photo||MAT_PH_OF(MUR_FIND(id)));
       return MUR_REFRESH_ALL();
     });
   }).catch(function(e){ free(); fail('❌ '+e.message); MUR_REFRESH_ALL(); });
@@ -10497,12 +10533,13 @@ function EDIT_MATERIAL_USER(docId){
   document.getElementById('mu-status').value=u.status||'active';
   document.getElementById('mu-form-err').classList.remove('show');
   RESET_MU_PHOTO();
-  if(u.photo){
-    document.getElementById('mu-photo-preview').src=u.photo;
+  MAT_ENSURE_PHOTO(u).then(function(ph){   // the photo is fetched only now, when this user is opened
+    if(!ph || document.getElementById('mu-docid') && document.getElementById('mu-docid').value && String(document.getElementById('mu-docid').value)!==String(u._docId)) return;
+    document.getElementById('mu-photo-preview').src=ph;
     document.getElementById('mu-photo-preview').style.display='block';
     document.getElementById('mu-photo-ph').style.display='none';
-    document.getElementById('mu-photo-data').value=u.photo;
-  }
+    document.getElementById('mu-photo-data').value=ph;
+  });
   document.getElementById('mu-userid-preview').textContent=u.userId||'(ID not found)';
   document.getElementById('mu-userid-val').value=u.userId||'';
   OPEN_MODAL('modal-material-user');
@@ -10677,25 +10714,34 @@ function VIEW_MATERIAL_ENTRIES(docId){
   document.getElementById('mu-entries-loading').textContent = 'Loading...';
   document.getElementById('mu-entries-wrap').style.display = 'none';
   OPEN_MODAL('modal-mu-entries');
-  MU_ENTRIES_FETCH(false);
+  MU_ENTRIES_FETCH(1);
 }
-/* light summary list (50 at a time) — optionally filtered by the search box (Bill No., Date, Business / Client) */
-function MU_ENTRIES_FETCH(append){
+/* 5 entries per page, paged inside the database — optionally filtered by the search box (Bill No., Date, Business / Client) */
+var _muEntriesPage = 1, _muEntriesPages = 1, _muEntriesTotal = 0, _muEntriesCache = {};
+function MU_ENTRIES_FETCH(page, fromCache){
   var u=_muEntriesCurrentUser; if(!u) return;
-  var seq=++_muEntriesSeq, off=append?_muEntriesCurrentList.length:0;
-  apiFetch('/material/bills?summary=1&limit=50&offset='+off+'&ownerUserId='+encodeURIComponent(u.userId)+(_muEntriesQuery?'&q='+encodeURIComponent(_muEntriesQuery):'')).then(function(list){
+  page=(typeof page==='number'&&page>0)?page:1;
+  var key=_muEntriesQuery+'|'+page;
+  if(!fromCache) _muEntriesCache={};
+  if(fromCache && _muEntriesCache[key]){ MU_ENTRIES_APPLY(_muEntriesCache[key]); return; }
+  var seq=++_muEntriesSeq;
+  apiFetch('/material/bills?summary=1&pageSize='+PG_SIZE+'&page='+page+'&ownerUserId='+encodeURIComponent(u.userId)+(_muEntriesQuery?'&q='+encodeURIComponent(_muEntriesQuery):'')).then(function(res){
     if(seq!==_muEntriesSeq) return;
-    var bills=(list||[]).map(function(x){ return Object.assign({ _docId:String(x.id) }, x); });
-    _muEntriesCurrentList = append ? _muEntriesCurrentList.concat(bills) : bills;
-    _muEntriesHasMore = bills.length>=50;
-    RENDER_MU_ENTRIES(_muEntriesCurrentList);
+    if(res.pages && page>res.pages && page>1){ MU_ENTRIES_FETCH(res.pages,false); return; }
+    _muEntriesCache[key]=res; MU_ENTRIES_APPLY(res);
   }).catch(function(e){
     document.getElementById('mu-entries-loading').style.display='block';
     document.getElementById('mu-entries-loading').textContent='⚠️ Unable to load: '+e.message;
   });
 }
+function MU_ENTRIES_APPLY(res){
+  _muEntriesCurrentList=(res.rows||[]).map(function(x){ return Object.assign({ _docId:String(x.id) }, x); });
+  _muEntriesPage=res.page||1; _muEntriesPages=res.pages||1; _muEntriesTotal=res.total||0;
+  RENDER_MU_ENTRIES(_muEntriesCurrentList);
+}
+function MU_ENTRIES_GO(n){ MU_ENTRIES_FETCH(n,true); }
 var _muEntriesHasMore = false;
-function MU_ENTRIES_SEARCH(v){ clearTimeout(_muEntriesTimer); _muEntriesTimer=setTimeout(function(){ _muEntriesQuery=String(v||'').trim(); MU_ENTRIES_FETCH(false); },400); }
+function MU_ENTRIES_SEARCH(v){ clearTimeout(_muEntriesTimer); _muEntriesTimer=setTimeout(function(){ _muEntriesQuery=String(v||'').trim(); MU_ENTRIES_FETCH(1); },400); }
 function MU_ENTRY_SUM(docId){ return _muEntriesCurrentList.find(function(x){ return x._docId===String(docId); }); }
 function MU_ENTRY_SHOW(docId){ MAT_BILL_FULL(docId, MU_ENTRY_SUM(docId)).then(function(b){ MAT_SHOW_INVOICE(b,'Invoice'); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
 function MU_ENTRY_PDF(docId){ MAT_BILL_FULL(docId, MU_ENTRY_SUM(docId)).then(function(b){ MAT_PDF_DIRECT(b); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
@@ -10704,6 +10750,8 @@ function RENDER_MU_ENTRIES(bills){
   document.getElementById('mu-entries-loading').style.display = 'none';
   document.getElementById('mu-entries-wrap').style.display = 'block';
   var tbody = document.getElementById('mu-entries-table');
+  var mpg = document.getElementById('mu-entries-pager');
+  if(mpg) mpg.innerHTML = bills.length ? ('<span style="font-size:11px;color:var(--text-muted);margin-right:10px">'+_muEntriesTotal+' entr'+(_muEntriesTotal===1?'y':'ies')+(_muEntriesPages>1?' • page '+_muEntriesPage+' of '+_muEntriesPages:'')+'</span>'+PG_HTML(_muEntriesPage,_muEntriesPages,'MU_ENTRIES_GO')) : '';
   if(bills.length===0){
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">'+(_muEntriesQuery?'No entry matches “'+MAT_ESC(_muEntriesQuery)+'”':'This user has not saved any entries yet')+'</td></tr>';
     return;
@@ -10711,7 +10759,7 @@ function RENDER_MU_ENTRIES(bills){
   tbody.innerHTML = bills.map(function(b,i){
     var savedOn = b.savedAt ? new Date(b.savedAt).toLocaleString('hi-IN') : '—';
     return '<tr>'
-      + '<td>'+(i+1)+'</td>'
+      + '<td>'+((_muEntriesPage-1)*PG_SIZE+i+1)+'</td>'
       + '<td>'+(b.billNo||'—')+'</td>'
       + '<td>'+(b.billDate||'—')+'</td>'
       + '<td>'+(b.businessName||b.vendorName||'—')+'</td>'
@@ -10724,7 +10772,7 @@ function RENDER_MU_ENTRIES(bills){
       +   '<button class="btn-icon" title="Delete" onclick="DELETE_MU_ENTRY(\''+b._docId+'\')">🗑️</button>'
       + '</td>'
       + '</tr>';
-  }).join('') + (_muEntriesHasMore ? '<tr><td colspan="7" style="text-align:center;padding:10px"><button class="btn btn-ghost btn-sm" onclick="MU_ENTRIES_FETCH(true)">⬇️ Load more</button></td></tr>' : '');
+  }).join('');
 }
 
 function OPEN_MU_ENTRY_EDIT(docId){
@@ -10758,7 +10806,7 @@ function SAVE_MU_ENTRY_EDIT(){
     LOG_ACTIVITY('✏️ Material bill edited by admin: '+docId+(g.fee>0?' (fee ₹'+g.fee+')':''));
     CLOSE_MODAL('modal-mu-entry-edit');
     delete _BILL_FULL[String(docId)];
-    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(false);
+    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(_muEntriesPage);
     MAT_BILL_FULL(docId, Object.assign({},old,data)).then(function(b){ MAT_SHOW_INVOICE(b,'Updated invoice'); }).catch(function(){});
   }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
 }
@@ -10892,7 +10940,7 @@ function DELETE_MU_ENTRY(docId){
     SHOW_TOAST('🗑️ The entry has been deleted.');
     LOG_ACTIVITY('🗑️ Material bill deleted by admin: '+docId);
     delete _BILL_FULL[String(docId)];
-    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(false);
+    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(_muEntriesPage);
   }).catch(function(e){ SHOW_TOAST('❌ Failed: '+e.message); });
 }
 
@@ -16904,36 +16952,63 @@ function BILL_CALC(b){
   var tds=(b.tdsApplicable==='yes')?taxable*0.02:0, royalty=parseFloat(b.royaltyInput)||0;
   return { taxable:taxable, gst:gst, tds:tds, royalty:royalty, grand:Math.round(taxable+gst+royalty-tds) };
 }
-var _billsQuery = '', _billsTimer = null, _billsSeq = 0, _billsHasMore = false;
-function BILLS_LOAD(append){
+var _billsQuery = '', _billsTimer = null, _billsSeq = 0, _billsPage = 1, _billsPages = 1, _billsTotal = 0, _billsCache = {};
+var PG_SIZE = 5;   // 5 records per page — the database returns just those rows
+/* shared pager: 1 2 3 … N with Prev / Next. fn = name of the global function that opens a page */
+function PG_HTML(cur, last, fn){
+  if(last<=1) return '';
+  var set={}; [1,last,cur-1,cur,cur+1].forEach(function(n){ if(n>=1&&n<=last) set[n]=1; });
+  var nums=Object.keys(set).map(Number).sort(function(a,b){ return a-b; });
+  function b(l,n,on,dis){ return '<button type="button" class="btn btn-ghost btn-sm" '+(dis?'disabled ':'')+'onclick="'+fn+'('+n+')" style="min-width:34px;margin:0 2px;'+(on?'background:#c9a227;color:#0d1e3d;font-weight:800;':'')+(dis?'opacity:.4;cursor:default;':'')+'">'+l+'</button>'; }
+  var h=b('‹ Prev',cur-1,false,cur<=1), prev=0;
+  nums.forEach(function(n){ if(prev&&n-prev>1) h+='<span style="color:var(--text-muted);padding:0 4px">…</span>'; h+=b(n,n,n===cur,false); prev=n; });
+  return h+b('Next ›',cur+1,false,cur>=last);
+}
+/* page = which page; the page buttons use BILLS_GO (memory first); everything else (open, search, ↻ Refresh, after save/delete) asks the database again */
+function BILLS_LOAD(page){
   if(window.MAT_REFRESH && !materialUsersCache.length) MAT_REFRESH();
-  var seq=++_billsSeq, off=(append===true)?BILLS.length:0, qEl=document.getElementById('bills-search');
-  if(append!==true) _billsQuery=qEl?String(qEl.value||'').trim():'';
-  // light summaries, 50 at a time, searched inside the database — never "all invoices of all users" in one go
-  apiFetch('/admin/material/bills?summary=1&limit=50&offset='+off+(_billsQuery?'&q='+encodeURIComponent(_billsQuery):'')).then(function(list){
+  page=(typeof page==='number'&&page>0)?page:1;
+  var seq=++_billsSeq, qEl=document.getElementById('bills-search');
+  _billsQuery=qEl?String(qEl.value||'').trim():'';
+  _billsCache={};
+  return BILLS_FETCH(page,seq);
+}
+function BILLS_FETCH(page,seq){
+  var key=_billsQuery+'|'+page;
+  return apiFetch('/admin/material/bills?summary=1&pageSize='+PG_SIZE+'&page='+page+(_billsQuery?'&q='+encodeURIComponent(_billsQuery):'')).then(function(res){
     if(seq!==_billsSeq) return;
-    var rows=(list||[]).map(function(x){ return Object.assign({_docId:String(x.id)},x); });
-    _billsHasMore = rows.length>=50;
-    BILLS = (append===true) ? BILLS.concat(rows) : rows;
-    BILLS_RENDER();
-  }).catch(function(e){ var t=document.getElementById('bills-tbody'); if(t && !BILLS.length) t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#f87171">'+MAT_ERR_HTML(e)+'</td></tr>'; });
+    if(res.pages && page>res.pages && page>1) return BILLS_FETCH(res.pages,seq);   // that page no longer exists (after a delete)
+    _billsCache[key]=res; BILLS_APPLY(res);
+  }).catch(function(e){ var t=document.getElementById('bills-tbody'); if(t && !BILLS.length) t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#f87171">'+MAT_ESC(e.message||String(e))+'</td></tr>'; });
+}
+function BILLS_APPLY(res){
+  BILLS=(res.rows||[]).map(function(x){ return Object.assign({_docId:String(x.id)},x); });
+  _billsPage=res.page||1; _billsPages=res.pages||1; _billsTotal=res.total||0;
+  BILLS_RENDER();
+}
+function BILLS_GO(n){
+  var key=_billsQuery+'|'+n;
+  if(_billsCache[key]){ BILLS_APPLY(_billsCache[key]); return; }
+  BILLS_FETCH(n,++_billsSeq);
 }
 function BILLS_SEARCH(){ clearTimeout(_billsTimer); _billsTimer=setTimeout(function(){ BILLS_LOAD(); },400); }
 // (the old 15-second auto-refresh is gone — use ↻ Refresh)
 function BILLS_RENDER(){
   var t=document.getElementById('bills-tbody'); if(!t) return;
   var list=BILLS;
+  var pg=document.getElementById('bills-pager');
+  if(pg) pg.innerHTML=list.length?('<span style="font-size:11px;color:var(--text-muted);margin-right:10px">'+_billsTotal+' invoice'+(_billsTotal===1?'':'s')+(_billsPages>1?' • page '+_billsPage+' of '+_billsPages:'')+'</span>'+PG_HTML(_billsPage,_billsPages,'BILLS_GO')):'';
   if(!list.length){ t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">No invoices found</td></tr>'; return; }
   t.innerHTML=list.map(function(b,i){
     var id=b._docId, tot=(b.total!=null&&b.summary)?Number(b.total):BILL_CALC(b).grand;
-    return '<tr><td>'+(i+1)+'</td><td><b>'+MAT_ESC(b.billNo||'—')+'</b></td><td>'+MAT_ESC(b.billDate||'—')+'</td>'
+    return '<tr><td>'+((_billsPage-1)*PG_SIZE+i+1)+'</td><td><b>'+MAT_ESC(b.billNo||'—')+'</b></td><td>'+MAT_ESC(b.billDate||'—')+'</td>'
      +'<td style="font-family:monospace;color:#c9a227">'+MAT_ESC(b.ownerUserId||'—')+(b.ownerName?'<div style="font-family:inherit;font-size:10px;color:var(--text-muted)">'+MAT_ESC(b.ownerName)+'</div>':'')+'</td><td>'+MAT_ESC(b.businessName||b.vendorName||'—')+'</td><td>'+MAT_ESC(b.workCode||'—')+'</td>'
      +'<td style="text-align:right">'+tot.toLocaleString('en-IN',{minimumFractionDigits:2})+'</td><td style="font-size:10px">'+MAT_ESC(b.savedAt?new Date(b.savedAt).toLocaleString('en-IN'):'—')+'</td>'
      +'<td style="display:flex;gap:6px"><button class="btn-icon" title="View / Print invoice" onclick="BILLS_VIEW(\''+id+'\')">🖨️</button>'
      +'<button class="btn-icon" title="Download PDF" onclick="BILLS_PDF(\''+id+'\')">⬇️</button>'
      +'<button class="btn-icon" title="Edit" onclick="BILLS_EDIT(\''+id+'\')">✏️</button>'
      +'<button class="btn-icon" title="Delete" style="color:#c0262d" onclick="BILLS_DELETE(\''+id+'\')">🗑️</button></td></tr>';
-  }).join('') + (_billsHasMore ? '<tr><td colspan="9" style="text-align:center;padding:12px"><button class="btn btn-ghost btn-sm" onclick="BILLS_LOAD(true)">⬇️ Load more</button></td></tr>' : '');
+  }).join('');
 }
 function BILLS_FIND(id){ return _BILL_FULL[String(id)] || BILLS.find(function(x){ return x._docId===String(id); }); }
 function BILLS_SUM(id){ return BILLS.find(function(x){ return x._docId===String(id); }); }
@@ -16942,7 +17017,7 @@ function BILLS_VIEW(id){ MAT_BILL_FULL(id, BILLS_SUM(id)).then(function(b){ MAT_
 function BILLS_DELETE(id){
   var b=BILLS_FIND(id); if(!b) return;
   if(!confirm('Permanently delete invoice '+(b.billNo||'')+' of '+(b.ownerUserId||'')+'? This cannot be undone.')) return;
-  apiFetch('/material/bills/'+encodeURIComponent(id),{method:'DELETE'}).then(function(){ SHOW_TOAST('🗑️ Invoice deleted.'); LOG_ACTIVITY('🗑️ Invoice deleted: '+b.billNo); delete _BILL_FULL[String(id)]; BILLS_LOAD(); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
+  apiFetch('/material/bills/'+encodeURIComponent(id),{method:'DELETE'}).then(function(){ SHOW_TOAST('🗑️ Invoice deleted.'); LOG_ACTIVITY('🗑️ Invoice deleted: '+b.billNo); delete _BILL_FULL[String(id)]; BILLS_LOAD(_billsPage); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
 }
 
 var BF_TEXT=[['billNo','Bill No *'],['workCode','Work Code'],['customerName','Work Name'],['businessName','Business / Firm Name *'],['vendorName','Vendor / Customer Name'],['vendorAddress','Address'],['vendorGstin','GSTIN'],['vendorMobile','Mobile'],['stateField','State'],['districtField','District'],['blockField','Block'],['panchayatField','Panchayat'],['fyField','Financial Year'],['transportMode','Transport Mode'],['vehicleNo','Vehicle No'],['bankName','Bank Name'],['acNo','A/C No'],['ifsc','IFSC'],['branchName','Branch']];
@@ -17046,7 +17121,8 @@ function PREG_MAT_LOAD(silent){
   });
 }
 function PREG_MAT_DATE(v){ if(!v) return '—'; var d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('en-IN'); }
-function PREG_MAT_RENDER(){
+function PREG_MAT_RENDER(){ try{ PREG_MAT_RENDER_ROWS(); }finally{ setTimeout(MAT_LAZY_PHOTOS,0); } }
+function PREG_MAT_RENDER_ROWS(){
   var tabs=document.getElementById('preg-mat-tabs'), tb=document.getElementById('preg-mat-tbody'); if(!tabs||!tb) return;
   tabs.innerHTML=PREG_MAT_TABS.map(function(t){
     var on=t[0]===PREG_MAT_FILTER;

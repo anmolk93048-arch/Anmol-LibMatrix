@@ -513,6 +513,15 @@ function install(app, ctx) {
             where.push("lower(concat_ws(' | ', bill_no, customer_name, to_char(invoice_date,'YYYY-MM-DD'), to_char(invoice_date,'DD-MM-YYYY'), to_char(invoice_date,'FMDD-FMMM-YYYY'))) LIKE ? ESCAPE '\\'");
             params.push('%' + escapeLike(t) + '%');
         });
+        // ?page=N&pageSize=5 → the database returns only that page (+ the total for the pager)
+        if (req.query.page !== undefined && req.query.page !== '') {
+            const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 5, 1), 20), page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+            const rows = await dbq("SELECT " + (full ? SEL_FULL : SEL_LIST) + " FROM dv_invoices WHERE " + where.join(' AND ') + " ORDER BY invoice_date DESC, id DESC LIMIT " + pageSize + " OFFSET " + ((page - 1) * pageSize), params);
+            let total;
+            if (rows.length < pageSize && page === 1) total = rows.length;
+            else { const c = await dbq("SELECT COUNT(*) AS n FROM dv_invoices WHERE " + where.join(' AND '), params); total = Number(c[0] && c[0].n) || 0; }
+            return res.json({ rows: rows.map(r => rowOut(r, full)), total, page, pageSize, pages: Math.max(1, Math.ceil(total / pageSize)) });
+        }
         const rows = await dbq("SELECT " + (full ? SEL_FULL : SEL_LIST) + " FROM dv_invoices WHERE " + where.join(' AND ') + " ORDER BY invoice_date DESC, id DESC LIMIT " + limit, params);
         res.json(rows.map(r => rowOut(r, full)));
     }));

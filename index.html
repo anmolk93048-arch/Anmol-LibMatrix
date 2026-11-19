@@ -683,6 +683,11 @@ header{position:sticky;top:38px;z-index:90;}
 </div>
 </footer>
 <script>
+function __onRevisit(fn){ /* no timer polling: reload when the visitor comes back to the tab after 60 s+ (saves database egress) */
+  var last=Date.now(), go=function(){ if(document.hidden||Date.now()-last<60000) return; last=Date.now(); try{fn();}catch(e){} };
+  document.addEventListener('visibilitychange',go); window.addEventListener('focus',go);
+}
+
 (function(){
   const dateEl = document.getElementById('liveDate');
   const timeEl = document.getElementById('liveTime');
@@ -903,7 +908,7 @@ renderUpdates();
     }).catch(function(){ /* backend abhi unreachable hai (cold start / network) — agla poll 5s mein khud retry karega */ });
   }
   syncLoginAppFooter();
-  setInterval(syncLoginAppFooter, 15000);
+  __onRevisit(syncLoginAppFooter);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) syncLoginAppFooter(); });
 })();
 /* Live Command rotation disabled: keep first message stable. */
@@ -921,7 +926,7 @@ function animateMetric(el,target){
   el.dataset.current=String(v);
 }
 function refreshMetrics(){document.querySelectorAll('.metric-number').forEach(el=>{const base=Number(el.dataset.target||0),v=Math.max(0,Math.round(base*(.97+Math.random()*.06)));animateMetric(el,v);el.classList.remove('metric-pulse');})}
-refreshMetrics();setInterval(refreshMetrics,5000);
+refreshMetrics();__onRevisit(refreshMetrics);
 
 </script>
 <div aria-label="Latest Updates" aria-modal="true" class="updates-modal" id="updatesModal" role="dialog">
@@ -943,7 +948,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
     }catch(e){}
   }
   syncIndexOverrides();
-  setInterval(syncIndexOverrides,15000);
+  __onRevisit(syncIndexOverrides);
 })();
 </script>
 <script>
@@ -971,7 +976,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
     });
   }
   function load(){ fetch(SHDL_API_BASE+'/site-data/live_dashboard',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){ if(x&&x.value) applyLiveDashboard(x.value); }).catch(function(){}); }
-  setTimeout(load,300); setInterval(load,5000);
+  setTimeout(load,300); __onRevisit(load);
 })();
 </script>
 <script id="home-banners-sync">
@@ -1036,7 +1041,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
     }).catch(function(){});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load);else load();
-  setInterval(load,6000);
+  __onRevisit(load);
   document.addEventListener('visibilitychange',function(){if(!document.hidden)load();});
 })();
 </script>
@@ -1054,7 +1059,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
       slider.appendChild(slide);
     });
   }).catch(function(){}); }
-  setTimeout(load,500); setInterval(load,7000);
+  setTimeout(load,500); __onRevisit(load);
 })();
 </script>
 <script id="index-latest-updates-admin-sync">
@@ -1109,7 +1114,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
       if(x && x.value) applyLatestUpdates(x.value);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
-  setTimeout(load,400); setInterval(load,5000);
+  setTimeout(load,400); __onRevisit(load);
 })();
 </script>
 <script id="index-notice-board-admin-sync">
@@ -1141,7 +1146,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
       if(x && x.value) renderNoticeBoard(x.value);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
-  setTimeout(load,450); setInterval(load,5000);
+  setTimeout(load,450); __onRevisit(load);
 })();
 </script>
 <script id="index-kyc-performance-live-sync">
@@ -1209,7 +1214,7 @@ refreshMetrics();setInterval(refreshMetrics,5000);
       if (s) applyValues(s);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
-  setTimeout(load, 600); setInterval(load, 8000);
+  setTimeout(load, 600); __onRevisit(load);
 })();
 </script>
 <script id="remove-theme-fab">

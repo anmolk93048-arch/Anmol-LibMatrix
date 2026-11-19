@@ -481,6 +481,11 @@
   @media(prefers-reduced-motion:reduce){#registrationModalOverlay #regPanel,.login-card.registration-focus-highlight{animation:none!important;}}
 </style>
 
+<style id="saved-bills-pager">
+  .sb-pager{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center;padding:8px 0 2px}
+  .sb-pg{min-width:30px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer}
+  .sb-pg.on{background:#0d1e3d;border-color:#0d1e3d;color:#fff}.sb-pg:disabled{opacity:.4;cursor:default}.sb-pg-gap{color:#94a3b8;font-size:12px}
+</style>
 <style id="registration-structured-fields">
   #registrationModalOverlay #regPanel .reg-sec-title{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#14315e;margin:2px 0 -4px}
   #registrationModalOverlay #regPanel .reg-grid{display:grid;gap:8px}
@@ -1667,44 +1672,68 @@ function _savesAsNewRecord(){
   return n(document.getElementById('billNo').value) !== n(_origBillNo);
 }
 
-/* 🪶 LOW-EGRESS Saved Bills — nothing is downloaded when the page opens and there is NO background polling any more.
-   • only a tiny count is fetched for the "Saved Bills (n)" badge
-   • the database is asked only when the user searches (Bill No., Date or Client name) — just the matching bills (max 20) come back
-   • Edit / Print / PDF then work from those already-loaded bills — no further database call
-   • the list is refreshed once after a save or delete (and only if a search is active) */
-let _billsTotal = 0, _sbLoading = false, _sbSearchTimer = null, _sbSeq = 0;
+/* 🪶 LOW-EGRESS Saved Bills — 5 bills per page, paged inside the database
+   • nothing is downloaded when the page opens and there is NO background polling; only a tiny count feeds the "Saved Bills (n)" badge
+   • opening the panel loads page 1 (the newest 5 bills, including a bill you just saved); search (Bill No., Date, Client name) and the page
+     buttons ask the database for just those 5 rows
+   • pages already opened are kept in memory for this session, and Edit / Print / PDF use those loaded bills — no further database call
+   • after a save or delete the memory is cleared and the list is refreshed once */
+const SB_PAGE_SIZE = 5;
+let _billsTotal = 0, _sbLoading = false, _sbSearchTimer = null, _sbSeq = 0, _sbPage = 1, _sbPages = 1, _sbMatches = 0, _sbDirty = true, _sbPageCache = {};
 function _sbQuery(){ const el = document.getElementById('savedSearch'); return el ? el.value.trim() : ''; }
+function _sbIsOpen(){ const sb = document.getElementById('savedSidebar'); return !!sb && !sb.classList.contains('translate-x-full'); }
 function _sbRefreshCount(){
   if(!loggedInUser) return;
   API.get('/material/bills/count').then(function(r){ _billsTotal = (r && +r.count) || 0; cloudSyncOK = true; renderSidebar(); })
     .catch(function(err){ console.error('Saved bills count error:', err.message); });
 }
-function _sbSearchNow(){
+function _sbApply(res, q){
+  cloudSyncOK = true; _sbLoading = false; _sbDirty = false;
+  cloudBillsCache = res.rows || []; _sbPage = res.page || 1; _sbPages = res.pages || 1; _sbMatches = res.total || 0;
+  if(!q) _billsTotal = _sbMatches;
+  renderSidebar();
+}
+function _sbLoadPage(page){
   clearTimeout(_sbSearchTimer);
-  const q = _sbQuery(), seq = ++_sbSeq;
   if(!loggedInUser) return;
-  if(!q){ cloudBillsCache = []; _sbLoading = false; renderSidebar(); return; }
+  const q = _sbQuery(), key = q + '|' + page, seq = ++_sbSeq;
+  if(_sbPageCache[key]){ _sbApply(_sbPageCache[key], q); return; }          // already loaded in this session → no database call
   _sbLoading = true; renderSidebar();
-  API.get('/material/bills?limit=20&q=' + encodeURIComponent(q))
-    .then(function(rows){
-      if(seq !== _sbSeq) return;                       // a newer search is already running
-      cloudSyncOK = true; _sbLoading = false;
-      cloudBillsCache = Array.isArray(rows) ? rows : [];
-      renderSidebar();
+  API.get('/material/bills?pageSize=' + SB_PAGE_SIZE + '&page=' + page + (q ? '&q=' + encodeURIComponent(q) : ''))
+    .then(function(res){
+      if(seq !== _sbSeq) return;                                               // a newer request is already running
+      if(res && res.pages && page > res.pages && page > 1){ _sbLoadPage(res.pages); return; }   // that page no longer exists (e.g. after a delete)
+      _sbPageCache[key] = res; _sbApply(res, q);
     })
     .catch(function(err){
       if(seq !== _sbSeq) return;
       cloudSyncOK = false; _sbLoading = false; cloudBillsCache = [];
-      console.error('Saved bills search error:', err.message);
+      console.error('Saved bills error:', err.message);
       renderSidebar();
     });
 }
+function _sbSearchNow(){ _sbLoadPage(1); }
 function _sbSearchSoon(){ clearTimeout(_sbSearchTimer); _sbSearchTimer = setTimeout(_sbSearchNow, 400); }
+function _sbGo(n){ _sbLoadPage(n); }
+function _sbPagerHtml(){
+  if(_sbPages <= 1) return '';
+  const cur = _sbPage, last = _sbPages, set = {}; [1, last, cur - 1, cur, cur + 1].forEach(function(n){ if(n >= 1 && n <= last) set[n] = 1; });
+  const nums = Object.keys(set).map(Number).sort(function(a,b){ return a - b; });
+  const btn = function(label, n, on, dis){ return '<button type="button" ' + (dis ? 'disabled ' : '') + 'onclick="_sbGo(' + n + ')" class="sb-pg' + (on ? ' on' : '') + '">' + label + '</button>'; };
+  let h = btn('‹ Prev', cur - 1, false, cur <= 1), prev = 0;
+  nums.forEach(function(n){ if(prev && n - prev > 1) h += '<span class="sb-pg-gap">…</span>'; h += btn(n, n, n === cur, false); prev = n; });
+  return '<div class="sb-pager">' + h + btn('Next ›', cur + 1, false, cur >= last) + '</div>';
+}
+/* called after a save (goes back to page 1, where the new bill sits) or a delete (stays on the current page) */
+window._billsPullNow = function(kind){
+  _sbPageCache = {}; _sbRefreshCount();
+  if(kind === 'save') _sbPage = 1;
+  if(_sbIsOpen()) _sbLoadPage(_sbPage); else _sbDirty = true;
+};
 function startBillsSync(){
   if(_billsSyncTimer){ clearInterval(_billsSyncTimer); _billsSyncTimer = null; }   // (old 10-second polling is gone)
   if(!loggedInUser) return;
-  window._billsPullNow = function(){ _sbRefreshCount(); if(_sbQuery()) _sbSearchNow(); };
-  cloudBillsCache = []; _billsTotal = 0; cloudSyncOK = true;
+  cloudBillsCache = []; _billsTotal = 0; cloudSyncOK = true; _sbPage = 1; _sbPages = 1; _sbDirty = true; _sbPageCache = {};
   renderSidebar();
   _sbRefreshCount();
 }
@@ -2970,7 +2999,7 @@ async function persistBill(token){
     }
   }
   _savedSig = _billSig();   // saved → from now on printing is free until the invoice is edited again
-  try{ if(window._billsPullNow) window._billsPullNow(); }catch(e){}   // refresh the Saved Bills list right away; the panel itself is left exactly as it was
+  try{ if(window._billsPullNow) window._billsPullNow('save'); }catch(e){}   // refresh the Saved Bills list right away; the panel itself is left exactly as it was
 }
 function saveCurrentBill(){ generateInvoice('save'); }
 
@@ -3093,7 +3122,7 @@ async function deleteBill(idx){
     await API.del('/material/bills/' + bill.id);
     cloudBillsCache = cloudBillsCache.filter(function(b){ return b !== bill; });   // drop it from the list on screen right away
     renderSidebar();
-    if(window._billsPullNow) window._billsPullNow();   // refresh the badge count (and the search, if one is active)
+    if(window._billsPullNow) window._billsPullNow('delete');   // refresh the count and this page once
   }catch(err){
     alert('❌ Error while deleting: ' + err.message);
   }
@@ -3122,19 +3151,19 @@ function renderSidebar(){
     if(info) info.classList.add('hidden');
     return;
   }
-  if(!q){   // nothing is downloaded until the user searches
-    container.innerHTML = '<p class="text-gray-500 text-center text-xs pt-6 px-3 leading-relaxed">🔎 Type a <b>Bill No.</b>, <b>Date</b> or <b>Client name</b> above to find a saved bill.' + (_billsTotal ? '<br><span class="text-gray-400">' + _billsTotal + ' bill' + (_billsTotal === 1 ? '' : 's') + ' saved safely in your account.</span>' : '<br><span class="text-gray-400">No saved bills yet.</span>') + '</p>';
-    if(info) info.classList.add('hidden');
-    return;
-  }
   if(_sbLoading){
-    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">Searching…</p>';
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">Loading…</p>';
     if(info) info.classList.add('hidden');
     return;
   }
-  if(info){ info.classList.remove('hidden'); info.textContent = list.length + (list.length >= 20 ? '+ matches — showing the first 20, type more to narrow down' : ' bill' + (list.length === 1 ? '' : 's') + ' found'); }
+  if(_sbDirty && !list.length){   // panel not opened / loaded yet
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">' + (_billsTotal ? _billsTotal + ' saved bill' + (_billsTotal === 1 ? '' : 's') : 'No saved bills yet.') + '</p>';
+    if(info) info.classList.add('hidden');
+    return;
+  }
+  if(info){ info.classList.remove('hidden'); info.textContent = _sbMatches + (q ? ' match' + (_sbMatches === 1 ? '' : 'es') : ' saved bill' + (_sbMatches === 1 ? '' : 's')) + (_sbPages > 1 ? ' • page ' + _sbPage + ' of ' + _sbPages : ''); }
   if(list.length === 0){
-    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6 px-2">No saved bill matches “' + _sbEsc(q) + '”.<br>Try a Bill No., a date (e.g. 05-11-2026) or a client name.</p>';
+    container.innerHTML = q ? '<p class="text-gray-400 text-center text-xs pt-6 px-2">No saved bill matches “' + _sbEsc(q) + '”.<br>Try a Bill No., a date (e.g. 05-11-2026) or a client name.</p>' : '<p class="text-gray-400 text-center text-xs pt-6">No saved bills yet.</p>';
     return;
   }
   const shown = list.map(function(b,i){ return { b:b, i:i }; });
@@ -3156,7 +3185,7 @@ function renderSidebar(){
         </div>
       </div>
     `;
-  }).join('');
+  }).join('') + _sbPagerHtml();
 }
 
 /* Saved Bills → Print: load that bill, open its invoice view and start printing right away (no fee, nothing re-saved) */
@@ -3181,6 +3210,7 @@ function toggleSidebar(){
   const sb = document.getElementById('savedSidebar');
   sb.classList.toggle('translate-x-full');
   document.getElementById('sidebarOverlay').classList.toggle('hidden');
+  if(!sb.classList.contains('translate-x-full') && _sbDirty && loggedInUser) _sbLoadPage(1);   // first opening (or after a save): load page 1 only
   if(!sb.classList.contains('translate-x-full') && window.innerWidth >= 640){ setTimeout(function(){ const i = document.getElementById('savedSearch'); if(i) i.focus(); }, 320); }
 }
 
@@ -4247,12 +4277,13 @@ document.addEventListener('DOMContentLoaded', function(){
   // Categories/Materials edit kare to yahan turant reflect ho jaaye.
   renderWorkCategoryOptions();
   loadMaterialCategories();
-  setInterval(loadMaterialCategories, 10000);
   // Instant push from the Super Admin panel when it is open in the same browser (other devices use the 10-second poll)
   try{ const bc = new BroadcastChannel('anmol-material-master'); bc.onmessage = function(){ loadMaterialCategories(); }; }catch(e){}
   window.addEventListener('storage', function(ev){ if(ev.key === 'anmol_material_master_ver') loadMaterialCategories(); });
-  window.addEventListener('focus', loadMaterialCategories);
-  document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadMaterialCategories(); });
+  let _matLast = Date.now();   // no timer polling: refresh the Material Master on open, on a push from the admin, or when the tab is revisited after 60 s+
+  const _matSoon = function(){ if(document.hidden || Date.now() - _matLast < 60000) return; _matLast = Date.now(); loadMaterialCategories(); };
+  window.addEventListener('focus', _matSoon);
+  document.addEventListener('visibilitychange', _matSoon);
   // Notice left by an automatic logout (inactivity / expired token) — shown once on the login screen.
   try{
     const n = sessionStorage.getItem(PORTAL_IDLE.NOTICE_KEY);

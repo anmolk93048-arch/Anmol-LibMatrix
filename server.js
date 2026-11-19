@@ -2048,6 +2048,7 @@ function parseMaterialIdentity(b) {
 const MU_IDENTITY_KEYS = ['firstName', 'middleName', 'lastName', 'state', 'district', 'block', 'pincode', 'pinCode'];
 const hasIdentityInput = (b) => !!b && MU_IDENTITY_KEYS.some(k => Object.prototype.hasOwnProperty.call(b, k));
 const MU_ID_COLS = 'first_name AS "firstName", middle_name AS "middleName", last_name AS "lastName", state, district, block, pincode';
+const MU_LIST_PHOTO = "(photo IS NOT NULL AND photo <> '') AS \"hasPhoto\"";   // lists carry only this flag — the photo itself is fetched when needed
 const MU_PUBLIC_COLS = 'id, userid, name, village, address, ' + MU_ID_COLS + ', email, mobile, photo, status, blockedReason, aadhaar_last4, invoicePaymentExempt AS "invoicePaymentExempt", invoiceAmount AS "invoiceAmount", invoice_version AS "invoiceVersion", created_at';
 function muRowOut(u) {
     const o = Object.assign({ _docId: String(u.id) }, u);
@@ -2131,10 +2132,19 @@ app.post('/api/material/register-precheck', noStore, asyncRoute(async (req, res)
 
 // 2) Admin: registration requests by status — ?status=pending (default) | approved | rejected | all
 //    (Aadhaar is masked — the full number never leaves the server here)
+// 📷 one photo, only when it is really shown (list rows carry just a hasPhoto flag)
+app.get('/api/material/users/:id/photo', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const rows = await dbq('SELECT photo FROM material_users WHERE id = ?', [parseInt(req.params.id, 10) || 0]);
+    res.json({ photo: (rows[0] && rows[0].photo) || '' });
+}));
+app.get('/api/material/requests/:id/photo', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const rows = await dbq('SELECT photo FROM material_user_requests WHERE id = ?', [parseInt(req.params.id, 10) || 0]);
+    res.json({ photo: (rows[0] && rows[0].photo) || '' });
+}));
 app.get('/api/material/requests', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const st = String(req.query.status || 'pending').toLowerCase();
     const where = (st === 'all') ? '' : ((['pending', 'approved', 'rejected'].indexOf(st) >= 0) ? "WHERE COALESCE(status,'pending') = '" + st + "'" : "WHERE COALESCE(status,'pending') = 'pending'");
-    const rows = await dbq(`SELECT id, name, village, address, ${MU_ID_COLS}, email, mobile, photo, COALESCE(status,'pending') AS status, aadhaar_last4, created_at, reviewed_at, approved_userid, tracking_id, orig_mobile, edited_at
+    const rows = await dbq(`SELECT id, name, village, address, ${MU_ID_COLS}, email, mobile, ${MU_LIST_PHOTO}, COALESCE(status,'pending') AS status, aadhaar_last4, created_at, reviewed_at, approved_userid, tracking_id, orig_mobile, edited_at
                             FROM material_user_requests ${where} ORDER BY COALESCE(reviewed_at, created_at) DESC, created_at DESC LIMIT 1000`);
     res.json(rows.map(r => Object.assign({ _docId: String(r.id), aadhaarMasked: maskAadhaarLast4(r.aadhaar_last4) }, r)));
 }));
@@ -2289,7 +2299,7 @@ app.delete('/api/material/requests/:id', requireRole('admin'), asyncRoute(async 
 
 // 5) Admin: list all material users (Material User List table)
 app.get('/api/material/users', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const rows = await dbq('SELECT ' + MU_PUBLIC_COLS + ' FROM material_users ORDER BY created_at DESC');
+    const rows = await dbq('SELECT ' + MU_PUBLIC_COLS.replace(' photo,', ' ' + MU_LIST_PHOTO + ',') + ' FROM material_users ORDER BY created_at DESC');
     res.json(rows.map(muRowOut));
 }));
 
@@ -2338,6 +2348,7 @@ app.put('/api/material/users/:id', requireRole('admin'), asyncRoute(async (req, 
         ['name', 'village', 'address'].forEach(f => { if (Object.prototype.hasOwnProperty.call(fields, f)) { sets.push(f + ' = ?'); values.push(fields[f]); } });
     }
     allowed.forEach(f => {
+        if (f === 'photo' && !fields.photo) return;   // lists no longer carry the photo, so an empty value must never wipe the stored one
         if (Object.prototype.hasOwnProperty.call(fields, f)) { sets.push(f + ' = ?'); values.push(fields[f]); }
     });
     if (Object.prototype.hasOwnProperty.call(fields, 'mobile')) {
@@ -7486,8 +7497,12 @@ function buildBillQuery(opt) {
     const where = [], params = [];
     if (opt.ownerUserId) { where.push('b.owneruserid = ?'); params.push(String(opt.ownerUserId)); }
     billNormQ(opt.q).split(' ').filter(Boolean).slice(0, 6).forEach(t => { where.push("(" + BILL_HAY + ") LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%'); });
-    const limit = Math.min(Math.max(parseInt(opt.limit, 10) || (opt.summary ? 50 : 20), 1), 100);
-    const offset = Math.max(parseInt(opt.offset, 10) || 0, 0);
+    // page=N&pageSize=5 → classic pagination (the database returns only that page + a total); otherwise limit / offset as before
+    const paged = opt.page !== undefined && opt.page !== null && opt.page !== '';
+    const pageSize = Math.min(Math.max(parseInt(opt.pageSize, 10) || 5, 1), 20);
+    const page = Math.max(parseInt(opt.page, 10) || 1, 1);
+    const limit = paged ? pageSize : Math.min(Math.max(parseInt(opt.limit, 10) || (opt.summary ? 50 : 20), 1), 100);
+    const offset = paged ? (page - 1) * pageSize : Math.max(parseInt(opt.offset, 10) || 0, 0);
     const cols = opt.summary
         ? 'b.id, b.owneruserid AS "ownerUserId", b.savedAt AS "savedAt", ' + BILL_J + "->>'billNo' AS \"billNo\", " + BILL_DATE + ' AS "billDate", ' + BILL_J + "->>'businessName' AS \"businessName\", "
           + BILL_J + "->>'vendorName' AS \"vendorName\", " + BILL_J + "->>'customerName' AS \"customerName\", " + BILL_J + "->>'workName' AS \"workName\", " + BILL_J + "->>'workCode' AS \"workCode\", " + BILL_TOTAL + ' AS "total"'
@@ -7495,7 +7510,18 @@ function buildBillQuery(opt) {
     const sql = 'SELECT ' + cols + (opt.withOwner ? ', u.name AS owner_name, u.first_name AS o_first, u.middle_name AS o_middle, u.last_name AS o_last, u.state AS o_state, u.district AS o_district, u.block AS o_block, u.village AS o_village, u.pincode AS o_pin, u.mobile AS o_mobile' : '')
         + ' FROM material_bills b' + (opt.withOwner ? ' LEFT JOIN material_users u ON u.userid = b.owneruserid' : '')
         + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY b.savedAt DESC, b.id DESC LIMIT ' + limit + ' OFFSET ' + offset;
-    return { sql, params };
+    const countSql = 'SELECT COUNT(*) AS n FROM material_bills b' + (where.length ? ' WHERE ' + where.join(' AND ') : '');
+    return { sql, params, countSql, countParams: params.slice(), paged, page, pageSize };
+}
+// runs the page query (+ the total for the pager) and answers { rows, total, page, pageSize, pages } — or the plain array when no page was asked for
+async function sendBillList(res, qb, summary) {
+    const rows = await dbq(qb.sql, qb.params);
+    const out = rows.map(r => billRowOut(r, summary));
+    if (!qb.paged) return res.json(out);
+    let total = rows.length;
+    if (rows.length >= qb.pageSize || qb.page > 1) { const c = await dbq(qb.countSql, qb.countParams); total = Number(c[0] && c[0].n) || 0; }
+    else total = (qb.page - 1) * qb.pageSize + rows.length;   // first page and not full → that is the whole result, no extra query
+    res.json({ rows: out, total, page: qb.page, pageSize: qb.pageSize, pages: Math.max(1, Math.ceil(total / qb.pageSize)) });
 }
 function billRowOut(r, summary) {
     const ownerInfo = r.owner_name === undefined ? undefined : { firstName: r.o_first || '', middleName: r.o_middle || '', lastName: r.o_last || '', state: r.o_state || '', district: r.o_district || '', block: r.o_block || '', village: r.o_village || '', pincode: r.o_pin || '', mobile: r.o_mobile || '' };
@@ -7519,9 +7545,8 @@ function billReadScope(req, res) {
 app.get('/api/material/bills', noStore, asyncRoute(async (req, res) => {
     const sc = billReadScope(req, res); if (!sc) return;
     const summary = req.query.summary === '1' || req.query.summary === 'true';
-    const qb = buildBillQuery({ ownerUserId: sc.ownerUserId, q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, withOwner: sc.isAdmin });
-    const rows = await dbq(qb.sql, qb.params);
-    res.json(rows.map(r => billRowOut(r, summary)));
+    const qb = buildBillQuery({ ownerUserId: sc.ownerUserId, q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, page: req.query.page, pageSize: req.query.pageSize, withOwner: sc.isAdmin });
+    await sendBillList(res, qb, summary);
 }));
 // how many bills (for the "Saved Bills (n)" badge) — one tiny number instead of the bills themselves
 app.get('/api/material/bills/count', noStore, asyncRoute(async (req, res) => {
@@ -7548,9 +7573,8 @@ app.get('/api/material/bills/:id', noStore, asyncRoute(async (req, res) => {
 //    Reads Supabase directly; a material user being logged in, logged out or even deleted makes no difference.
 app.get('/api/admin/material/bills', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const summary = req.query.summary === '1' || req.query.summary === 'true';
-    const qb = buildBillQuery({ ownerUserId: req.query.ownerUserId || '', q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, withOwner: true });
-    const rows = await dbq(qb.sql, qb.params);
-    res.json(rows.map(r => billRowOut(r, summary)));
+    const qb = buildBillQuery({ ownerUserId: req.query.ownerUserId || '', q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, page: req.query.page, pageSize: req.query.pageSize, withOwner: true });
+    await sendBillList(res, qb, summary);
 }));
 
 app.put('/api/material/bills/:id', requireActiveMaterialUser, (req, res) => {

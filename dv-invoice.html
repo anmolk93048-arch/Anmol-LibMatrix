@@ -55,6 +55,7 @@
   .dv-plan{border:1.5px solid #cbd5e1;border-radius:10px;padding:12px;margin-top:10px;display:flex;gap:10px;align-items:center}
   .dv-plan b{font-size:15px}.dv-plan .pr{font-size:20px;font-weight:800;color:#0f6e56;white-space:nowrap}
   .dv-plan button{margin-left:auto;padding:9px 14px;border-radius:8px;border:none;background:#0f6e56;color:#fff;font-weight:800;cursor:pointer;white-space:nowrap}
+.sb-pager{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center;padding:8px 0 2px}.sb-pg{min-width:30px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer}.sb-pg.on{background:#0d1e3d;border-color:#0d1e3d;color:#fff}.sb-pg:disabled{opacity:.4;cursor:default}.sb-pg-gap{color:#94a3b8;font-size:12px}
 </style>
 <style>
   :root{
@@ -892,32 +893,48 @@ function toggleSidebar(){
   var sb = $('savedSidebar'), ov = $('sidebarOverlay'), open = sb.classList.contains('translate-x-full');
   sb.classList.toggle('translate-x-full', !open); ov.classList.toggle('hidden', !open); if (open) loadSaved();
 }
-function searchSaved(){ clearTimeout(savedTimer); savedTimer = setTimeout(loadSaved, 250); }
+function searchSaved(){ clearTimeout(savedTimer); savedTimer = setTimeout(function(){ loadSaved(1); }, 250); }
 /* 🪶 Low-egress Saved Bills: nothing is downloaded when the page opens. Only a count is fetched; bills come from the database
    only when the user searches (Bill No., Date or Client name) — complete bills, max 20 — and Edit / Print / PDF then
    use those already-loaded bills (LOADED) instead of calling the database again. */
-var LOADED = {}, _loadSeq = 0;
-function loadSaved(){
+var LOADED = {}, _loadSeq = 0, _svPage = 1, _svPages = 1, _svCache = {};
+var SV_SIZE = 5;   // 5 bills per page — the database returns only these 5 rows
+function svRow(r) {
+  return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
+    + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
+    + '<div class="sb-actions"><button class="a-edit" title="Edit this bill" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="a-print" title="Print this bill" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="a-pdf" title="Download as PDF" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="a-del" title="Delete this bill" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️ Delete</button></div></div>';
+}
+function svPager() {
+  if (_svPages <= 1) return '';
+  var cur = _svPage, last = _svPages, set = {};
+  [1, last, cur - 1, cur, cur + 1].forEach(function (n) { if (n >= 1 && n <= last) set[n] = 1; });
+  var nums = Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+  function b(l, n, on, dis) { return '<button type="button" ' + (dis ? 'disabled ' : '') + 'onclick="loadSaved(' + n + ',true)" class="sb-pg' + (on ? ' on' : '') + '">' + l + '</button>'; }
+  var h = b('‹ Prev', cur - 1, false, cur <= 1), prev = 0;
+  nums.forEach(function (n) { if (prev && n - prev > 1) h += '<span class="sb-pg-gap">…</span>'; h += b(n, n, n === cur, false); prev = n; });
+  return '<div class="sb-pager">' + h + b('Next ›', cur + 1, false, cur >= last) + '</div>';
+}
+function svRender(res, q) {
+  var rows = res.rows || []; _svPage = res.page || 1; _svPages = res.pages || 1;
+  LOADED = {}; rows.forEach(function (r) { LOADED[r.id] = r; });
+  if (!q) $('savedCount').textContent = res.total || 0;
+  $('savedList').innerHTML = rows.length
+    ? '<p class="text-[11px] text-gray-500 text-center pb-1">' + res.total + (q ? ' match' + (res.total === 1 ? '' : 'es') : ' saved bill' + (res.total === 1 ? '' : 's')) + (_svPages > 1 ? ' • page ' + _svPage + ' of ' + _svPages : '') + '</p>' + rows.map(svRow).join('') + svPager()
+    : '<p class="text-xs text-gray-500 text-center py-6">' + (q ? 'No bill matches “' + esc(q) + '”.' : 'No saved bills yet.') + '</p>';
+}
+/* page = which page to show (default 1). fromCache = true only for the page buttons: pages already opened this session come from memory.
+   Any other call (open, search, after a save / delete) asks the database again for just that page's 5 rows. */
+function loadSaved(page, fromCache) {
   if (planBlocked()) return Promise.resolve();
-  var q = $('savedSearch').value.trim(), seq = ++_loadSeq;
-  if (!q) {
-    LOADED = {};
-    return api('/dv/invoices/count').then(function(r){
-      if (seq !== _loadSeq) return;
-      var n = (r && +r.count) || 0; $('savedCount').textContent = n;
-      $('savedList').innerHTML = '<p class="text-xs text-gray-500 text-center py-6 px-3 leading-relaxed">🔎 Type a <b>Bill No.</b>, <b>Date</b> or <b>Client name</b> above to find a saved bill.<br><span class="text-gray-400">' + (n ? n + ' bill' + (n === 1 ? '' : 's') + ' saved safely in your account.' : 'No saved bills yet.') + '</span></p>';
-    }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
-  }
-  return api('/dv/invoices?full=1&limit=20&q=' + encodeURIComponent(q)).then(function(rows){
+  page = +page || 1;
+  var q = $('savedSearch').value.trim(), seq = ++_loadSeq, key = q + '|' + page;
+  if (!fromCache) _svCache = {};
+  if (fromCache && _svCache[key]) { svRender(_svCache[key], q); return Promise.resolve(); }
+  return api('/dv/invoices?pageSize=' + SV_SIZE + '&page=' + page + '&q=' + encodeURIComponent(q)).then(function (res) {
     if (seq !== _loadSeq) return;
-    LOADED = {}; rows.forEach(function(r){ LOADED[r.id] = r; });
-    $('savedList').innerHTML = (rows.length ? rows.map(function(r){
-      return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
-        + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
-        + '<div class="sb-actions"><button class="a-edit" title="Edit this bill" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="a-print" title="Print this bill" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="a-pdf" title="Download as PDF" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="a-del" title="Delete this bill" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️ Delete</button></div></div>';
-    }).join('') + (rows.length >= 20 ? '<p class="text-[11px] text-gray-500 text-center py-2">Showing the first 20 matches — type more to narrow down.</p>' : '')
-      : '<p class="text-xs text-gray-500 text-center py-6">No bill matches “' + esc(q) + '”.</p>');
-  }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
+    if (res.pages && page > res.pages && page > 1) return loadSaved(res.pages);   // that page is gone (e.g. after a delete)
+    _svCache[key] = res; svRender(res, q);
+  }).catch(function (e) { $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
 }
 function openBill(id, print){
   if (planBlocked()) return;
@@ -937,7 +954,7 @@ function openBill(id, print){
 function delBill(id, no){
   if (planBlocked()) return;
   if (!confirm('Delete bill ' + no + ' permanently?')) return;
-  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ delete LOADED[id]; if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
+  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ delete LOADED[id]; if (editingId === id) newBill(); loadSaved(_svPage); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
 }
 
 /* ───────── invoice viewer / print ───────── */
