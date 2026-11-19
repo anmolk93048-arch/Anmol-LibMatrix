@@ -2359,6 +2359,17 @@ html,body,#admin-app{width:100%;min-width:0;}
   #mm-tabs::-webkit-scrollbar-thumb{background:#9aacc6;border-radius:6px}
   #mm-tabs::-webkit-scrollbar-thumb:hover{background:#7f93b3}
 </style>
+<style id="table-align-fix">
+#admin-app td.act-nw{white-space:nowrap!important;vertical-align:middle!important}
+#admin-app td.act-nw>*{display:inline-block!important;vertical-align:middle;margin:0 4px 0 0!important}
+#admin-app #page-material-users .tbl-wrap,#admin-app #page-bills .tbl-wrap,#admin-app #modal-mu-entries .tbl-wrap{width:100%;max-width:100%;overflow-x:auto}
+#admin-app #page-material-users table,#admin-app #page-bills table{min-width:0;width:100%}
+#admin-app #page-material-users th,#admin-app #page-material-users td{padding-left:7px!important;padding-right:7px!important}
+#admin-app #page-material-users td .btn-icon{width:30px;height:30px;padding:0}
+#admin-app #page-material-users td:nth-child(7){font-size:11px!important}
+#admin-app #page-material-users th,#admin-app #page-material-users td,#admin-app #page-bills th,#admin-app #page-bills td{vertical-align:middle!important;white-space:nowrap!important}
+#admin-app #page-material-users td:nth-child(4){white-space:normal!important;min-width:110px}
+</style>
 </head>
 <!-- Clean UI asset policy: official brand logo retained; large photo backgrounds removed. -->
 <body>
@@ -10176,7 +10187,7 @@ function RENDER_MATERIAL_REQUESTS(){
       +'<td>'+MAT_ESC(r.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(r.aadhaarMasked||'—')+'</td>'
       +'<td style="font-size:10px">'+MAT_ESC(r.requestedAt||'—')+'</td>'
-      +'<td style="display:flex;gap:6px"><button class="btn btn-gold btn-sm" title="Review the details, then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+r._docId+'\')">Approve</button>'
+      +'<td class="act-nw"><button class="btn btn-gold btn-sm" title="Review the details, then approve" onclick="OPEN_MU_REQUEST_REVIEW(\''+r._docId+'\')">Approve</button>'
       +'<button class="btn btn-danger btn-sm" onclick="REJECT_MATERIAL_REQUEST(\''+r._docId+'\')">Reject</button></td></tr>';
   }).join('');
   var t1=document.getElementById('material-requests-table'); if(t1) t1.innerHTML=rows;
@@ -10631,7 +10642,7 @@ function RENDER_MATERIAL_USERS(filter){
       +'<td><select class="form-input form-select" style="padding:4px 6px;font-size:12px;min-width:92px" title="Invoice type for this user" onchange="SET_MU_VERSION(\''+id+'\',this)">'
       +  '<option value="A"'+(u.invoiceVersion==='B'?'':' selected')+'>Session A</option><option value="B"'+(u.invoiceVersion==='B'?' selected':'')+'>Session B</option></select></td>'
       +'<td><span class="badge '+(isBlocked?'inactive':'active')+'">'+(isBlocked?'🚫 Blocked':'✅ Active')+'</span></td>'
-      +'<td style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<td class="act-nw">'
       +  '<button class="btn-icon" title="View Entries" onclick="VIEW_MATERIAL_ENTRIES(\''+id+'\')">📄</button>'
       +  '<button class="btn-icon" title="Edit" onclick="EDIT_MATERIAL_USER(\''+id+'\')">✏️</button>'
       +  '<button class="btn-icon" title="'+(isBlocked?'Unblock':'Block')+'" onclick="BLOCK_MATERIAL_USER_CONFIRM(\''+id+'\',\''+MAT_JSARG(u.name)+'\','+isBlocked+')">'+(isBlocked?'🔓':'🚫')+'</button>'
@@ -10761,7 +10772,7 @@ function RENDER_MU_ENTRIES(bills){
       + '<td>'+(b.businessName||b.vendorName||'—')+'</td>'
       + '<td>'+(b.workCode||'—')+'</td>'
       + '<td style="font-size:10px">'+savedOn+'</td>'
-      + '<td style="display:flex;gap:6px">'
+      + '<td class="act-nw">'
       +   '<button class="btn-icon" title="View / Print invoice" onclick="MU_ENTRY_SHOW(\''+b._docId+'\')">🖨️</button>'
       +   '<button class="btn-icon" title="Download PDF" onclick="MU_ENTRY_PDF(\''+b._docId+'\')">⬇️</button>'
       +   '<button class="btn-icon" title="Edit" onclick="OPEN_MU_ENTRY_EDIT(\''+b._docId+'\')">✏️</button>'
@@ -13230,7 +13241,7 @@ function RENDER_MEMBERS(){
       '<td>'+(m.start||'—')+'</td>'+
       '<td>'+(m.expiry||'—')+'</td>'+
       '<td><span class="mem-status-badge '+statusCls+'">'+statusTxt+'</span></td>'+
-      '<td style="display:flex;gap:6px">'+
+      '<td class="act-nw">'+
         '<button class="btn" style="padding:4px 9px;font-size:10px" onclick="EDIT_MEMBER(\''+m.id+'\')">✏️</button>'+
         '<button class="btn btn-danger" style="padding:4px 9px;font-size:10px" onclick="DEL_MEMBER(\''+m.id+'\')">🗑️</button>'+
       '</td>'+
@@ -17000,7 +17011,7 @@ function BILLS_RENDER(){
     return '<tr><td>'+((_billsPage-1)*PG_SIZE+i+1)+'</td><td><b>'+MAT_ESC(b.billNo||'—')+'</b></td><td>'+MAT_ESC(b.billDate||'—')+'</td>'
      +'<td style="font-family:monospace;color:#c9a227">'+MAT_ESC(b.ownerUserId||'—')+(b.ownerName?'<div style="font-family:inherit;font-size:10px;color:var(--text-muted)">'+MAT_ESC(b.ownerName)+'</div>':'')+'</td><td>'+MAT_ESC(b.businessName||b.vendorName||'—')+'</td><td>'+MAT_ESC(b.workCode||'—')+'</td>'
      +'<td style="text-align:right">'+tot.toLocaleString('en-IN',{minimumFractionDigits:2})+'</td><td style="font-size:10px">'+MAT_ESC(b.savedAt?new Date(b.savedAt).toLocaleString('en-IN'):'—')+'</td>'
-     +'<td style="display:flex;gap:6px"><button class="btn-icon" title="View / Print invoice" onclick="BILLS_VIEW(\''+id+'\')">🖨️</button>'
+     +'<td class="act-nw"><button class="btn-icon" title="View / Print invoice" onclick="BILLS_VIEW(\''+id+'\')">🖨️</button>'
      +'<button class="btn-icon" title="Download PDF" onclick="BILLS_PDF(\''+id+'\')">⬇️</button>'
      +'<button class="btn-icon" title="Edit" onclick="BILLS_EDIT(\''+id+'\')">✏️</button>'
      +'<button class="btn-icon" title="Delete" style="color:#c0262d" onclick="BILLS_DELETE(\''+id+'\')">🗑️</button></td></tr>';
@@ -17145,7 +17156,7 @@ function PREG_MAT_RENDER_ROWS(){
       +'<td style="font-size:11px">'+MAT_ESC(r.email||'—')+'</td><td>'+MAT_ESC(r.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(r.aadhaarMasked||'—')+'</td>'
       +'<td style="font-size:10px">'+MAT_ESC(PREG_MAT_DATE(r.created_at))+'</td><td>'+badge+'</td>'
-      +'<td style="display:flex;gap:6px;flex-wrap:wrap">'+actions+'</td></tr>';
+      +'<td class="act-nw">'+actions+'</td></tr>';
   }).join('');
 }
 function PREG_MAT_REOPEN(id){
