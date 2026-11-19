@@ -879,7 +879,7 @@ function submitBill(mode){
   var req = editingId ? api('/dv/invoices/' + editingId, { method: 'PUT', body: JSON.stringify(payload()) })
                       : api('/dv/invoices', { method: 'POST', body: JSON.stringify(payload()) });
   req.then(function(r){
-    editingId = r.id; origBillNo = r.billNo; loadSaved();
+    editingId = r.id; origBillNo = r.billNo; delete LOADED[r.id]; loadSaved();
     if (mode === 'generate') return api('/dv/invoices/' + r.id).then(function(inv){ showInvoice(inv); });
     toast('✅ Invoice ' + r.billNo + (r.mode === 'updated' ? ' updated.' : ' saved.') + (r.previousBillNo ? ' Original ' + r.previousBillNo + ' is unchanged.' : ''));
   }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); }).then(function(){ btns.forEach(function(b, i){ b.disabled = false; b.innerHTML = txt[i]; }); });
@@ -893,21 +893,36 @@ function toggleSidebar(){
   sb.classList.toggle('translate-x-full', !open); ov.classList.toggle('hidden', !open); if (open) loadSaved();
 }
 function searchSaved(){ clearTimeout(savedTimer); savedTimer = setTimeout(loadSaved, 250); }
+/* 🪶 Low-egress Saved Bills: nothing is downloaded when the page opens. Only a count is fetched; bills come from the database
+   only when the user searches (Bill No., Date or Client name) — complete bills, max 20 — and Edit / Print / PDF then
+   use those already-loaded bills (LOADED) instead of calling the database again. */
+var LOADED = {}, _loadSeq = 0;
 function loadSaved(){
   if (planBlocked()) return Promise.resolve();
-  var q = $('savedSearch').value.trim();
-  return api('/dv/invoices' + (q ? '?q=' + encodeURIComponent(q) : '')).then(function(rows){
-    if (!q) $('savedCount').textContent = rows.length;
-    $('savedList').innerHTML = rows.length ? rows.map(function(r){
+  var q = $('savedSearch').value.trim(), seq = ++_loadSeq;
+  if (!q) {
+    LOADED = {};
+    return api('/dv/invoices/count').then(function(r){
+      if (seq !== _loadSeq) return;
+      var n = (r && +r.count) || 0; $('savedCount').textContent = n;
+      $('savedList').innerHTML = '<p class="text-xs text-gray-500 text-center py-6 px-3 leading-relaxed">🔎 Type a <b>Bill No.</b>, <b>Date</b> or <b>Client name</b> above to find a saved bill.<br><span class="text-gray-400">' + (n ? n + ' bill' + (n === 1 ? '' : 's') + ' saved safely in your account.' : 'No saved bills yet.') + '</span></p>';
+    }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
+  }
+  return api('/dv/invoices?full=1&limit=20&q=' + encodeURIComponent(q)).then(function(rows){
+    if (seq !== _loadSeq) return;
+    LOADED = {}; rows.forEach(function(r){ LOADED[r.id] = r; });
+    $('savedList').innerHTML = (rows.length ? rows.map(function(r){
       return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
         + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
         + '<div class="sb-actions"><button class="a-edit" title="Edit this bill" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="a-print" title="Print this bill" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="a-pdf" title="Download as PDF" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="a-del" title="Delete this bill" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️ Delete</button></div></div>';
-    }).join('') : '<p class="text-xs text-gray-500 text-center py-6">' + (q ? 'No bill matches “' + esc(q) + '”.' : 'No saved bills yet.') + '</p>';
+    }).join('') + (rows.length >= 20 ? '<p class="text-[11px] text-gray-500 text-center py-2">Showing the first 20 matches — type more to narrow down.</p>' : '')
+      : '<p class="text-xs text-gray-500 text-center py-6">No bill matches “' + esc(q) + '”.</p>');
   }).catch(function(e){ $('savedList').innerHTML = '<p class="text-xs text-red-600">' + esc(e.message) + '</p>'; });
 }
 function openBill(id, print){
   if (planBlocked()) return;
-  api('/dv/invoices/' + id).then(function(inv){
+  // the bill is already in memory from the search → no database call; fetched only if it is somehow missing
+  (LOADED[id] ? Promise.resolve(LOADED[id]) : api('/dv/invoices/' + id)).then(function(inv){
     if (print) return showInvoice(inv);
     editingId = inv.id; origBillNo = inv.billNo; showErr('');
     $('billNo').value = inv.billNo; $('billDate').value = inv.date; $('customer').value = inv.customer; $('block').value = inv.block; $('district').value = inv.district;
@@ -922,7 +937,7 @@ function openBill(id, print){
 function delBill(id, no){
   if (planBlocked()) return;
   if (!confirm('Delete bill ' + no + ' permanently?')) return;
-  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
+  api('/dv/invoices/' + id, { method: 'DELETE' }).then(function(){ delete LOADED[id]; if (editingId === id) newBill(); loadSaved(); }).catch(function(e){ showErr(e.message); if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
 }
 
 /* ───────── invoice viewer / print ───────── */
@@ -1120,7 +1135,7 @@ function savePdfInvoiceNow(btn){
     .catch(function(e){ alert('❌ PDF could not be created: ' + (e && e.message ? e.message : e) + '\nPlease use Print Invoice → Save as PDF instead.'); })
     .then(restore);
 }
-function pdfBill(id){ api('/dv/invoices/' + id).then(function(inv){ showInvoice(inv); return savePdfInvoiceNow(); }).catch(function(e){ showErr(e.message); }); }
+function pdfBill(id){ if (planBlocked()) return; (LOADED[id] ? Promise.resolve(LOADED[id]) : api('/dv/invoices/' + id)).then(function(inv){ showInvoice(inv); return savePdfInvoiceNow(); }).catch(function(e){ showErr(e.message); }); }
 
 /* ───────── start ───────── */
 (function init(){

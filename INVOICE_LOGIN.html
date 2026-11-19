@@ -1449,7 +1449,7 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
     </div>
     <div class="bg-white border-b border-gray-200 px-3 py-2">
       <label for="savedSearch" class="sr-only">Search saved bills</label>
-      <input id="savedSearch" type="search" autocomplete="off" oninput="renderSidebar()" placeholder="🔍 Search Bill No., Date or Client name"
+      <input id="savedSearch" type="search" autocomplete="off" oninput="_sbSearchSoon()" placeholder="🔍 Search Bill No., Date or Client name"
              class="w-full border border-gray-300 rounded px-3 py-2 text-base sm:text-sm focus:outline-none focus:border-[var(--gov-blue)]">
       <p id="savedSearchInfo" class="text-[11px] text-gray-500 mt-1 hidden"></p>
     </div>
@@ -1667,30 +1667,46 @@ function _savesAsNewRecord(){
   return n(document.getElementById('billNo').value) !== n(_origBillNo);
 }
 
-/* Polling sync: लॉगिन के बाद सिर्फ इसी यूज़र (ownerUserId) के बिल लोड होंगे —
-   ताकि User A का डेटा User B को कभी न दिखे। Admin Panel में सभी यूज़र्स का
-   डेटा अलग-अलग दिखता है। हर 10 सेकंड में fresh डेटा खींचा जाता है (legacy DB
-   .onSnapshot() की जगह ab REST polling — data source ab MySQL है)। */
-function startBillsSync(){
-  if(_billsSyncTimer) clearInterval(_billsSyncTimer);
+/* 🪶 LOW-EGRESS Saved Bills — nothing is downloaded when the page opens and there is NO background polling any more.
+   • only a tiny count is fetched for the "Saved Bills (n)" badge
+   • the database is asked only when the user searches (Bill No., Date or Client name) — just the matching bills (max 20) come back
+   • Edit / Print / PDF then work from those already-loaded bills — no further database call
+   • the list is refreshed once after a save or delete (and only if a search is active) */
+let _billsTotal = 0, _sbLoading = false, _sbSearchTimer = null, _sbSeq = 0;
+function _sbQuery(){ const el = document.getElementById('savedSearch'); return el ? el.value.trim() : ''; }
+function _sbRefreshCount(){
   if(!loggedInUser) return;
-  function _pull(){
-    API.get('/material/bills?ownerUserId=' + encodeURIComponent(loggedInUser.userId))
-      .then(function(rows){
-        cloudSyncOK = true;
-        cloudBillsCache = rows || [];
-        cloudBillsCache.sort((a,b) => (b.savedAt||'') < (a.savedAt||'') ? -1 : 1);
-        renderSidebar();
-      })
-      .catch(function(err){
-        cloudSyncOK = false;
-        console.error('Backend sync error:', err.message);
-        renderSidebar();
-      });
-  }
-  window._billsPullNow = _pull;
-  _pull();
-  _billsSyncTimer = setInterval(_pull, 10000);
+  API.get('/material/bills/count').then(function(r){ _billsTotal = (r && +r.count) || 0; cloudSyncOK = true; renderSidebar(); })
+    .catch(function(err){ console.error('Saved bills count error:', err.message); });
+}
+function _sbSearchNow(){
+  clearTimeout(_sbSearchTimer);
+  const q = _sbQuery(), seq = ++_sbSeq;
+  if(!loggedInUser) return;
+  if(!q){ cloudBillsCache = []; _sbLoading = false; renderSidebar(); return; }
+  _sbLoading = true; renderSidebar();
+  API.get('/material/bills?limit=20&q=' + encodeURIComponent(q))
+    .then(function(rows){
+      if(seq !== _sbSeq) return;                       // a newer search is already running
+      cloudSyncOK = true; _sbLoading = false;
+      cloudBillsCache = Array.isArray(rows) ? rows : [];
+      renderSidebar();
+    })
+    .catch(function(err){
+      if(seq !== _sbSeq) return;
+      cloudSyncOK = false; _sbLoading = false; cloudBillsCache = [];
+      console.error('Saved bills search error:', err.message);
+      renderSidebar();
+    });
+}
+function _sbSearchSoon(){ clearTimeout(_sbSearchTimer); _sbSearchTimer = setTimeout(_sbSearchNow, 400); }
+function startBillsSync(){
+  if(_billsSyncTimer){ clearInterval(_billsSyncTimer); _billsSyncTimer = null; }   // (old 10-second polling is gone)
+  if(!loggedInUser) return;
+  window._billsPullNow = function(){ _sbRefreshCount(); if(_sbQuery()) _sbSearchNow(); };
+  cloudBillsCache = []; _billsTotal = 0; cloudSyncOK = true;
+  renderSidebar();
+  _sbRefreshCount();
 }
 
 /* ---------------- Material catalogues (Work-Category driven) ----------------
@@ -2526,7 +2542,6 @@ async function _runGatedInvoiceFlow(){
     _fillInvoiceFromForm();                 // fresh invoice from the data that was just saved
     _showInvoiceViewer(wasEdit, gate.fee, !!gate.wallet);
     loadWalletBalance();
-    if(typeof startBillsSync === 'function') startBillsSync();
   }catch(err){
     if(!(err && err.silent)) alert('⚠️ ' + (err && err.message ? err.message : err));
   }finally{
@@ -2702,14 +2717,12 @@ async function _isDuplicateBillNo(){
   const norm = function(v){ return String(v == null ? '' : v).trim().toLowerCase(); };
   const no = norm(document.getElementById('billNo').value);
   if(!no) return false;
-  let list = cloudBillsCache || [];
   try{
-    if(loggedInUser){
-      const fresh = await API.get('/material/bills?ownerUserId=' + encodeURIComponent(loggedInUser.userId) + '&_=' + Date.now());
-      if(Array.isArray(fresh)){ list = fresh; cloudBillsCache = fresh; }
-    }
-  }catch(e){ /* use cache */ }
-  return list.some(function(b){
+    // the server answers yes / no — no bill is downloaded for this check
+    const r = await API.get('/material/bills/exists?billNo=' + encodeURIComponent(document.getElementById('billNo').value.trim()) + '&excludeId=' + encodeURIComponent(currentEditingBillId || 0));
+    if(r && typeof r.exists === 'boolean') return r.exists;
+  }catch(e){ /* fall back to the bills already loaded */ }
+  return (cloudBillsCache || []).some(function(b){
     if(!b || norm(b.billNo) !== no) return false;
     return !(currentEditingBillId && String(b.id) === String(currentEditingBillId));
   });
@@ -3078,9 +3091,9 @@ async function deleteBill(idx){
   if(!confirm('Permanently delete this saved bill?')) return;
   try{
     await API.del('/material/bills/' + bill.id);
-    // cloudBillsCache and the sidebar will auto-update on the next 10-second
-    // poll, but we also pull immediately once here to refresh the UI right away
-    startBillsSync();
+    cloudBillsCache = cloudBillsCache.filter(function(b){ return b !== bill; });   // drop it from the list on screen right away
+    renderSidebar();
+    if(window._billsPullNow) window._billsPullNow();   // refresh the badge count (and the search, if one is active)
   }catch(err){
     alert('❌ Error while deleting: ' + err.message);
   }
@@ -3099,28 +3112,32 @@ function _billMatches(b, q){
 function renderSidebar(){
   const list = cloudBillsCache;
   const rb = document.getElementById('cloudResetBtn'); if(rb) rb.style.display = currentEditingBillId ? 'block' : 'none';
-  document.getElementById('savedCount').textContent = list.length;
+  document.getElementById('savedCount').textContent = _billsTotal;
   const container = document.getElementById('savedBillsList');
   const qEl = document.getElementById('savedSearch'), info = document.getElementById('savedSearchInfo');
-  const q = _sbNorm(qEl ? qEl.value : '');
+  const q = qEl ? qEl.value.trim() : '';
 
   if(!cloudSyncOK){
     container.innerHTML = '<p class="text-amber-600 text-center text-xs pt-6 px-2">⚠️ Could not connect to the server.<br>Please check your internet connection.</p>';
     if(info) info.classList.add('hidden');
     return;
   }
-  if(list.length === 0){
-    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">No saved bills yet.</p>';
+  if(!q){   // nothing is downloaded until the user searches
+    container.innerHTML = '<p class="text-gray-500 text-center text-xs pt-6 px-3 leading-relaxed">🔎 Type a <b>Bill No.</b>, <b>Date</b> or <b>Client name</b> above to find a saved bill.' + (_billsTotal ? '<br><span class="text-gray-400">' + _billsTotal + ' bill' + (_billsTotal === 1 ? '' : 's') + ' saved safely in your account.</span>' : '<br><span class="text-gray-400">No saved bills yet.</span>') + '</p>';
     if(info) info.classList.add('hidden');
     return;
   }
-  // keep each bill's ORIGINAL index so Edit / Print / Delete still act on the right record while filtered
-  const shown = list.map(function(b,i){ return { b:b, i:i }; }).filter(function(x){ return !q || _billMatches(x.b, q); });
-  if(info){ info.classList.toggle('hidden', !q); info.textContent = shown.length + ' of ' + list.length + ' bills match'; }
-  if(shown.length === 0){
-    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6 px-2">No saved bill matches “' + _sbEsc(qEl ? qEl.value.trim() : '') + '”.<br>Try a Bill No., a date (e.g. 05-11-2026) or a client name.</p>';
+  if(_sbLoading){
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6">Searching…</p>';
+    if(info) info.classList.add('hidden');
     return;
   }
+  if(info){ info.classList.remove('hidden'); info.textContent = list.length + (list.length >= 20 ? '+ matches — showing the first 20, type more to narrow down' : ' bill' + (list.length === 1 ? '' : 's') + ' found'); }
+  if(list.length === 0){
+    container.innerHTML = '<p class="text-gray-400 text-center text-xs pt-6 px-2">No saved bill matches “' + _sbEsc(q) + '”.<br>Try a Bill No., a date (e.g. 05-11-2026) or a client name.</p>';
+    return;
+  }
+  const shown = list.map(function(b,i){ return { b:b, i:i }; });
   container.innerHTML = shown.map(function(x){
     const b = x.b, i = x.i;
     const dt = b.savedAt ? new Date(b.savedAt).toLocaleString('en-IN') : '';

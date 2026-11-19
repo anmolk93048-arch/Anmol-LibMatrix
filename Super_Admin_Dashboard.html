@@ -3535,7 +3535,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             </div>
             <div class="actions-row">
               <div class="search-bar"><span style="color:var(--text-muted);font-size:13px">🔍</span>
-                <input type="text" id="bills-search" placeholder="Bill No, User ID, Business, Work Code..." oninput="BILLS_RENDER()"></div>
+                <input type="text" id="bills-search" placeholder="Bill No, User ID, Business, Work Code..." oninput="BILLS_SEARCH()"></div>
               <button class="btn btn-ghost" onclick="BILLS_LOAD()">↻ Refresh</button>
               <button class="btn btn-gold" onclick="BILLS_EDIT('')">+ Add Invoice</button>
             </div>
@@ -5965,6 +5965,7 @@ html,body,#admin-app{width:100%;min-width:0;}
     </div>
     <div class="modal-body">
       <div id="mu-entries-loading" style="text-align:center;padding:30px;color:var(--text-muted)">Loading...</div>
+      <div style="margin-bottom:10px"><input type="text" class="form-input" id="mu-entries-search" placeholder="🔍 Search Bill No., Date or Business / Client…" oninput="MU_ENTRIES_SEARCH(this.value)" autocomplete="off"></div>
       <div class="tbl-wrap" style="display:none" id="mu-entries-wrap">
         <table>
           <thead><tr><th>#</th><th>Bill No</th><th>Bill Date</th><th>Vendor / Business</th><th>Work Code</th><th>Saved On</th><th>Actions</th></tr></thead>
@@ -10653,32 +10654,58 @@ function TOGGLE_MATERIAL_USER_BLOCK(docId, name, doBlock, reason){
 // ── किसी एक Material User की सारी सेव की हुई Invoice/Material Entries ──
 var _muEntriesCurrentUser = null; // {userId, name}
 var _muEntriesCurrentList = [];
+var _muEntriesQuery = '', _muEntriesTimer = null, _muEntriesSeq = 0;
+/* 🪶 LOW-EGRESS bills: lists load as light summaries (+ server-side search, paged); a complete bill is fetched only when it is
+   opened to view / print / PDF / edit, and then kept in memory so repeating the action never calls the database again. */
+var _BILL_FULL = {};
+function MAT_BILL_FULL(id, base){
+  id = String(id);
+  if(_BILL_FULL[id]) return Promise.resolve(_BILL_FULL[id]);
+  return apiFetch('/material/bills/'+encodeURIComponent(id)).then(function(f){
+    var b = Object.assign({}, base||{}, f, { _docId:id }); delete b.summary; delete b.total;
+    _BILL_FULL[id] = b; return b;
+  });
+}
 
 function VIEW_MATERIAL_ENTRIES(docId){
   var u = materialUsersCache.find(function(x){ return x._docId===docId; });
   if(!u) return;
-  _muEntriesCurrentUser = u;
+  _muEntriesCurrentUser = u; _muEntriesQuery = '';
+  var se=document.getElementById('mu-entries-search'); if(se) se.value='';
   document.getElementById('mu-entries-title').textContent = '📄 '+u.name+' ('+u.userId+') — Material Entries';
   document.getElementById('mu-entries-loading').style.display = 'block';
+  document.getElementById('mu-entries-loading').textContent = 'Loading...';
   document.getElementById('mu-entries-wrap').style.display = 'none';
   OPEN_MODAL('modal-mu-entries');
-
-  apiFetch('/material/bills?ownerUserId='+encodeURIComponent(u.userId)).then(function(list){
+  MU_ENTRIES_FETCH(false);
+}
+/* light summary list (50 at a time) — optionally filtered by the search box (Bill No., Date, Business / Client) */
+function MU_ENTRIES_FETCH(append){
+  var u=_muEntriesCurrentUser; if(!u) return;
+  var seq=++_muEntriesSeq, off=append?_muEntriesCurrentList.length:0;
+  apiFetch('/material/bills?summary=1&limit=50&offset='+off+'&ownerUserId='+encodeURIComponent(u.userId)+(_muEntriesQuery?'&q='+encodeURIComponent(_muEntriesQuery):'')).then(function(list){
+    if(seq!==_muEntriesSeq) return;
     var bills=(list||[]).map(function(x){ return Object.assign({ _docId:String(x.id) }, x); });
-    bills.sort(function(a,b){ return (b.savedAt||'') < (a.savedAt||'') ? -1 : 1; });
-    _muEntriesCurrentList=bills;
-    RENDER_MU_ENTRIES(bills);
+    _muEntriesCurrentList = append ? _muEntriesCurrentList.concat(bills) : bills;
+    _muEntriesHasMore = bills.length>=50;
+    RENDER_MU_ENTRIES(_muEntriesCurrentList);
   }).catch(function(e){
+    document.getElementById('mu-entries-loading').style.display='block';
     document.getElementById('mu-entries-loading').textContent='⚠️ Unable to load: '+e.message;
   });
 }
+var _muEntriesHasMore = false;
+function MU_ENTRIES_SEARCH(v){ clearTimeout(_muEntriesTimer); _muEntriesTimer=setTimeout(function(){ _muEntriesQuery=String(v||'').trim(); MU_ENTRIES_FETCH(false); },400); }
+function MU_ENTRY_SUM(docId){ return _muEntriesCurrentList.find(function(x){ return x._docId===String(docId); }); }
+function MU_ENTRY_SHOW(docId){ MAT_BILL_FULL(docId, MU_ENTRY_SUM(docId)).then(function(b){ MAT_SHOW_INVOICE(b,'Invoice'); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
+function MU_ENTRY_PDF(docId){ MAT_BILL_FULL(docId, MU_ENTRY_SUM(docId)).then(function(b){ MAT_PDF_DIRECT(b); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
 
 function RENDER_MU_ENTRIES(bills){
   document.getElementById('mu-entries-loading').style.display = 'none';
   document.getElementById('mu-entries-wrap').style.display = 'block';
   var tbody = document.getElementById('mu-entries-table');
   if(bills.length===0){
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">This user has not saved any entries yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">'+(_muEntriesQuery?'No entry matches “'+MAT_ESC(_muEntriesQuery)+'”':'This user has not saved any entries yet')+'</td></tr>';
     return;
   }
   tbody.innerHTML = bills.map(function(b,i){
@@ -10691,13 +10718,13 @@ function RENDER_MU_ENTRIES(bills){
       + '<td>'+(b.workCode||'—')+'</td>'
       + '<td style="font-size:10px">'+savedOn+'</td>'
       + '<td style="display:flex;gap:6px">'
-      +   '<button class="btn-icon" title="View / Print invoice" onclick="MAT_SHOW_INVOICE(_muEntriesCurrentList.find(function(x){return x._docId===\''+b._docId+'\';}),\'Invoice\')">🖨️</button>'
-      +   '<button class="btn-icon" title="Download PDF" onclick="MAT_PDF_DIRECT(_muEntriesCurrentList.find(function(x){return x._docId===\''+b._docId+'\';}))">⬇️</button>'
+      +   '<button class="btn-icon" title="View / Print invoice" onclick="MU_ENTRY_SHOW(\''+b._docId+'\')">🖨️</button>'
+      +   '<button class="btn-icon" title="Download PDF" onclick="MU_ENTRY_PDF(\''+b._docId+'\')">⬇️</button>'
       +   '<button class="btn-icon" title="Edit" onclick="OPEN_MU_ENTRY_EDIT(\''+b._docId+'\')">✏️</button>'
       +   '<button class="btn-icon" title="Delete" onclick="DELETE_MU_ENTRY(\''+b._docId+'\')">🗑️</button>'
       + '</td>'
       + '</tr>';
-  }).join('');
+  }).join('') + (_muEntriesHasMore ? '<tr><td colspan="7" style="text-align:center;padding:10px"><button class="btn btn-ghost btn-sm" onclick="MU_ENTRIES_FETCH(true)">⬇️ Load more</button></td></tr>' : '');
 }
 
 function OPEN_MU_ENTRY_EDIT(docId){
@@ -10730,8 +10757,9 @@ function SAVE_MU_ENTRY_EDIT(){
     SHOW_TOAST(g.fee>0?('✅ Payment of ₹'+g.fee+' received — entry updated.'):'The entry has been updated.');
     LOG_ACTIVITY('✏️ Material bill edited by admin: '+docId+(g.fee>0?' (fee ₹'+g.fee+')':''));
     CLOSE_MODAL('modal-mu-entry-edit');
-    if(_muEntriesCurrentUser) VIEW_MATERIAL_ENTRIES(_muEntriesCurrentUser._docId);
-    MAT_SHOW_INVOICE(Object.assign({},old,data),'Updated invoice');
+    delete _BILL_FULL[String(docId)];
+    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(false);
+    MAT_BILL_FULL(docId, Object.assign({},old,data)).then(function(b){ MAT_SHOW_INVOICE(b,'Updated invoice'); }).catch(function(){});
   }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
 }
 
@@ -10863,7 +10891,8 @@ function DELETE_MU_ENTRY(docId){
   apiFetch('/material/bills/'+encodeURIComponent(docId),{method:'DELETE'}).then(function(){
     SHOW_TOAST('🗑️ The entry has been deleted.');
     LOG_ACTIVITY('🗑️ Material bill deleted by admin: '+docId);
-    if(_muEntriesCurrentUser) VIEW_MATERIAL_ENTRIES(_muEntriesCurrentUser._docId);
+    delete _BILL_FULL[String(docId)];
+    if(_muEntriesCurrentUser) MU_ENTRIES_FETCH(false);
   }).catch(function(e){ SHOW_TOAST('❌ Failed: '+e.message); });
 }
 
@@ -16875,23 +16904,28 @@ function BILL_CALC(b){
   var tds=(b.tdsApplicable==='yes')?taxable*0.02:0, royalty=parseFloat(b.royaltyInput)||0;
   return { taxable:taxable, gst:gst, tds:tds, royalty:royalty, grand:Math.round(taxable+gst+royalty-tds) };
 }
-function BILLS_LOAD(){
-  if(window.MAT_REFRESH) MAT_REFRESH();
-  apiFetch('/admin/material/bills').then(function(list){      // ALL invoices of ALL users, straight from the database
-    BILLS=(list||[]).map(function(x){ return Object.assign({_docId:String(x.id)},x); });
-    BILLS.sort(function(a,b){ return String(b.savedAt||'')<String(a.savedAt||'')?-1:1; });
+var _billsQuery = '', _billsTimer = null, _billsSeq = 0, _billsHasMore = false;
+function BILLS_LOAD(append){
+  if(window.MAT_REFRESH && !materialUsersCache.length) MAT_REFRESH();
+  var seq=++_billsSeq, off=(append===true)?BILLS.length:0, qEl=document.getElementById('bills-search');
+  if(append!==true) _billsQuery=qEl?String(qEl.value||'').trim():'';
+  // light summaries, 50 at a time, searched inside the database — never "all invoices of all users" in one go
+  apiFetch('/admin/material/bills?summary=1&limit=50&offset='+off+(_billsQuery?'&q='+encodeURIComponent(_billsQuery):'')).then(function(list){
+    if(seq!==_billsSeq) return;
+    var rows=(list||[]).map(function(x){ return Object.assign({_docId:String(x.id)},x); });
+    _billsHasMore = rows.length>=50;
+    BILLS = (append===true) ? BILLS.concat(rows) : rows;
     BILLS_RENDER();
   }).catch(function(e){ var t=document.getElementById('bills-tbody'); if(t && !BILLS.length) t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:#f87171">'+MAT_ERR_HTML(e)+'</td></tr>'; });
 }
-// Live view: new / changed invoices appear without any manual refresh, whoever saved them
-setInterval(function(){ var p=document.getElementById('page-bills'); if(p&&p.classList.contains('active')&&!document.hidden) BILLS_LOAD(); },15000);
+function BILLS_SEARCH(){ clearTimeout(_billsTimer); _billsTimer=setTimeout(function(){ BILLS_LOAD(); },400); }
+// (the old 15-second auto-refresh is gone — use ↻ Refresh)
 function BILLS_RENDER(){
   var t=document.getElementById('bills-tbody'); if(!t) return;
-  var q=(document.getElementById('bills-search').value||'').toLowerCase();
-  var list=BILLS.filter(function(b){ return !q||[b.billNo,b.ownerUserId,b.businessName,b.workCode,b.vendorName,b.customerName].join(' ').toLowerCase().indexOf(q)>=0; });
+  var list=BILLS;
   if(!list.length){ t.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">No invoices found</td></tr>'; return; }
   t.innerHTML=list.map(function(b,i){
-    var id=b._docId, tot=BILL_CALC(b).grand;
+    var id=b._docId, tot=(b.total!=null&&b.summary)?Number(b.total):BILL_CALC(b).grand;
     return '<tr><td>'+(i+1)+'</td><td><b>'+MAT_ESC(b.billNo||'—')+'</b></td><td>'+MAT_ESC(b.billDate||'—')+'</td>'
      +'<td style="font-family:monospace;color:#c9a227">'+MAT_ESC(b.ownerUserId||'—')+(b.ownerName?'<div style="font-family:inherit;font-size:10px;color:var(--text-muted)">'+MAT_ESC(b.ownerName)+'</div>':'')+'</td><td>'+MAT_ESC(b.businessName||b.vendorName||'—')+'</td><td>'+MAT_ESC(b.workCode||'—')+'</td>'
      +'<td style="text-align:right">'+tot.toLocaleString('en-IN',{minimumFractionDigits:2})+'</td><td style="font-size:10px">'+MAT_ESC(b.savedAt?new Date(b.savedAt).toLocaleString('en-IN'):'—')+'</td>'
@@ -16899,19 +16933,24 @@ function BILLS_RENDER(){
      +'<button class="btn-icon" title="Download PDF" onclick="BILLS_PDF(\''+id+'\')">⬇️</button>'
      +'<button class="btn-icon" title="Edit" onclick="BILLS_EDIT(\''+id+'\')">✏️</button>'
      +'<button class="btn-icon" title="Delete" style="color:#c0262d" onclick="BILLS_DELETE(\''+id+'\')">🗑️</button></td></tr>';
-  }).join('');
+  }).join('') + (_billsHasMore ? '<tr><td colspan="9" style="text-align:center;padding:12px"><button class="btn btn-ghost btn-sm" onclick="BILLS_LOAD(true)">⬇️ Load more</button></td></tr>' : '');
 }
-function BILLS_FIND(id){ return BILLS.find(function(x){ return x._docId===String(id); }); }
-function BILLS_PDF(id){ var b=BILLS_FIND(id); if(b) MAT_PDF_DIRECT(b); }
-function BILLS_VIEW(id){ var b=BILLS_FIND(id); if(b) MAT_SHOW_INVOICE(b,'Invoice '+(b.billNo||'')); }
+function BILLS_FIND(id){ return _BILL_FULL[String(id)] || BILLS.find(function(x){ return x._docId===String(id); }); }
+function BILLS_SUM(id){ return BILLS.find(function(x){ return x._docId===String(id); }); }
+function BILLS_PDF(id){ MAT_BILL_FULL(id, BILLS_SUM(id)).then(function(b){ MAT_PDF_DIRECT(b); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
+function BILLS_VIEW(id){ MAT_BILL_FULL(id, BILLS_SUM(id)).then(function(b){ MAT_SHOW_INVOICE(b,'Invoice '+(b.billNo||'')); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); }); }
 function BILLS_DELETE(id){
   var b=BILLS_FIND(id); if(!b) return;
   if(!confirm('Permanently delete invoice '+(b.billNo||'')+' of '+(b.ownerUserId||'')+'? This cannot be undone.')) return;
-  apiFetch('/material/bills/'+encodeURIComponent(id),{method:'DELETE'}).then(function(){ SHOW_TOAST('🗑️ Invoice deleted.'); LOG_ACTIVITY('🗑️ Invoice deleted: '+b.billNo); BILLS_LOAD(); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
+  apiFetch('/material/bills/'+encodeURIComponent(id),{method:'DELETE'}).then(function(){ SHOW_TOAST('🗑️ Invoice deleted.'); LOG_ACTIVITY('🗑️ Invoice deleted: '+b.billNo); delete _BILL_FULL[String(id)]; BILLS_LOAD(); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });
 }
 
 var BF_TEXT=[['billNo','Bill No *'],['workCode','Work Code'],['customerName','Work Name'],['businessName','Business / Firm Name *'],['vendorName','Vendor / Customer Name'],['vendorAddress','Address'],['vendorGstin','GSTIN'],['vendorMobile','Mobile'],['stateField','State'],['districtField','District'],['blockField','Block'],['panchayatField','Panchayat'],['fyField','Financial Year'],['transportMode','Transport Mode'],['vehicleNo','Vehicle No'],['bankName','Bank Name'],['acNo','A/C No'],['ifsc','IFSC'],['branchName','Branch']];
 function BILLS_EDIT(id){
+  if(!id) return BILLS_EDIT_OPEN('');
+  MAT_BILL_FULL(id, BILLS_SUM(id)).then(function(){ BILLS_EDIT_OPEN(id); }).catch(function(e){ SHOW_TOAST('❌ '+e.message); });   // the complete bill is fetched only now, when it is opened for editing
+}
+function BILLS_EDIT_OPEN(id){
   var old=id?BILLS_FIND(id):null; if(id&&!old) return;
   var open=function(){
     var users=materialUsersCache;
@@ -16982,6 +17021,7 @@ function BF_SAVE(id){
     document.getElementById('bf-modal').remove();
     SHOW_TOAST(gate.fee>0?('✅ Payment of ₹'+gate.fee+' received — invoice saved.'):'✅ Invoice saved.');
     LOG_ACTIVITY('🧾 Invoice '+(old?'updated':'added')+': '+data.billNo+' ['+owner+']'+(gate.fee>0?' fee ₹'+gate.fee:''));
+    if(id) delete _BILL_FULL[String(id)];
     BILLS_LOAD();
     MAT_SHOW_INVOICE(merged,old?'Updated invoice':'Invoice saved');
   }).catch(function(e){ btn.disabled=false; fail('❌ '+e.message); });

@@ -503,13 +503,23 @@ function install(app, ctx) {
 
     // ── List / instant search by Bill No.  GET /api/dv/invoices?q=50
     app.get('/api/dv/invoices', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
-        const q = cleanText(req.query.q, 40);
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-        const rows = q
-            ? await dbq("SELECT " + SEL_LIST + " FROM dv_invoices WHERE owner_user_id = ? AND bill_no ILIKE ? ESCAPE '\\' ORDER BY (LOWER(bill_no) = LOWER(?)) DESC, invoice_date DESC, id DESC LIMIT " + limit,
-                [req.dvUser.userId, '%' + escapeLike(q) + '%', q])
-            : await dbq("SELECT " + SEL_LIST + " FROM dv_invoices WHERE owner_user_id = ? ORDER BY invoice_date DESC, id DESC LIMIT " + limit, [req.dvUser.userId]);
-        res.json(rows.map(r => rowOut(r, false)));
+        // 🪶 Low-egress: the search runs inside Postgres (Bill No., Date or Client name) and only matches leave the database.
+        //    ?full=1 returns the complete bills (items etc., max 20) so Edit / Print / PDF need no further call; default is the light list.
+        const q = cleanText(req.query.q, 40).toLowerCase().replace(/[\/.]/g, '-');
+        const full = req.query.full === '1' || req.query.full === 'true';
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || (full ? 20 : 50), 1), full ? 20 : 100);
+        const where = ['owner_user_id = ?'], params = [req.dvUser.userId];
+        q.split(' ').filter(Boolean).slice(0, 5).forEach(t => {
+            where.push("lower(concat_ws(' | ', bill_no, customer_name, to_char(invoice_date,'YYYY-MM-DD'), to_char(invoice_date,'DD-MM-YYYY'), to_char(invoice_date,'FMDD-FMMM-YYYY'))) LIKE ? ESCAPE '\\'");
+            params.push('%' + escapeLike(t) + '%');
+        });
+        const rows = await dbq("SELECT " + (full ? SEL_FULL : SEL_LIST) + " FROM dv_invoices WHERE " + where.join(' AND ') + " ORDER BY invoice_date DESC, id DESC LIMIT " + limit, params);
+        res.json(rows.map(r => rowOut(r, full)));
+    }));
+    // just the number of saved bills (for the "Saved Bills (n)" badge)
+    app.get('/api/dv/invoices/count', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
+        const rows = await dbq("SELECT COUNT(*) AS n FROM dv_invoices WHERE owner_user_id = ?", [req.dvUser.userId]);
+        res.json({ count: Number(rows[0] && rows[0].n) || 0 });
     }));
 
     // Material names + HSN/SAC from the Super-Admin Master (read-only; used to auto-fill the HSN/SAC column)

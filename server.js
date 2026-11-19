@@ -7461,39 +7461,96 @@ app.post('/api/material/bills', requireActiveMaterialUser, asyncRoute(async (req
         }
     });
 }));
-app.get('/api/material/bills', noStore, (req, res) => {
-    // 🔒 Login mandatory. Material user → ONLY own invoices (ownerUserId in the URL is ignored).
-    //    Admin → all invoices, or one user's invoices with ?ownerUserId=
-    const auth = getAuthUser(req);
-    if (!auth) return res.status(401).json({ error: 'Your session is not active. Please log in again.' });
-    const isAdmin = String(auth.role || '').toLowerCase() === 'admin';
-    let ownerUserId = req.query.ownerUserId;
-    if (!isAdmin) {
-        if (auth.role !== 'material_user' || !auth.userId) return res.status(401).json({ error: 'Your session is not active. Please log in again.' });
-        ownerUserId = auth.userId;
+// ═════════════════════════════════════════════════════════════════
+// 🪶 LOW-EGRESS BILL READS — the database is never asked for "all bills" any more.
+//    • search (?q=) is done INSIDE Postgres, so only matching bills leave the database
+//    • ?summary=1 returns a few light fields per bill (no items / bank / signature data)
+//    • a single full bill is fetched on demand (GET /api/material/bills/:id)
+//    • limit / offset page every list (max 100)
+// ═════════════════════════════════════════════════════════════════
+const BILL_J = "(b.data::json)";
+const BILL_DATE = BILL_J + "->>'billDate'";
+const BILL_DATE_OK = BILL_DATE + " ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'";
+// Haystack that Bill No., Bill Date (ISO, dd-mm-yyyy, d-m-yyyy), Client / Work name and Vendor name are matched against
+const BILL_HAY = "lower(replace(replace(concat_ws(' | ', " + BILL_J + "->>'billNo', " + BILL_J + "->>'customerName', " + BILL_J + "->>'workName', " + BILL_J + "->>'businessName', " + BILL_J + "->>'vendorName', " + BILL_DATE + ", "
+    + "CASE WHEN " + BILL_DATE_OK + " THEN substr(" + BILL_DATE + ",9,2)||'-'||substr(" + BILL_DATE + ",6,2)||'-'||substr(" + BILL_DATE + ",1,4) END, "
+    + "CASE WHEN " + BILL_DATE_OK + " THEN ltrim(substr(" + BILL_DATE + ",9,2),'0')||'-'||ltrim(substr(" + BILL_DATE + ",6,2),'0')||'-'||substr(" + BILL_DATE + ",1,4) END), '/', '-'), '.', '-'))";
+// Same grand total the Super Admin screen computes in BILL_CALC(): taxable + GST + royalty − TDS(2% when applicable), rounded
+const BILL_NUM = (expr) => "(CASE WHEN " + expr + " ~ '^[0-9]+([.][0-9]+|)$' THEN (" + expr + ")::numeric ELSE 0 END)";
+const BILL_TOTAL = "(SELECT round(COALESCE(SUM(" + BILL_NUM("m.value->>'price'") + " * " + BILL_NUM("m.value->>'qty'") + " * (1 + " + BILL_NUM("m.value->>'gst'") + " / 100)), 0)"
+    + " + " + BILL_NUM(BILL_J + "->>'royaltyInput'")
+    + " - (CASE WHEN " + BILL_J + "->>'tdsApplicable' = 'yes' THEN COALESCE(SUM(" + BILL_NUM("m.value->>'price'") + " * " + BILL_NUM("m.value->>'qty'") + "), 0) * 0.02 ELSE 0 END))"
+    + " FROM jsonb_array_elements(CASE WHEN jsonb_typeof(b.data::jsonb->'materials') = 'array' THEN b.data::jsonb->'materials' ELSE '[]'::jsonb END) AS m(value))";
+const billNormQ = (v) => String(v == null ? '' : v).toLowerCase().replace(/[\/.]/g, '-').replace(/\s+/g, ' ').trim();
+function buildBillQuery(opt) {
+    const where = [], params = [];
+    if (opt.ownerUserId) { where.push('b.owneruserid = ?'); params.push(String(opt.ownerUserId)); }
+    billNormQ(opt.q).split(' ').filter(Boolean).slice(0, 6).forEach(t => { where.push("(" + BILL_HAY + ") LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%'); });
+    const limit = Math.min(Math.max(parseInt(opt.limit, 10) || (opt.summary ? 50 : 20), 1), 100);
+    const offset = Math.max(parseInt(opt.offset, 10) || 0, 0);
+    const cols = opt.summary
+        ? 'b.id, b.owneruserid AS "ownerUserId", b.savedAt AS "savedAt", ' + BILL_J + "->>'billNo' AS \"billNo\", " + BILL_DATE + ' AS "billDate", ' + BILL_J + "->>'businessName' AS \"businessName\", "
+          + BILL_J + "->>'vendorName' AS \"vendorName\", " + BILL_J + "->>'customerName' AS \"customerName\", " + BILL_J + "->>'workName' AS \"workName\", " + BILL_J + "->>'workCode' AS \"workCode\", " + BILL_TOTAL + ' AS "total"'
+        : 'b.id, b.owneruserid AS "ownerUserId", b.savedAt AS "savedAt", b.data';
+    const sql = 'SELECT ' + cols + (opt.withOwner ? ', u.name AS owner_name, u.first_name AS o_first, u.middle_name AS o_middle, u.last_name AS o_last, u.state AS o_state, u.district AS o_district, u.block AS o_block, u.village AS o_village, u.pincode AS o_pin, u.mobile AS o_mobile' : '')
+        + ' FROM material_bills b' + (opt.withOwner ? ' LEFT JOIN material_users u ON u.userid = b.owneruserid' : '')
+        + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY b.savedAt DESC, b.id DESC LIMIT ' + limit + ' OFFSET ' + offset;
+    return { sql, params };
+}
+function billRowOut(r, summary) {
+    const ownerInfo = r.owner_name === undefined ? undefined : { firstName: r.o_first || '', middleName: r.o_middle || '', lastName: r.o_last || '', state: r.o_state || '', district: r.o_district || '', block: r.o_block || '', village: r.o_village || '', pincode: r.o_pin || '', mobile: r.o_mobile || '' };
+    const extra = ownerInfo ? { ownerName: r.owner_name || '', ownerInfo } : {};
+    if (summary) {
+        return Object.assign({ id: r.id, savedAt: r.savedAt, ownerUserId: r.ownerUserId || '', billNo: r.billNo || '', billDate: r.billDate || '', businessName: r.businessName || '', vendorName: r.vendorName || '',
+            customerName: r.customerName || '', workName: r.workName || '', workCode: r.workCode || '', total: Number(r.total) || 0, summary: true }, extra);
     }
-    const sql = ownerUserId ? 'SELECT * FROM material_bills WHERE owneruserid=? ORDER BY savedAt DESC' : 'SELECT * FROM material_bills ORDER BY savedAt DESC';
-    db.query(sql, ownerUserId ? [ownerUserId] : [], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
-        res.json((rows || []).map(r => {
-            const saved = r.savedAt || r.savedat;
-            try { return Object.assign(JSON.parse(r.data), { id: r.id, savedAt: saved, ownerUserId: r.owneruserid || r.ownerUserId || '' }); }
-            catch (e) { return { id: r.id, savedAt: saved }; }
-        }));
-    });
-});
-// 👑 SUPER ADMIN — every invoice in the database (with the owner's name). Reads Supabase directly; whether a
-//    material user is logged in, logged out or even deleted makes no difference to this list.
+    try { return Object.assign(JSON.parse(r.data), { id: r.id, savedAt: r.savedAt, ownerUserId: r.ownerUserId || '' }, extra); }
+    catch (e) { return Object.assign({ id: r.id, savedAt: r.savedAt, ownerUserId: r.ownerUserId || '' }, extra); }
+}
+// 🔒 who may read which owner's bills: a material user → only his own; admin → anyone's (optionally filtered with ?ownerUserId=)
+function billReadScope(req, res) {
+    const auth = getAuthUser(req);
+    if (!auth) { res.status(401).json({ error: 'Your session is not active. Please log in again.' }); return null; }
+    const isAdmin = String(auth.role || '').toLowerCase() === 'admin';
+    if (!isAdmin && (auth.role !== 'material_user' || !auth.userId)) { res.status(401).json({ error: 'Your session is not active. Please log in again.' }); return null; }
+    return { isAdmin, ownerUserId: isAdmin ? (req.query.ownerUserId || '') : auth.userId };
+}
+// list / search.  GET /api/material/bills?q=INV-5&limit=20   (add &summary=1 for the light list)
+app.get('/api/material/bills', noStore, asyncRoute(async (req, res) => {
+    const sc = billReadScope(req, res); if (!sc) return;
+    const summary = req.query.summary === '1' || req.query.summary === 'true';
+    const qb = buildBillQuery({ ownerUserId: sc.ownerUserId, q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, withOwner: sc.isAdmin });
+    const rows = await dbq(qb.sql, qb.params);
+    res.json(rows.map(r => billRowOut(r, summary)));
+}));
+// how many bills (for the "Saved Bills (n)" badge) — one tiny number instead of the bills themselves
+app.get('/api/material/bills/count', noStore, asyncRoute(async (req, res) => {
+    const sc = billReadScope(req, res); if (!sc) return;
+    const rows = sc.ownerUserId ? await dbq('SELECT COUNT(*) AS n FROM material_bills WHERE owneruserid = ?', [sc.ownerUserId]) : await dbq('SELECT COUNT(*) AS n FROM material_bills');
+    res.json({ count: Number(rows[0] && rows[0].n) || 0 });
+}));
+// does this Bill No. already exist for the user?  (duplicate check without downloading any bill)
+app.get('/api/material/bills/exists', noStore, asyncRoute(async (req, res) => {
+    const sc = billReadScope(req, res); if (!sc) return;
+    const no = cleanText(req.query.billNo, 100).toLowerCase();
+    if (!no || !sc.ownerUserId) return res.json({ exists: false });
+    const rows = await dbq("SELECT id FROM material_bills b WHERE b.owneruserid = ? AND lower(btrim(" + BILL_J + "->>'billNo')) = ? AND b.id <> ? LIMIT 1", [sc.ownerUserId, no, parseInt(req.query.excludeId, 10) || 0]);
+    res.json({ exists: rows.length > 0 });
+}));
+// one complete bill, only when it is really needed (view / edit / print / PDF)
+app.get('/api/material/bills/:id', noStore, asyncRoute(async (req, res) => {
+    const sc = billReadScope(req, res); if (!sc) return;
+    const rows = await dbq('SELECT b.id, b.owneruserid AS "ownerUserId", b.savedAt AS "savedAt", b.data FROM material_bills b WHERE b.id = ?' + (sc.isAdmin ? '' : ' AND b.owneruserid = ?'), sc.isAdmin ? [parseInt(req.params.id, 10) || 0] : [parseInt(req.params.id, 10) || 0, sc.ownerUserId]);
+    if (!rows.length) return res.status(404).json({ error: 'Invoice not found.' });
+    res.json(billRowOut(rows[0], false));
+}));
+// 👑 SUPER ADMIN — invoices of all users (with the owner's details). Summary + search + paging, never "everything at once".
+//    Reads Supabase directly; a material user being logged in, logged out or even deleted makes no difference.
 app.get('/api/admin/material/bills', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-    const rows = await dbq('SELECT b.*, u.name AS owner_name, u.first_name AS o_first, u.middle_name AS o_middle, u.last_name AS o_last, u.state AS o_state, u.district AS o_district, u.block AS o_block, u.village AS o_village, u.pincode AS o_pin, u.mobile AS o_mobile FROM material_bills b LEFT JOIN material_users u ON u.userid = b.owneruserid ORDER BY b.savedAt DESC');
-    res.json(rows.map(r => {
-        const saved = r.savedAt || r.savedat;
-        const owner = r.owneruserid || r.ownerUserId || '';
-        // registered owner (split name + State / District / Block / Village / PIN) so Super Admin can view / print it with the invoice
-        const ownerInfo = { firstName: r.o_first || '', middleName: r.o_middle || '', lastName: r.o_last || '', state: r.o_state || '', district: r.o_district || '', block: r.o_block || '', village: r.o_village || '', pincode: r.o_pin || '', mobile: r.o_mobile || '' };
-        try { return Object.assign(JSON.parse(r.data), { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '', ownerInfo }); }
-        catch (e) { return { id: r.id, savedAt: saved, ownerUserId: owner, ownerName: r.owner_name || '', ownerInfo }; }
-    }));
+    const summary = req.query.summary === '1' || req.query.summary === 'true';
+    const qb = buildBillQuery({ ownerUserId: req.query.ownerUserId || '', q: cleanText(req.query.q, 80), summary, limit: req.query.limit, offset: req.query.offset, withOwner: true });
+    const rows = await dbq(qb.sql, qb.params);
+    res.json(rows.map(r => billRowOut(r, summary)));
 }));
 
 app.put('/api/material/bills/:id', requireActiveMaterialUser, (req, res) => {
