@@ -3614,7 +3614,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card">
             <div class="tbl-wrap">
               <table>
-                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Village / Panchayat</th><th>State</th><th>District</th><th>Block</th><th>Pin Code</th><th>Mobile</th><th>Aadhaar</th><th>Session</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>#</th><th>Photo</th><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Block</th><th>Mobile</th><th>Aadhaar</th><th>Session</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody id="material-users-table"></tbody>
               </table>
             </div>
@@ -10614,7 +10614,7 @@ function RENDER_MATERIAL_USERS(filter){
   var tbody=document.getElementById('material-users-table');
   if(!tbody) return;
   if(!list.length){
-    tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--text-muted)">No material users found</td></tr>';
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-muted)">No material users found</td></tr>';
     return;
   }
   tbody.innerHTML=list.map(function(u,i){
@@ -10625,11 +10625,7 @@ function RENDER_MATERIAL_USERS(filter){
       +'<td>'+MAT_PHOTO(u,34,'linear-gradient(135deg,#A32D2D,#e04444)')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+MAT_ESC(u.userId||'—')+'</td>'
       +'<td>'+MAT_ESC(u.name||'—')+'</td>'
-      +'<td>'+MAT_ESC(u.village||'—')+'</td>'
-      +'<td>'+MAT_ESC(u.state||'—')+'</td>'
-      +'<td>'+MAT_ESC(u.district||'—')+'</td>'
       +'<td>'+MAT_ESC(u.block||'—')+'</td>'
-      +'<td style="font-family:\'JetBrains Mono\',monospace">'+MAT_ESC(u.pincode||'—')+'</td>'
       +'<td>'+MAT_ESC(u.mobile||'—')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-size:11px">'+MAT_ESC(u.aadhaarMasked&&u.aadhaar_last4?u.aadhaarMasked:'—')+'</td>'
       +'<td><select class="form-input form-select" style="padding:4px 6px;font-size:12px;min-width:92px" title="Invoice type for this user" onchange="SET_MU_VERSION(\''+id+'\',this)">'
