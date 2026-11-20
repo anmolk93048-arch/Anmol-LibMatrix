@@ -74,11 +74,11 @@ function cachedDbQuery(sql, params, cb) {
 }
 /* 🔎 SEO — the public site must never be sent as "noindex".
    Whatever sets it later (security.js headers, route-mask.js, a proxy rule), this wrapper rewrites any X-Robots-Tag that contains
-   noindex / none / nofollow to "index, follow" at the very moment the headers are written. API calls and the private /app/<token> portal
+   noindex / none / nofollow to "index, follow" at the very moment the headers are written. API calls and the private /portal/<token> portal
    links are left alone. It is registered first, so it sees every response. */
 app.use((req, res, next) => {
     const p = req.path || '/';
-    if (p.startsWith('/api/') || p.startsWith('/app/')) return next();
+    if (p.startsWith('/api/') || /^\/(app|portal)\//.test(p)) return next();   // /portal/ = private-link prefix (set in route-mask.js; /app/ = legacy redirect)
     const fix = (v) => (/noindex|none|nofollow/i.test(String(v)) ? 'index, follow' : v);
     const origSet = res.setHeader;
     res.setHeader = function (k, v) { return origSet.call(this, k, String(k).toLowerCase() === 'x-robots-tag' ? fix(v) : v); };
@@ -94,7 +94,7 @@ app.use((req, res, next) => {
    Only the private per-session portal links are kept out. */
 app.get('/robots.txt', (req, res) => {
     res.set({ 'Cache-Control': 'public, max-age=3600', 'X-Robots-Tag': 'index, follow' });
-    res.type('text/plain').send('User-agent: *\nAllow: /\nDisallow: /app/\n\nSitemap: https://anmollibmatrix.in/sitemap.xml\n');
+    res.type('text/plain').send('User-agent: *\nAllow: /\nDisallow: /app/\nDisallow: /portal/\n\nSitemap: https://anmollibmatrix.in/sitemap.xml\n');
 });
 app.get('/sitemap.xml', (req, res) => {
     res.set({ 'Cache-Control': 'public, max-age=3600', 'X-Robots-Tag': 'index, follow' });
@@ -190,7 +190,7 @@ app.use(express.json({
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 // 🔒 HTTP-only session cookie bridge + CSRF check + login rate-limits + security headers
 security.install(app, { jwt: jwt, getSecret: function () { return JWT_SECRET; }, isOriginAllowed: isOriginAllowed });
-// 🕶️ ROUTE MASKING — portal pages live only at encrypted per-session links (/app/<token>); every predictable path
+// 🕶️ ROUTE MASKING — portal pages live only at encrypted per-session links (/portal/<token>); every predictable path
 //    (/admin-login, /agent, /Admin_Login.html, /api/pages/admin-login …) answers 404. See route-mask.js.
 const routeMask = require('./route-mask').create({
     getSecret: function () { return JWT_SECRET; },
@@ -241,7 +241,7 @@ app.use(function (req, res, next) {
 // ══════════════════════════════════════════════════════════════════
 // ▲ VERCEL / ROUTE-MASK SESSION BRIDGE  (must stay BEFORE routeMask.guard so the guard cannot 404 it)
 //   1) /logout (GET) — clears the session cookie and sends the browser to the main page "/".
-//   2) /_am/bridge.js — tiny same-origin script that is injected into every masked page (/app/<token>):
+//   2) /_am/bridge.js — tiny same-origin script that is injected into every masked page (/portal/<token>):
 //        • after ANY call to /api/auth/logout it clears the local session and sends EVERY open tab
 //          (dashboard + portal tabs) back to the main page "/";
 //        • a link to another portal whose label says "login" opens in a NEW tab (dashboard stays open).

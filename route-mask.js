@@ -2,7 +2,7 @@
 /* Anmol LibMatrix — route masking.
  *
  *  Portal pages are no longer reachable at predictable paths. Each browser session gets its own set of
- *  encrypted, random-looking links:   /app/<66 hex chars>
+ *  encrypted, random-looking links:   /portal/<66 hex chars>
  *
  *  Token = AES-256-GCM( portalIndex | sessionId | expiry ) with a random 96-bit IV, so the same portal gets a
  *  different URL every time it is issued, nothing about the portal can be read from the string, and forged or
@@ -11,7 +11,7 @@
  *
  *  • Old paths (/admin-login, /agent, /Admin_Login.html, /api/pages/admin-login …) answer 404.
  *  • Only the public home page ("/") is a fixed URL; it hands out the links for the session.
- *  • Relative asset requests made from a masked page (/app/config.js …) are served from the site root,
+ *  • Relative asset requests made from a masked page (/portal/config.js …) are served from the site root,
  *    so the pages keep working unchanged. Portal HTML is never served through that path.
  *
  *  Honest limits: this hides and de-fingerprints the pages (scanners, bookmarks, shoulder-surfing, "guess /admin").
@@ -50,6 +50,7 @@ function resolveKey(s) {
     return ALIAS[t] || null;
 }
 
+const PREFIX = '/portal';          // private-link prefix (was /app). Old /app/<token> links are redirected here.
 const TOKEN_RE = /^[0-9a-f]{66}$/;
 const ASSET_EXT = /\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot|txt|xml|webmanifest|json|pdf)$/i;
 
@@ -83,7 +84,7 @@ function create(ctx) {
             return k ? { key: k, sid: Buffer.from(p.subarray(1, 9)) } : null;
         } catch (e) { return null; }
     }
-    const urlFor = function (portalKey, sid) { const t = issue(portalKey, sid); return t ? '/app/' + t : null; };
+    const urlFor = function (portalKey, sid) { const t = issue(portalKey, sid); return t ? PREFIX + '/' + t : null; };
     function mapFor(sid) { sid = sid || crypto.randomBytes(8); const m = {}; KEYS.forEach(function (k) { m[k] = urlFor(k, sid); }); return m; }
 
     // ── legacy-path guard ──
@@ -97,7 +98,7 @@ function create(ctx) {
         let name = null;
         if (seg.length === 1) name = seg[0];
         else if (seg.length === 3 && seg[0] === 'api' && seg[1] === 'pages') name = seg[2];
-        else if (seg.length === 2 && seg[0] === 'app') name = null;               // handled by the /app router
+        else if (seg.length === 2 && (seg[0] === 'portal' || seg[0] === 'app')) name = null;   // handled by the /portal (and legacy /app) router
         if (!name) return false;
         name = name.replace(/\.html?$/, '');
         return !!LEGACY[name];
@@ -127,10 +128,10 @@ function create(ctx) {
         if (!slug || !ctx.getDbPage) return cb(null, null);
         ctx.getDbPage(slug, function (err, buf) { if (err || !buf) return cb(err, null); buf = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf)); cb(null, { buf: buf, headEnd: headEndOf(buf) }); });
     }
-    function send(req, res, ent, pageName, sid) {
+    function send(req, res, ent, pageName, sid, isHome) {
         const inj = Buffer.from('<script>window.__ANMOL_NAV=' + JSON.stringify(mapFor(sid)) + ';window.__ANMOL_NAV_TS=' + Date.now() + ';window.__ANMOL_PAGE=' + JSON.stringify(pageName) + ';</script><script src="/nav-mask.js"></script><script src="/idle-guard.js"></script><script src="/anmol-ids.js"></script><script src="/anmol-recovery.js"></script>', 'utf8');
         res.status(200);
-        res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Pragma': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow, noarchive', 'Referrer-Policy': 'same-origin', 'Content-Length': String(ent.buf.length + inj.length) });
+        res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Pragma': 'no-cache', 'X-Robots-Tag': isHome ? 'index, follow' : 'noindex, nofollow, noarchive', 'Referrer-Policy': 'same-origin', 'Content-Length': String(ent.buf.length + inj.length) });
         if (req.method === 'HEAD') return res.end();
         res.write(ent.buf.subarray(0, ent.headEnd));
         res.write(inj);
@@ -144,7 +145,7 @@ function create(ctx) {
             res.set('Cache-Control', 'no-store').json({ map: mapFor(), ts: Date.now() });
         });
         // 🛟 ALWAYS-WORKS FALLBACK for the home-page buttons:  /go/<portal>  (e.g. /go/admin, /go/agent, /go/hrms, /go/invoice)
-        //    issues a brand-new encrypted /app/<66-hex> link on the spot and redirects to it, so a click can never fail just because the
+        //    issues a brand-new encrypted /portal/<66-hex> link on the spot and redirects to it, so a click can never fail just because the
         //    browser did not receive the link map. It does NOT re-open the legacy paths (/admin-login … still answer 404).
         app.get('/go/:key', function (req, res) {
             if (ctx.hitRateLimit && ctx.hitRateLimit('nav-go:' + (req.ip || ''), 120, 60 * 1000)) return res.status(429).send('Too many requests.');
@@ -154,8 +155,16 @@ function create(ctx) {
             res.redirect(302, u);
         });
         // the masked pages + the assets they request relatively
-        app.get('/app/*', function (req, res, next) {
+        // legacy /app/<token> links (already issued or cached by older pages) → same token under /portal/ (tokens are identical)
+        app.get('/app/*', function (req, res) {
+            const q = req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : '';
             const rest = req.path.slice(5);
+            if (!rest) return ctx.notFound(req, res);
+            res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' });
+            res.redirect(302, PREFIX + '/' + rest + q);
+        });
+        app.get(PREFIX + '/*', function (req, res, next) {
+            const rest = req.path.slice(PREFIX.length + 1);
             const seg = rest.split('/');
             if (seg.length === 1 && TOKEN_RE.test(seg[0])) {
                 const t = parse(seg[0]);
@@ -166,7 +175,7 @@ function create(ctx) {
                     send(req, res, ent, pg.page, t.sid);
                 });
             }
-            if (TOKEN_RE.test(seg[0])) seg.shift();                                // /app/<token>/asset.js (trailing-slash form)
+            if (TOKEN_RE.test(seg[0])) seg.shift();                                // /portal/<token>/asset.js (trailing-slash form)
             const name = seg.join('/');
             if (!name) return ctx.notFound(req, res);
             if (/^index(\.html)?$/i.test(name)) return res.redirect(302, '/' + (req.url.indexOf('?') >= 0 ? req.url.slice(req.url.indexOf('?')) : ''));
@@ -181,7 +190,7 @@ function create(ctx) {
     function sendHome(req, res, file) {
         load(file, null, function (err, ent) {
             if (err || !ent) return res.status(500).send('Home page unavailable.');
-            send(req, res, ent, 'index.html', null);
+            send(req, res, ent, 'index.html', null, true);   // the public home page must be indexable by Google; only the portal pages are noindex
         });
     }
     return { guard: guard, mount: mount, sendHome: sendHome, urlFor: urlFor, mapFor: mapFor, issue: issue, parse: parse, resolveKey: resolveKey, KEYS: KEYS };
