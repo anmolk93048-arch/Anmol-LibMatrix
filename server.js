@@ -72,6 +72,17 @@ function cachedDbQuery(sql, params, cb) {
         cb(err, rows);
     });
 }
+/* 🔎 SEO: the public home page is indexable — send an explicit index header (never noindex) and serve robots.txt / sitemap.xml */
+app.use((req, res, next) => {
+    if (req.path === '/' || req.path === '/index.html') res.set('X-Robots-Tag', 'index, follow');
+    next();
+});
+app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://anmollibmatrix.in/sitemap.xml\n');
+});
+app.get('/sitemap.xml', (req, res) => {
+    res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anmollibmatrix.in/</loc></url></urlset>\n');
+});
 app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') { _readCache.clear(); res.on('finish', () => _readCache.clear()); }
     next();
