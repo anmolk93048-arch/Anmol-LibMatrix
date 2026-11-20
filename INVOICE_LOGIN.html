@@ -481,6 +481,11 @@
   @media(prefers-reduced-motion:reduce){#registrationModalOverlay #regPanel,.login-card.registration-focus-highlight{animation:none!important;}}
 </style>
 
+<style id="login-pw-eye">
+  .pw-wrap{position:relative}
+  .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#64748b;cursor:pointer;border-radius:6px;padding:0}
+  .pw-eye:hover,.pw-eye:focus-visible{color:#0d1e3d;background:#eef2f7;outline:none}
+</style>
 <style id="saved-bills-pager">
   .sb-pager{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center;padding:8px 0 2px}
   .sb-pg{min-width:30px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#334155;font-size:12px;font-weight:700;cursor:pointer}
@@ -828,8 +833,14 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
 
       <div>
         <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile Number / Password <span class="text-red-600">*</span></label>
-        <input id="loginMobile" type="text" maxlength="15" autocomplete="tel"
-          class="w-full border border-gray-300 rounded px-3 py-2 text-sm" placeholder="Mobile Number or Admin Provided Password">
+        <div class="pw-wrap">
+          <input id="loginMobile" type="password" maxlength="15" autocomplete="current-password"
+            class="w-full border border-gray-300 rounded px-3 py-2 text-sm" style="width:100%;box-sizing:border-box;padding-right:42px" placeholder="Mobile Number or Admin Provided Password">
+          <button type="button" id="loginMobileEye" class="pw-eye" aria-label="Show password" aria-pressed="false" title="Show / hide">
+            <svg class="eye-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="login-recovery-links" aria-label="Account recovery">
@@ -4860,5 +4871,19 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
 </script>
 <script src="portal-shell.js"></script>
 <script src="gov-shell.js"></script>
+<script>
+(function(){ /* show / hide toggle for the Mobile Number / Password box (hidden by default) */
+  function init(){
+    var inp=document.getElementById('loginMobile'), b=document.getElementById('loginMobileEye'); if(!inp||!b) return;
+    b.addEventListener('click',function(){
+      var show=inp.type==='password'; inp.type=show?'text':'password';
+      b.setAttribute('aria-pressed',show?'true':'false'); b.setAttribute('aria-label',show?'Hide password':'Show password');
+      b.querySelector('.eye-on').style.display=show?'none':''; b.querySelector('.eye-off').style.display=show?'':'none';
+      inp.focus(); try{ var l=inp.value.length; inp.setSelectionRange(l,l); }catch(e){}
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+})();
+</script>
 </body>
 </html>
