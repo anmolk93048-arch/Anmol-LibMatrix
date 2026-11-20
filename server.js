@@ -72,16 +72,41 @@ function cachedDbQuery(sql, params, cb) {
         cb(err, rows);
     });
 }
-/* 🔎 SEO: the public home page is indexable — send an explicit index header (never noindex) and serve robots.txt / sitemap.xml */
+/* 🔎 SEO — the public site must never be sent as "noindex".
+   Whatever sets it later (security.js headers, route-mask.js, a proxy rule), this wrapper rewrites any X-Robots-Tag that contains
+   noindex / none / nofollow to "index, follow" at the very moment the headers are written. API calls and the private /app/<token> portal
+   links are left alone. It is registered first, so it sees every response. */
 app.use((req, res, next) => {
-    if (req.path === '/' || req.path === '/index.html') res.set('X-Robots-Tag', 'index, follow');
+    const p = req.path || '/';
+    if (p.startsWith('/api/') || p.startsWith('/app/')) return next();
+    const fix = (v) => (/noindex|none|nofollow/i.test(String(v)) ? 'index, follow' : v);
+    const origSet = res.setHeader;
+    res.setHeader = function (k, v) { return origSet.call(this, k, String(k).toLowerCase() === 'x-robots-tag' ? fix(v) : v); };
+    const origHead = res.writeHead;
+    res.writeHead = function () {
+        if (!res.headersSent) { const h = res.getHeader('X-Robots-Tag'); if (h !== undefined && /noindex|none|nofollow/i.test(String(h))) res.removeHeader('X-Robots-Tag'); }
+        return origHead.apply(this, arguments);
+    };
+    if (p === '/' || p === '/index.html') res.setHeader('X-Robots-Tag', 'index, follow');
     next();
 });
+/* robots.txt: everything public is crawlable (Googlebot must be able to load the page's scripts and /api/site-data to render it).
+   Only the private per-session portal links are kept out. */
 app.get('/robots.txt', (req, res) => {
-    res.type('text/plain').send('User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: https://anmollibmatrix.in/sitemap.xml\n');
+    res.set({ 'Cache-Control': 'public, max-age=3600', 'X-Robots-Tag': 'index, follow' });
+    res.type('text/plain').send('User-agent: *\nAllow: /\nDisallow: /app/\n\nSitemap: https://anmollibmatrix.in/sitemap.xml\n');
 });
 app.get('/sitemap.xml', (req, res) => {
-    res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anmollibmatrix.in/</loc></url></urlset>\n');
+    res.set({ 'Cache-Control': 'public, max-age=3600', 'X-Robots-Tag': 'index, follow' });
+    res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anmollibmatrix.in/</loc><changefreq>weekly</changefreq></url></urlset>\n');
+});
+/* /anmol-ids.js: serve the real file when it is in the deployment; otherwise a harmless empty script (200) instead of an error,
+   so Googlebot (and browsers) never get "Other error" for it. */
+app.get('/anmol-ids.js', (req, res) => {
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'index, follow' });
+    const f = findStaticFile('anmol-ids.js');
+    if (f) return res.sendFile(f);
+    res.send('/* anmol-ids.js */');
 });
 app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') { _readCache.clear(); res.on('finish', () => _readCache.clear()); }
