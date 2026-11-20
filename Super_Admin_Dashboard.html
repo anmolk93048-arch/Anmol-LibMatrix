@@ -150,6 +150,11 @@ const BACKEND_BLOB_KEYS = ['admin_profile_photos', 'settings', 'activity', 'noti
 const CLOUD_ROOT = 'shdl';
 const CloudDB = (function () {
   var ALIAS = { pending_registrations: 'customer_pending_registrations' };
+  /* No background polling (saves Supabase egress): run fn again only when the admin returns to this tab after 60 s+ */
+window.__onRevisit = window.__onRevisit || function(fn){
+  var last=Date.now(), go=function(){ if(document.hidden||Date.now()-last<60000) return; last=Date.now(); try{fn();}catch(e){} };
+  document.addEventListener('visibilitychange',go); window.addEventListener('focus',go);
+};
   var POLL_MS = 20000;
   function parse(path) {
     var p = String(path || '').replace(/^\/+/, '').split('/').filter(Boolean);
@@ -242,7 +247,7 @@ const CloudDB = (function () {
           }, function (e) { if (err) err(e); });
         }
         tick();
-        if (kindOf(P.key)) setInterval(function () { if (!document.hidden) tick(); }, POLL_MS);
+        if (kindOf(P.key)) window.__onRevisit(tick);
       },
       set: function (val, cb) { return done(applyOps([{ key: P.key, rest: P.rest, value: val === undefined ? null : val }]), cb); },
       remove: function (cb) { return done(applyOps([{ key: P.key, rest: P.rest, value: null }]), cb); },
@@ -277,7 +282,7 @@ function _pollCloudStatus() {
   });
 }
 _pollCloudStatus();
-setInterval(_pollCloudStatus, 10000);
+window.__onRevisit(_pollCloudStatus);
 
 // ══ LEGACY-DB SYNC HELPER ══
 // Ye helper localStorage ke saath legacy DB ko sync karta hai
@@ -359,7 +364,7 @@ const CloudSync = {
       }).catch(function(err){ console.warn('Students poll error:', err.message); });
     }
     _pull();
-    setInterval(_pull, 15000);
+    window.__onRevisit(_pull);
   },
   listenAttendance: function() {
     CloudDB.ref(CLOUD_ROOT + '/att_records').on('value', function(snap){
@@ -4160,7 +4165,7 @@ html,body,#admin-app{width:100%;min-width:0;}
             }).catch(function(err){ console.warn('Direct payments tracking poll error:', err.message); });
           }
           _pull();
-          if (!_DP_TRACKING_POLL_STARTED) { _DP_TRACKING_POLL_STARTED = true; setInterval(_pull, 8000); }
+          if (!_DP_TRACKING_POLL_STARTED) { _DP_TRACKING_POLL_STARTED = true; window.__onRevisit(_pull); }
         }
         </script>
         <div class="modal-overlay" id="modal-wd-reject">
@@ -7072,7 +7077,7 @@ function REFRESH_DASH(){
 
   // Refresh the real agent records and activity-log blob from the configured backend every 15 seconds.
   if(!window._ANMOL_AGENT_DASH_TIMER){
-    window._ANMOL_AGENT_DASH_TIMER=setInterval(function(){
+    window._ANMOL_AGENT_DASH_TIMER=true; window.__onRevisit(function(){
       var pg=document.getElementById('page-dashboard');
       if(!pg || !pg.classList.contains('active') || window.__ANMOL_DASH_SYNCING) return;
       if(typeof CloudSync==='undefined' || typeof CloudSync.pull!=='function'){ REFRESH_DASH(); return; }
@@ -7087,7 +7092,7 @@ function REFRESH_DASH(){
       };
       try{ CloudSync.pull('agents',done); }catch(e){ done(); }
       try{ CloudSync.pull('activity',done); }catch(e){ done(); }
-    },15000);
+    });
   }
 }
 
@@ -9679,7 +9684,7 @@ function RENDER_WITHDRAWALS(){
     });
   }
   _pull();
-  setInterval(_pull, 8000);
+  window.__onRevisit(_pull);
 }
 
 function MARK_WITHDRAWAL_PAID(id){
@@ -14287,6 +14292,7 @@ var AUTO_LOGOUT_ADMIN = (function(){
     watchTimer = setInterval(function(){
       if (!active) return;
       if (tokenExpired()) { try{ SHOW_TOAST('⏰ Your session has expired. Please log in again.'); }catch(e){} return forceLogout(); }
+      if (document.hidden || (watchN = (watchN||0)+1) % 5) return;   // server check only every 5th minute, and never in a hidden tab
       try{ apiFetch('/auth/me').catch(function(e){ if (/session expired|valid login/i.test((e && e.message) || '')) forceLogout(); }); }catch(e){}
     }, 60000);
   }

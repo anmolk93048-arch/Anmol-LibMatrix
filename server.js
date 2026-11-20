@@ -58,6 +58,24 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
+
+/* 🪶 LOW-EGRESS read cache — repeated reads of the same key/value rows (public site data, students/agents/staff blobs) are served from memory for
+   30 s instead of pulling the whole row from Supabase every time. Any write request (POST/PUT/PATCH/DELETE) clears it before and after it runs,
+   so admins always see their own changes straight away. */
+const _readCache = new Map();
+const READ_CACHE_MS = 30000;
+function cachedDbQuery(sql, params, cb) {
+    const k = sql + '|' + JSON.stringify(params || []), hit = _readCache.get(k);
+    if (hit && Date.now() - hit.t < READ_CACHE_MS) return cb(null, hit.rows);
+    db.query(sql, params || [], (err, rows) => {
+        if (!err) { if (_readCache.size > 300) _readCache.clear(); _readCache.set(k, { t: Date.now(), rows }); }
+        cb(err, rows);
+    });
+}
+app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') { _readCache.clear(); res.on('finish', () => _readCache.clear()); }
+    next();
+});
 const PORT = process.env.PORT || 3000;
 // ▲ Vercel serverless: no long-running listener / timers (see the bottom of this file). Set automatically by Vercel.
 const IS_VERCEL = !!(process.env.VERCEL || process.env.VERCEL_ENV);
@@ -2854,7 +2872,7 @@ const BLOB_KEYS = ['admin_profile_photos', 'settings', 'activity', 'notices', 'm
     'material_categories'];
 
 function kvGet(table, key, res, wrapValue, req) {
-    db.query(`SELECT value FROM ${table} WHERE \`key\` = ?`, [key], (err, rows) => {
+    cachedDbQuery(`SELECT value FROM ${table} WHERE \`key\` = ?`, [key], (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         if (!rows || !rows.length) return res.json(wrapValue ? null : null);
         let parsed = null;
@@ -4191,7 +4209,8 @@ app.post('/api/site-data/:key', (req, res) => {
 });
 app.get('/api/site-data/:key', (req, res) => {
     if (PRIVATE_SITE_KEYS.includes(req.params.key)) return res.status(404).json(null);
-    db.query('SELECT value FROM kv_site_data WHERE `key` = ?', [req.params.key], (err, rows) => {
+    res.set('Cache-Control', 'public, max-age=30');
+    cachedDbQuery('SELECT value FROM kv_site_data WHERE `key` = ?', [req.params.key], (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         if (!rows || !rows.length) return res.json(null);
         let parsed = null;
@@ -4207,7 +4226,8 @@ app.get('/api/site-data/:key', (req, res) => {
 //   agli baar yeh route khud-ba-khud updated value bhej dega — koi extra
 //   kaam nahi karna padta.
 app.get('/api/site-data', (req, res) => {
-    db.query('SELECT `key`, value FROM kv_site_data', (err, rows) => {
+    res.set('Cache-Control', 'public, max-age=30');
+    cachedDbQuery('SELECT `key`, value FROM kv_site_data', [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         const out = {};
         (rows || []).forEach(r => {
