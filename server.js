@@ -4909,10 +4909,9 @@ const wa = (function () {
 //   Adding a new portal needs NO new code: call  sendLoginInfo(mobile, { portal: 'newportal', ... })  and put
 //   PORTAL_URL_NEWPORTAL=https://newportal.example.com in .env — the link in the message is resolved from that variable.
 //
-//   Transport (WA_PROVIDER):
-//     meta      – Meta WhatsApp Cloud API directly   (WA_ACCESS_TOKEN + WA_PHONE_NUMBER_ID)
-//     fast2sms  – Fast2SMS WhatsApp gateway (same Meta payload)  (FAST2SMS_API_KEY + FAST2SMS_WA_PHONE_NUMBER_ID)
-//     (unset → "meta" when its credentials exist, otherwise "fast2sms" when its credentials exist)
+//   Transport: Meta WhatsApp Cloud API only — WHATSAPP_PHONE_NUMBER_ID + WHATSAPP_ACCESS_TOKEN (older WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN still work).
+//     Fast2SMS is no longer used for WhatsApp; its env vars may stay set and are ignored here.
+//   Functions: sendWhatsAppText(mobile, text) · sendOtpWhatsApp(mobile, otp) · sendCredentialsWhatsApp(mobile, {name,userId,password,portal,link})
 //   OTPs / passwords are never logged.
 // ═══════════════════════════════════════════════════════════════════════════
 const https = require('https');
@@ -4925,11 +4924,9 @@ const clean = (v) => String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').repla
 
 // ── configuration (re-read on every call so a changed Environment value needs no code change) ─────────────
 function config() {
-    const meta = { token: env('WA_ACCESS_TOKEN'), phoneId: env('WA_PHONE_NUMBER_ID'), version: env('WA_API_VERSION', 'v21.0'), base: env('WA_API_BASE', 'https://graph.facebook.com') };
+    const meta = { token: env('WHATSAPP_ACCESS_TOKEN', env('WA_ACCESS_TOKEN')), phoneId: env('WHATSAPP_PHONE_NUMBER_ID', env('WA_PHONE_NUMBER_ID')), version: env('WA_API_VERSION', 'v21.0'), base: env('WA_API_BASE', 'https://graph.facebook.com') };
     const f2s = { key: env('FAST2SMS_API_KEY'), phoneId: env('FAST2SMS_WA_PHONE_NUMBER_ID'), version: env('FAST2SMS_WA_VERSION', 'v26.0'), base: env('FAST2SMS_WA_URL', 'https://www.fast2sms.com/dev/whatsapp') };
-    const metaOk = !!(meta.token && meta.phoneId), f2sOk = !!(f2s.key && f2s.phoneId);
-    let provider = env('WA_PROVIDER').toLowerCase();
-    if (provider !== 'meta' && provider !== 'fast2sms') provider = metaOk ? 'meta' : (f2sOk ? 'fast2sms' : 'meta');
+    const provider = 'meta';   // Meta WhatsApp Cloud API only — Fast2SMS is no longer used for WhatsApp (its env vars may stay set, they are ignored)
     return {
         provider, meta, f2s,
         enabled: env('WA_ENABLED', env('WA_OTP_ENABLED', 'true')).toLowerCase() !== 'false',
@@ -4948,12 +4945,11 @@ function config() {
 }
 function isConfigured() {
     const c = config();
-    return c.enabled && (c.provider === 'fast2sms' ? !!(c.f2s.key && c.f2s.phoneId) : !!(c.meta.token && c.meta.phoneId));
+    return c.enabled && !!(c.meta.token && c.meta.phoneId);
 }
 function missingConfig() {
     const c = config(), miss = [];
-    if (c.provider === 'fast2sms') { if (!c.f2s.key) miss.push('FAST2SMS_API_KEY'); if (!c.f2s.phoneId) miss.push('FAST2SMS_WA_PHONE_NUMBER_ID'); }
-    else { if (!c.meta.token) miss.push('WA_ACCESS_TOKEN'); if (!c.meta.phoneId) miss.push('WA_PHONE_NUMBER_ID'); }
+    if (!c.meta.token) miss.push('WHATSAPP_ACCESS_TOKEN'); if (!c.meta.phoneId) miss.push('WHATSAPP_PHONE_NUMBER_ID');
     return miss;
 }
 // Safe-to-show summary for diagnostics (no secrets).
@@ -5000,32 +4996,42 @@ async function sendTemplate(mobile, templateName, bodyParams, buttonParam, langO
     if (buttonParam != null) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(buttonParam) }] });
     const body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.cc + num, type: 'template',
         template: { name: templateName, language: { code: langOverride || c.lang }, components } };
-    let url, headers;
-    if (c.provider === 'fast2sms') {
-        url = c.f2s.base.replace(/\/$/, '') + '/' + c.f2s.version + '/' + encodeURIComponent(c.f2s.phoneId) + '/messages';
-        headers = { Authorization: c.f2s.key };
-    } else {
-        url = c.meta.base.replace(/\/$/, '') + '/' + c.meta.version + '/' + encodeURIComponent(c.meta.phoneId) + '/messages';
-        headers = { Authorization: 'Bearer ' + c.meta.token };
-    }
-    console.log('[whatsapp] → ' + c.provider + ' template=' + templateName + ' mobile=XXXXXX' + num.slice(-4));   // never the OTP / password
-    const r = await postJson(url, headers, body, c.timeoutMs);
+    return deliver(c, body, 'template=' + templateName);
+}
+
+// Shared Cloud API call: POST /{version}/{WHATSAPP_PHONE_NUMBER_ID}/messages with the Bearer WHATSAPP_ACCESS_TOKEN.
+async function deliver(c, body, label) {
+    const url = c.meta.base.replace(/\/$/, '') + '/' + c.meta.version + '/' + encodeURIComponent(c.meta.phoneId) + '/messages';
+    console.log('[whatsapp] → meta ' + label + ' mobile=XXXXXX' + String(body.to).slice(-4));   // never the OTP / password
+    const r = await postJson(url, { Authorization: 'Bearer ' + c.meta.token }, body, c.timeoutMs);
     const j = r.json || {};
-    const ok = r.status >= 200 && r.status < 300 && ((Array.isArray(j.messages) && j.messages.length > 0) || j.status === true || j.status === 'true' || j.return === true || j.return === 'true');
-    if (ok) return (Array.isArray(j.messages) && j.messages[0] && j.messages[0].id) || true;
+    if (r.status >= 200 && r.status < 300 && Array.isArray(j.messages) && j.messages.length > 0) return (j.messages[0] && j.messages[0].id) || true;
     const e = j.error || {};
-    const m = e.error_user_msg || e.message || (Array.isArray(j.message) ? j.message.join(' ') : j.message) || String(r.text || '').slice(0, 200) || ('HTTP ' + r.status);
-    const code = Number(e.code || j.status_code || r.status) || 0;
+    const m = e.error_user_msg || e.message || String(r.text || '').slice(0, 200) || ('HTTP ' + r.status);
+    const code = Number(e.code || r.status) || 0;
     const err = waError('WhatsApp API rejected the request (status ' + r.status + (code ? ', code ' + code : '') + '): ' + String(m).slice(0, 200), { gatewayCode: code });
     console.error('[whatsapp] FAILED:', err.message);
     throw err;
 }
 
+// Plain text message. Meta delivers free-form text ONLY inside the 24-hour window after the person last messaged your number;
+// OTP / credentials therefore use approved templates (sendOtpWhatsApp / sendCredentialsWhatsApp below).
+async function sendWhatsAppText(mobile, text) {
+    const c = config();
+    if (!c.enabled) throw waError('WhatsApp sending is disabled (WA_ENABLED=false).');
+    if (!isConfigured()) throw waError('WhatsApp is not configured (set ' + missingConfig().join(' / ') + ').');
+    const num = last10(mobile);
+    if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
+    return deliver(c, { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.cc + num, type: 'text', text: { preview_url: false, body: String(text == null ? '' : text).slice(0, 4000) } }, 'text');
+}
+
 // ── the two core templates ───────────────────────────────────────────────────────────────────────────────
 // 1) OTP — identical for every portal.
 function sendOtp(mobile, otp) { const c = config(); return sendTemplate(mobile, c.templates.otp, [otp], otp, c.langs.otp); }
+const sendOtpWhatsApp = sendOtp;                 // OTP template (WHATSAPP_… credentials)
+
 // 2) Login info — User ID + password + the portal's own login link, for registrations AND password resets in every portal.
-function sendLoginInfo(mobile, o) {
+function sendLoginInfo(mobile, o) {   // = sendCredentialsWhatsApp
     o = o || {};
     const c = config(), link = String(o.link || '').replace(/^-$/, '');
     const params = [clean(o.name || 'User'), clean(o.userId), clean(o.password), clean(portalLink(o.portal, link))];   // {{1}} name · {{2}} User ID · {{3}} password · {{4}} login link — Meta rejects empty values, clean() never returns ''
@@ -5039,10 +5045,11 @@ function sendNotice(mobile, o) {
     return sendTemplate(mobile, c.templates.notice, [clean(o.name || 'User'), clean(o.text), clean(o.userId), clean(portalLink(o.portal, o.link))], null, c.langs.notice);
 }
 
-return { config, isConfigured, missingConfig, describe, portalLink, sendTemplate, sendOtp, sendLoginInfo, sendNotice, noticeEnabled, clean };
+return { config, isConfigured, missingConfig, describe, portalLink, sendTemplate, sendWhatsAppText, sendOtpWhatsApp, sendCredentialsWhatsApp: sendLoginInfo, sendOtp, sendLoginInfo, sendNotice, noticeEnabled, clean };
 
 })();
 function waConfigured() { return wa.isConfigured(); }
+const { sendWhatsAppText, sendOtpWhatsApp, sendCredentialsWhatsApp } = wa;
 
 // ── 🔔 Account notifications: login credentials / approvals / password changes ─────────────────────────────
 //   Templates (names come ONLY from Environment — see whatsapp-service.js / .env.example):
@@ -5069,7 +5076,7 @@ async function _notifyAccountOnce(ev) {
             // INFO template (WA_TEMPLATE_INFO): {{1}} name · {{2}} User ID · {{3}} password · {{4}} portal login link — same for every portal.
             // User-ID recovery has no plain password (stored hashed only) → {{3}} carries a pointer to "Forgot Password" instead.
             const shownPwd = ev.kind === 'credentials' ? String(ev.password == null ? '' : ev.password) : (process.env.WA_RECOVERY_PASSWORD_TEXT || 'Use your existing password (Forgot Password to reset)');
-            send = () => wa.sendLoginInfo(mobile, { name: name, userId: uid, password: shownPwd, portal: portal, link: plink === '-' ? '' : plink });
+            send = () => sendCredentialsWhatsApp(mobile, { name: name, userId: uid, password: shownPwd, portal: portal, link: plink === '-' ? '' : plink });
             const cfg = await loadSmsConfig();
             sms = ev.kind === 'credentials'
                 ? freshenLinks(buildCredentialsMessage(name, uid, String(ev.password), plink, cfg.template && /\{pass\}/.test(cfg.template) ? freshenLinks(cfg.template) : ''))   // a saved SMS template may still hold the old link
@@ -5083,7 +5090,7 @@ async function _notifyAccountOnce(ev) {
             try { await send(); return 'whatsapp'; }
             catch (e) { _lastNotifyError = String(e && e.message || e).slice(0, 300); console.error('[notify] WhatsApp (' + ev.kind + ') to XXXXXX' + mobile.slice(-4) + ' FAILED: ' + _lastNotifyError); }
         } else if (send) { _lastNotifyError = 'WhatsApp is not configured (missing: ' + (wa.missingConfig().join(', ') || 'WA_ENABLED=false') + ')'; console.error('[notify] ' + _lastNotifyError); }
-        if (await smsConfigured()) { await sendSms(mobile, sms); return 'sms'; }
+        if (waConfigured()) { try { await sendWhatsAppText(mobile, sms); return 'whatsapp'; } catch (e) { _lastNotifyError = String(e && e.message || e).slice(0, 300); } }   // last resort: plain text (delivered only inside Meta's 24 h window)
         return null;
     } catch (e) { console.warn('notifyAccount (' + (ev && ev.kind) + ') failed:', e.message); return null; }
 }
@@ -5117,7 +5124,7 @@ const ENTITY_PORTAL = { admins: 'admin', agents: 'agent', staff: 'hrms', student
 const credSig = (uid, pwd) => crypto.createHmac('sha256', JWT_SECRET).update(String(uid) + '|' + String(pwd)).digest('hex').slice(0, 24);
 async function autoNotifyEntityCredentials(key, incoming, existing, link) {
     if (!Array.isArray(incoming) || WA_NOTIFY_ENTITIES.indexOf(key) < 0) return;
-    if (!waConfigured() && !(await otpServiceConfigured()) && !(await smsConfigured())) return;
+    if (!waConfigured()) return;
     const same = (o, r) => o && ((r.id != null && o.id === r.id) || (r.username && o.username === r.username) || (r.agentId && o.agentId === r.agentId) || (r.studentId && o.studentId === r.studentId) || (r.empId && o.empId === r.empId));
     const jobs = [];
     for (const rec of incoming) {
@@ -5158,7 +5165,7 @@ function otpSendFailed(res, e, where) {
 async function otpServiceConfigured() { return wa.isConfigured(); }
 // Every OTP (all portals: login + password recovery + forgot-username) goes through here → WhatsApp authentication template.
 async function sendOtpMessage(mobile, otp) {
-    await wa.sendOtp(mobile, otp);
+    await sendOtpWhatsApp(mobile, otp);
     return 'whatsapp';
 }
 
@@ -5787,8 +5794,8 @@ app.post('/api/admin/whatsapp-test', noStore, requireRole('admin'), asyncRoute(a
     if (mobile.length !== 10) return res.status(400).json({ error: 'A valid 10-digit mobile number is required.' });
     const out = { config: wa.describe() };
     try {
-        if (String(b.template || 'info') === 'otp') await wa.sendOtp(mobile, String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH)));
-        else await wa.sendLoginInfo(mobile, { name: 'Test User', userId: 'TEST001', password: 'Test@1234', portal: b.portal || '', link: liveBaseUrl(req) });
+        if (String(b.template || 'info') === 'otp') await sendOtpWhatsApp(mobile, String(crypto.randomInt(10 ** (OTP_LENGTH - 1), 10 ** OTP_LENGTH)));
+        else await sendCredentialsWhatsApp(mobile, { name: 'Test User', userId: 'TEST001', password: 'Test@1234', portal: b.portal || '', link: liveBaseUrl(req) });
         out.success = true;
     } catch (e) { out.success = false; out.error = String(e && e.message || e).slice(0, 400); }
     res.json(out);
@@ -7079,12 +7086,12 @@ async function sendSms(mobile, message) {
 app.post('/api/sms/send', async (req, res) => {
     const { mobile, message } = req.body || {};
     if (!mobile || !message) return res.status(400).json({ error: 'mobile and message are required.' });
-    if (!(await smsConfigured())) return res.status(501).json({ error: 'The SMS gateway is not configured (SMS_API_URL / SMS_API_KEY).' });
+    if (!waConfigured()) return res.status(501).json({ error: 'WhatsApp is not configured (WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN).' });
     try {
-        await sendSms(mobile, message);
+        await sendWhatsAppText(mobile, message);
         res.json({ success: true });
     } catch (e) {
-        res.status(502).json({ error: 'Error while sending SMS: ' + e.message });
+        res.status(502).json({ error: 'Error while sending WhatsApp message: ' + e.message });
     }
 });
 
