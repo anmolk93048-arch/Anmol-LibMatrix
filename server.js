@@ -5027,7 +5027,22 @@ async function sendWhatsAppText(mobile, text) {
 
 // ── the two core templates ───────────────────────────────────────────────────────────────────────────────
 // 1) OTP — identical for every portal.
-function sendOtp(mobile, otp) { const c = config(); return sendTemplate(mobile, c.templates.otp, [otp], otp, c.langs.otp); }
+// OTP uses ONLY these three variables for credentials/template: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WA_TEMPLATE_OTP
+// (no WA_* / FAST2SMS_* fallbacks, no SMS fallback). API version, language and country code keep their normal defaults.
+const otpCreds = () => ({ token: env('WHATSAPP_ACCESS_TOKEN'), phoneId: env('WHATSAPP_PHONE_NUMBER_ID'), template: env('WA_TEMPLATE_OTP') });
+function otpReady() { const o = otpCreds(); return !!(o.token && o.phoneId && o.template); }
+function otpMissing() { const o = otpCreds(), m = []; if (!o.token) m.push('WHATSAPP_ACCESS_TOKEN'); if (!o.phoneId) m.push('WHATSAPP_PHONE_NUMBER_ID'); if (!o.template) m.push('WA_TEMPLATE_OTP'); return m; }
+async function sendOtp(mobile, otp) {
+    const c = config(), o = otpCreds();
+    if (!otpReady()) throw waError('WhatsApp OTP is not configured (set ' + otpMissing().join(' / ') + ').');
+    const num = last10(mobile);
+    if (num.length !== 10) throw waError('A valid 10-digit mobile number is required.');
+    const body = { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.cc + num, type: 'template',
+        template: { name: o.template, language: { code: c.langs.otp || c.lang }, components: [
+            { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] } ] } };
+    return deliver({ meta: { base: c.meta.base, version: c.meta.version, phoneId: o.phoneId, token: o.token }, timeoutMs: c.timeoutMs }, body, 'template=' + o.template);
+}
 const sendOtpWhatsApp = sendOtp;                 // OTP template (WHATSAPP_… credentials)
 
 // 2) Login info — User ID + password + the portal's own login link, for registrations AND password resets in every portal.
@@ -5045,7 +5060,7 @@ function sendNotice(mobile, o) {
     return sendTemplate(mobile, c.templates.notice, [clean(o.name || 'User'), clean(o.text), clean(o.userId), clean(portalLink(o.portal, o.link))], null, c.langs.notice);
 }
 
-return { config, isConfigured, missingConfig, describe, portalLink, sendTemplate, sendWhatsAppText, sendOtpWhatsApp, sendCredentialsWhatsApp: sendLoginInfo, sendOtp, sendLoginInfo, sendNotice, noticeEnabled, clean };
+return { otpReady, otpMissing, config, isConfigured, missingConfig, describe, portalLink, sendTemplate, sendWhatsAppText, sendOtpWhatsApp, sendCredentialsWhatsApp: sendLoginInfo, sendOtp, sendLoginInfo, sendNotice, noticeEnabled, clean };
 
 })();
 function waConfigured() { return wa.isConfigured(); }
@@ -5162,7 +5177,7 @@ function otpSendFailed(res, e, where) {
     if (String(process.env.OTP_DEBUG || '').toLowerCase() === 'true') out.detail = String(e && e.message || e).slice(0, 300);
     res.status(424).json(out);   // 424 (not 5xx) so proxies/CDNs such as Render never replace the JSON with their own 502 page
 }
-async function otpServiceConfigured() { return wa.isConfigured(); }
+async function otpServiceConfigured() { return wa.otpReady(); }
 // Every OTP (all portals: login + password recovery + forgot-username) goes through here → WhatsApp authentication template.
 async function sendOtpMessage(mobile, otp) {
     await sendOtpWhatsApp(mobile, otp);
