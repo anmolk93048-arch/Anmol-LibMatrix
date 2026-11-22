@@ -481,7 +481,15 @@
   @media(prefers-reduced-motion:reduce){#registrationModalOverlay #regPanel,.login-card.registration-focus-highlight{animation:none!important;}}
 </style>
 
-<style id="gst-pick-css">.gst-cell .gst-select.hidden{display:none}.gst-cell .gst-pick{min-width:62px}</style>
+<style id="gst-pick-css">
+  .gst-cell{display:flex;align-items:center;width:100%;min-width:0}
+  .gst-cell .gst-pick{width:5.9em;max-width:100%;min-width:0;border:1px solid #d1d5db;border-radius:4px;padding:4px 2px;font-size:13px;background:#fff}
+  .gst-cell .gst-edit{display:flex;align-items:center;gap:2px;min-width:0}
+  .gst-cell .gst-select{flex:0 1 3em;width:3em;min-width:0;border:1px solid #d1d5db;border-radius:4px;padding:4px 3px;font-size:13px;text-align:right}
+  .gst-cell .gst-pct{font-size:12px;color:#4b5563}
+  .gst-cell .gst-back{flex:0 0 14px;width:14px;height:26px;border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;padding:0;line-height:1}
+  .gst-cell .gst-back:hover{color:#0d1e3d}
+</style>
 <style id="login-pw-eye">
   .pw-wrap{position:relative}
   .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#64748b;cursor:pointer;border-radius:6px;padding:0}
@@ -2097,20 +2105,31 @@ function gstOptions(selectedVal){
   return opts;
 }
 
-/* GST % — quick-pick drop-down (0 / 5 / 12 / 18 / 28 %) + "Other (Edit)" which reveals a number box for any custom rate.
-   The number box (.gst-select) always holds the real value, so the calculation, saving and restoring of bills work exactly as before. */
+/* GST % — compact cell. Preset mode: one drop-down (0 / 5 / 12 / 18 / 28 %, "Other (Edit)").
+   "Other (Edit)" swaps the drop-down for a small number box + "%" in the SAME cell (no extra link, no wider column); the tiny ▾ at its right
+   goes back to the list. The number box (.gst-select) always holds the real value, so calculation, saving and restoring work as before. */
 function gstCellHTML(gstVal){
   const n = Number(gstVal) || 0, preset = GST_SLABS.indexOf(n) >= 0;
-  return `<div class="gst-cell flex items-center gap-1">
-      <select class="gst-pick border border-gray-300 rounded px-1 py-1 text-sm bg-white" onchange="onGstPick(this)" title="GST %">${gstOptions(preset ? n : 'custom')}</select>
-      <input type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="GST %" class="gst-select w-16 border border-gray-300 rounded px-1.5 py-1 text-sm text-right${preset ? ' hidden' : ''}" value="${n}" oninput="calculateAll()">
+  return `<div class="gst-cell">
+      <select class="gst-pick" onchange="onGstPick(this)" title="GST %"${preset ? '' : ' style="display:none"'}>${gstOptions(preset ? n : 'custom')}</select>
+      <div class="gst-edit"${preset ? ' style="display:none"' : ''}>
+        <input type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="GST" class="gst-select" value="${n}" oninput="calculateAll()">
+        <span class="gst-pct">%</span>
+        <button type="button" class="gst-back" onclick="onGstBack(this)" title="Choose from list" aria-label="Choose GST from list">▾</button>
+      </div>
     </div>`;
 }
 function onGstPick(sel){
-  const inp = sel.parentElement.querySelector('.gst-select');
-  if(sel.value === 'custom'){ inp.classList.remove('hidden'); inp.focus(); inp.select(); }
-  else { inp.value = sel.value; inp.classList.add('hidden'); }
+  const cell = sel.parentElement, edit = cell.querySelector('.gst-edit'), inp = cell.querySelector('.gst-select');
+  if(sel.value === 'custom'){ sel.style.display = 'none'; edit.style.display = 'flex'; inp.focus(); inp.select(); }
+  else { inp.value = sel.value; }
   calculateAll();
+}
+function onGstBack(btn){
+  const cell = btn.closest('.gst-cell'), sel = cell.querySelector('.gst-pick');
+  cell.querySelector('.gst-edit').style.display = 'none'; sel.style.display = '';
+  sel.selectedIndex = -1; sel.focus();
+  try{ if(sel.showPicker) sel.showPicker(); }catch(e){}
 }
 function onGstChange(){ calculateAll(); }
 function resetGstToSlab(){ calculateAll(); }
