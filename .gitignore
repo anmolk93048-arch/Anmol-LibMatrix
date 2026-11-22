@@ -1,5 +1,15 @@
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+
+# Local/system backups and temporary files
+*SystemBackup*.json
+*.bak
+*.log
+
+# Firebase config and dependencies
 firebase-config.js
 node_modules/
