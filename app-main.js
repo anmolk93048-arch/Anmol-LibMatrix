@@ -1051,8 +1051,8 @@ const db = new Pool(
     process.env.DATABASE_URL
         ? {
             // Supabase Connection String (Project Settings → Database → Connection string
-            // → "URI" ya "Connection pooling"). Format:
-            // postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
+            // → "URI" ya "Connection pooling"). It is read ONLY from the DATABASE_URL environment variable
+            // (Render / Vercel dashboard or a local, git-ignored .env) — never write it inside this file.
             connectionString: process.env.DATABASE_URL,
             ssl: { rejectUnauthorized: false },
             connectionTimeoutMillis: 30000,
@@ -1256,8 +1256,8 @@ function connectWithRetry(attemptsLeft, delayMs) {
 }
 
 // 🔑 MASTER ADMIN SEED — runs once at startup and ONLY when no admin exists.
-//   Default credentials: Anmol / Anmol@2003 (override with MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD).
-//   Change the password from the Admin Panel after the first login.
+//   There are NO default credentials: it needs MASTER_ADMIN_USERNAME + MASTER_ADMIN_PASSWORD (12+ chars) in the Environment.
+//   After the first login, remove MASTER_ADMIN_PASSWORD from the Environment and change the password from the Admin Panel.
 function seedMasterAdmin(attempt) {
     attempt = attempt || 1;
     db.query('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['admins'], (err, rows) => {
@@ -2536,6 +2536,80 @@ function parseEntityList(raw) {
 }
 const _lcT = (x) => String(x == null ? '' : x).trim().toLowerCase();
 
+
+// ══════════════════════════════════════════════════════════════════
+// 🔒 LOGIN BRUTE-FORCE PROTECTION (server-side, every portal: admin / agent / staff / pfms / employee / student)
+//   Runs BEFORE the password / mobile check, so a locked client never even reaches bcrypt. Only FAILED attempts are counted
+//   (a correct password that still needs the OTP step is not a failure). Three independent counters:
+//     • ip + role + user  — one attacker guessing one account            → locked first (Super Admin: 5 tries, others: 10)
+//     • ip                — one attacker spraying many usernames          → 4× the limit
+//     • role + user       — a distributed attack on one account           → 3× the limit
+//   A successful login clears ONLY the ip+role+user counter, so a single valid account can never be used to reset the IP counter.
+//   Counters live in memory (per server instance; on Vercel each instance counts on its own). Env overrides:
+//   LOGIN_MAX_FAILS_ADMIN, LOGIN_MAX_FAILS, LOGIN_LOCK_MINUTES.
+// ══════════════════════════════════════════════════════════════════
+const _loginFail = new Map();   // counter key -> { n, first, lockUntil }
+const _LOGIN_WINDOW_MS = 15 * 60 * 1000;
+function _loginRule(role) {
+    const lockMin = Math.max(1, parseInt(process.env.LOGIN_LOCK_MINUTES, 10) || 15);
+    const adminMax = Math.max(3, parseInt(process.env.LOGIN_MAX_FAILS_ADMIN, 10) || 5);
+    const otherMax = Math.max(5, parseInt(process.env.LOGIN_MAX_FAILS, 10) || 10);
+    return { max: role === 'admin' ? adminMax : otherMax, lockMs: lockMin * 60 * 1000 };
+}
+function _loginCounters(req) {
+    const b = req.body || {};
+    const role = String(b.role || '').toLowerCase().slice(0, 20);
+    const user = String(b.username || '').trim().toLowerCase().slice(0, 80);
+    const ip = String(req.ip || (req.connection && req.connection.remoteAddress) || 'unknown-ip');
+    const rule = _loginRule(role);
+    return {
+        role: role, user: user, ip: ip, rule: rule,
+        list: [
+            { k: 'ipuser|' + ip + '|' + role + '|' + user, max: rule.max },
+            { k: 'ip|' + ip, max: rule.max * 4 },
+            { k: 'user|' + role + '|' + user, max: rule.max * 3 }
+        ]
+    };
+}
+function _loginRegisterFail(c) {
+    const now = Date.now();
+    c.list.forEach(function (x) {
+        let s = _loginFail.get(x.k);
+        if (!s || (!s.lockUntil && now - s.first > _LOGIN_WINDOW_MS) || (s.lockUntil && s.lockUntil <= now)) s = { n: 0, first: now, lockUntil: 0 };
+        s.n++;
+        if (s.n >= x.max) {
+            s.lockUntil = now + c.rule.lockMs;
+            if (x.k.indexOf('ipuser|') === 0) console.warn('🔒 Login locked for ' + Math.round(c.rule.lockMs / 60000) + ' min after ' + s.n + ' failed attempts — role=' + c.role + ' user=' + c.user.slice(0, 3) + '*** ip=' + c.ip);
+        }
+        _loginFail.set(x.k, s);
+    });
+}
+function _loginClearFail(c) { _loginFail.delete(c.list[0].k); }
+function loginBruteForceGuard(req, res, next) {
+    const c = _loginCounters(req), now = Date.now();
+    let wait = 0;
+    c.list.forEach(function (x) { const s = _loginFail.get(x.k); if (s && s.lockUntil > now) wait = Math.max(wait, s.lockUntil - now); });
+    if (wait > 0) {
+        const sec = Math.ceil(wait / 1000), mins = Math.ceil(wait / 60000);
+        res.set('Retry-After', String(sec));
+        return res.status(429).json({ error: 'Too many failed login attempts. Please try again in ' + mins + ' minute' + (mins > 1 ? 's' : '') + '.', code: 'LOGIN_LOCKED', retryAfterSec: sec });
+    }
+    const origJson = res.json.bind(res);
+    res.json = function (body) {
+        try {
+            const code = body && body.code;
+            if (res.statusCode === 401 && code !== 'OTP_REQUIRED') _loginRegisterFail(c);
+            else if (res.statusCode >= 200 && res.statusCode < 300 && body && body.token) _loginClearFail(c);
+        } catch (e) { /* never let the counter break a login response */ }
+        return origJson(body);
+    };
+    next();
+}
+setInterval(function () {
+    const now = Date.now();
+    _loginFail.forEach(function (s, k) { if ((s.lockUntil && s.lockUntil <= now) || (!s.lockUntil && now - s.first > _LOGIN_WINDOW_MS)) _loginFail.delete(k); });
+}, 5 * 60 * 1000).unref();
+app.post('/api/auth/login', loginBruteForceGuard);
 
 app.post('/api/auth/login', (req, res) => {
     const { role, username, password, mobile } = req.body || {};
@@ -8469,6 +8543,35 @@ app.delete('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(asy
     if (s.key === 'agents') _scopeCache.clear();
     res.json({ success: true });
 }));
+
+// ══════════════════════════════════════════════════════════════════
+// 🔑 BROWSER-SIDE SERVICE CONFIG (Firebase Web SDK) — kept in Environment Variables, NOT written inside the public HTML.
+//   Student_Attendance.html fetches this once at page load. Set on Render / Vercel (or a git-ignored local .env):
+//     FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_STORAGE_BUCKET,
+//     FIREBASE_MESSAGING_SENDER_ID, FIREBASE_APP_ID, FIREBASE_MEASUREMENT_ID   (or the whole object as FIREBASE_WEB_CONFIG='{"apiKey":...}')
+//   Nothing is returned unless apiKey + databaseURL + projectId are set. Note: a Firebase *web* key is an identifier, not a password —
+//   real protection is the Firebase Realtime-Database rules + an HTTP-referrer restriction on the key in Google Cloud Console.
+// ══════════════════════════════════════════════════════════════════
+function _firebaseWebConfig() {
+    const E = process.env;
+    let cfg = null;
+    const raw = E.FIREBASE_WEB_CONFIG || E.FIREBASE_CONFIG_JSON;
+    if (raw) { try { cfg = JSON.parse(raw); } catch (e) { cfg = null; } }
+    if (!cfg || typeof cfg !== 'object') {
+        cfg = { apiKey: E.FIREBASE_API_KEY, authDomain: E.FIREBASE_AUTH_DOMAIN, databaseURL: E.FIREBASE_DATABASE_URL, projectId: E.FIREBASE_PROJECT_ID,
+            storageBucket: E.FIREBASE_STORAGE_BUCKET, messagingSenderId: E.FIREBASE_MESSAGING_SENDER_ID, appId: E.FIREBASE_APP_ID, measurementId: E.FIREBASE_MEASUREMENT_ID };
+    }
+    const out = {};
+    ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'].forEach(function (k) { if (cfg[k]) out[k] = String(cfg[k]).trim(); });
+    return (out.apiKey && out.databaseURL && out.projectId) ? out : null;
+}
+app.get('/api/public-config/firebase', (req, res) => {
+    res.set({ 'Cache-Control': 'no-store, max-age=0', 'X-Content-Type-Options': 'nosniff' });
+    if (hitRateLimit('pubcfg-fb:' + String(req.ip || ''), 60, 60 * 1000)) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+    const cfg = _firebaseWebConfig();
+    if (!cfg) return res.status(503).json({ error: 'Firebase is not configured on the server. Set FIREBASE_API_KEY, FIREBASE_DATABASE_URL and FIREBASE_PROJECT_ID (plus the other FIREBASE_* values) in the Environment and redeploy.' });
+    res.json(cfg);
+});
 
 app.get('/api/health', (req, res) => {
     res.json({

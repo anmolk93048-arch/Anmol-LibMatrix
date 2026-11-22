@@ -3190,7 +3190,7 @@ function CURRENT_AGENT_SCOPE(){
 
 var USERS = [];
 // ⚠️ SECURITY: pehle yahan ek hardcoded account tha
-// ({user:'Anmol', pass:'Anmol@2003', ...}) — page source dekh kar koi
+// (a built-in default login) — page source dekh kar koi
 // bhi is 'App Manager' (full access) account se login kar sakta tha.
 // Admin_panel_Login.html mein bilkul aisa hi backdoor pehle hi hataya
 // ja chuka tha; ab yahan bhi hata diya gaya hai. Agar yeh account
@@ -3888,7 +3888,8 @@ function DO_LOGIN() {
   // Offline-only legacy demo login for opening this single-file dashboard.
   // Online server authentication remains authoritative when the server responds.
   function tryOfflineDemoLogin(error) {
-    var isKnownDemo = u.toLowerCase() === 'anmol' && p === AGENT_GET_OFFLINE_DEMO_PASSWORD();
+    var _demoPw = AGENT_GET_OFFLINE_DEMO_PASSWORD();   // '' unless the owner set one locally — there is no built-in default password
+    var isKnownDemo = !!_demoPw && u.toLowerCase() === 'anmol' && p === _demoPw;
     var message = error && error.message ? String(error.message) : String(error || '');
     var isNetworkFailure = /failed to fetch|networkerror|load failed|fetch failed|network.*error|failed to connect|connection refused|internet disconnected|err_connection|err_name_not_resolved|err_internet_disconnected|timed? ?out/i.test(message);
     var isLocalFile = window.location && window.location.protocol === 'file:';
@@ -4028,7 +4029,7 @@ function DO_LOGIN() {
   // Local single-file demo must not depend on a remote API request.
   // The CAPTCHA has already been checked by checkCaptcha() before DO_LOGIN().
   if (window.location && window.location.protocol === 'file:' &&
-      u.toLowerCase() === 'anmol' && p === AGENT_GET_OFFLINE_DEMO_PASSWORD()) {
+      AGENT_GET_OFFLINE_DEMO_PASSWORD() && u.toLowerCase() === 'anmol' && p === AGENT_GET_OFFLINE_DEMO_PASSWORD()) {
     tryOfflineDemoLogin(new Error('Local file offline demo'));
     return;
   }
@@ -11860,7 +11861,7 @@ body.dark .agent-profile-title{color:#e2eefe}body.dark .agent-profile-card{backg
   window.AGENT_GET_OFFLINE_DEMO_PASSWORD=function(){
     try{var v=localStorage.getItem(DEMO_PASSWORD_KEY);if(v)return v;}catch(e){}
     try{var sv=sessionStorage.getItem(DEMO_PASSWORD_KEY);if(sv)return sv;}catch(e){}
-    return window.__SHDL_AGENT_DEMO_PASSWORD_MEMORY||'Anmol@2003';
+    return window.__SHDL_AGENT_DEMO_PASSWORD_MEMORY||'';
   };
   function saveDemoPassword(value){
     window.__SHDL_AGENT_DEMO_PASSWORD_MEMORY=value;

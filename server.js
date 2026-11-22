@@ -1115,8 +1115,8 @@ const db = new Pool(
     process.env.DATABASE_URL
         ? {
             // Supabase Connection String (Project Settings → Database → Connection string
-            // → "URI" ya "Connection pooling"). Format:
-            // postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
+            // → "URI" ya "Connection pooling"). It is read ONLY from the DATABASE_URL environment variable
+            // (Render / Vercel dashboard or a local, git-ignored .env) — never write it inside this file.
             connectionString: process.env.DATABASE_URL,
             ssl: { rejectUnauthorized: false },
             connectionTimeoutMillis: 30000,
@@ -1320,8 +1320,8 @@ function connectWithRetry(attemptsLeft, delayMs) {
 }
 
 // 🔑 MASTER ADMIN SEED — runs once at startup and ONLY when no admin exists.
-//   Default credentials: Anmol / Anmol@2003 (override with MASTER_ADMIN_USERNAME / MASTER_ADMIN_PASSWORD).
-//   Change the password from the Admin Panel after the first login.
+//   There are NO default credentials: it needs MASTER_ADMIN_USERNAME + MASTER_ADMIN_PASSWORD (12+ chars) in the Environment.
+//   After the first login, remove MASTER_ADMIN_PASSWORD from the Environment and change the password from the Admin Panel.
 function seedMasterAdmin(attempt) {
     attempt = attempt || 1;
     db.query('SELECT value FROM kv_admin_entities WHERE `key` = ?', ['admins'], (err, rows) => {
@@ -2671,6 +2671,80 @@ function parseEntityList(raw) {
 }
 const _lcT = (x) => String(x == null ? '' : x).trim().toLowerCase();
 
+
+// ══════════════════════════════════════════════════════════════════
+// 🔒 LOGIN BRUTE-FORCE PROTECTION (server-side, every portal: admin / agent / staff / pfms / employee / student)
+//   Runs BEFORE the password / mobile check, so a locked client never even reaches bcrypt. Only FAILED attempts are counted
+//   (a correct password that still needs the OTP step is not a failure). Three independent counters:
+//     • ip + role + user  — one attacker guessing one account            → locked first (Super Admin: 5 tries, others: 10)
+//     • ip                — one attacker spraying many usernames          → 4× the limit
+//     • role + user       — a distributed attack on one account           → 3× the limit
+//   A successful login clears ONLY the ip+role+user counter, so a single valid account can never be used to reset the IP counter.
+//   Counters live in memory (per server instance; on Vercel each instance counts on its own). Env overrides:
+//   LOGIN_MAX_FAILS_ADMIN, LOGIN_MAX_FAILS, LOGIN_LOCK_MINUTES.
+// ══════════════════════════════════════════════════════════════════
+const _loginFail = new Map();   // counter key -> { n, first, lockUntil }
+const _LOGIN_WINDOW_MS = 15 * 60 * 1000;
+function _loginRule(role) {
+    const lockMin = Math.max(1, parseInt(process.env.LOGIN_LOCK_MINUTES, 10) || 15);
+    const adminMax = Math.max(3, parseInt(process.env.LOGIN_MAX_FAILS_ADMIN, 10) || 5);
+    const otherMax = Math.max(5, parseInt(process.env.LOGIN_MAX_FAILS, 10) || 10);
+    return { max: role === 'admin' ? adminMax : otherMax, lockMs: lockMin * 60 * 1000 };
+}
+function _loginCounters(req) {
+    const b = req.body || {};
+    const role = String(b.role || '').toLowerCase().slice(0, 20);
+    const user = String(b.username || '').trim().toLowerCase().slice(0, 80);
+    const ip = String(req.ip || (req.connection && req.connection.remoteAddress) || 'unknown-ip');
+    const rule = _loginRule(role);
+    return {
+        role: role, user: user, ip: ip, rule: rule,
+        list: [
+            { k: 'ipuser|' + ip + '|' + role + '|' + user, max: rule.max },
+            { k: 'ip|' + ip, max: rule.max * 4 },
+            { k: 'user|' + role + '|' + user, max: rule.max * 3 }
+        ]
+    };
+}
+function _loginRegisterFail(c) {
+    const now = Date.now();
+    c.list.forEach(function (x) {
+        let s = _loginFail.get(x.k);
+        if (!s || (!s.lockUntil && now - s.first > _LOGIN_WINDOW_MS) || (s.lockUntil && s.lockUntil <= now)) s = { n: 0, first: now, lockUntil: 0 };
+        s.n++;
+        if (s.n >= x.max) {
+            s.lockUntil = now + c.rule.lockMs;
+            if (x.k.indexOf('ipuser|') === 0) console.warn('🔒 Login locked for ' + Math.round(c.rule.lockMs / 60000) + ' min after ' + s.n + ' failed attempts — role=' + c.role + ' user=' + c.user.slice(0, 3) + '*** ip=' + c.ip);
+        }
+        _loginFail.set(x.k, s);
+    });
+}
+function _loginClearFail(c) { _loginFail.delete(c.list[0].k); }
+function loginBruteForceGuard(req, res, next) {
+    const c = _loginCounters(req), now = Date.now();
+    let wait = 0;
+    c.list.forEach(function (x) { const s = _loginFail.get(x.k); if (s && s.lockUntil > now) wait = Math.max(wait, s.lockUntil - now); });
+    if (wait > 0) {
+        const sec = Math.ceil(wait / 1000), mins = Math.ceil(wait / 60000);
+        res.set('Retry-After', String(sec));
+        return res.status(429).json({ error: 'Too many failed login attempts. Please try again in ' + mins + ' minute' + (mins > 1 ? 's' : '') + '.', code: 'LOGIN_LOCKED', retryAfterSec: sec });
+    }
+    const origJson = res.json.bind(res);
+    res.json = function (body) {
+        try {
+            const code = body && body.code;
+            if (res.statusCode === 401 && code !== 'OTP_REQUIRED') _loginRegisterFail(c);
+            else if (res.statusCode >= 200 && res.statusCode < 300 && body && body.token) _loginClearFail(c);
+        } catch (e) { /* never let the counter break a login response */ }
+        return origJson(body);
+    };
+    next();
+}
+setInterval(function () {
+    const now = Date.now();
+    _loginFail.forEach(function (s, k) { if ((s.lockUntil && s.lockUntil <= now) || (!s.lockUntil && now - s.first > _LOGIN_WINDOW_MS)) _loginFail.delete(k); });
+}, 5 * 60 * 1000).unref();
+app.post('/api/auth/login', loginBruteForceGuard);
 
 app.post('/api/auth/login', (req, res) => {
     const { role, username, password, mobile } = req.body || {};
@@ -9097,6 +9171,35 @@ app.delete('/api/admin/master/:source/:id', requireRole('admin'), asyncRoute(asy
     res.json({ success: true });
 }));
 
+// ══════════════════════════════════════════════════════════════════
+// 🔑 BROWSER-SIDE SERVICE CONFIG (Firebase Web SDK) — kept in Environment Variables, NOT written inside the public HTML.
+//   Student_Attendance.html fetches this once at page load. Set on Render / Vercel (or a git-ignored local .env):
+//     FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_STORAGE_BUCKET,
+//     FIREBASE_MESSAGING_SENDER_ID, FIREBASE_APP_ID, FIREBASE_MEASUREMENT_ID   (or the whole object as FIREBASE_WEB_CONFIG='{"apiKey":...}')
+//   Nothing is returned unless apiKey + databaseURL + projectId are set. Note: a Firebase *web* key is an identifier, not a password —
+//   real protection is the Firebase Realtime-Database rules + an HTTP-referrer restriction on the key in Google Cloud Console.
+// ══════════════════════════════════════════════════════════════════
+function _firebaseWebConfig() {
+    const E = process.env;
+    let cfg = null;
+    const raw = E.FIREBASE_WEB_CONFIG || E.FIREBASE_CONFIG_JSON;
+    if (raw) { try { cfg = JSON.parse(raw); } catch (e) { cfg = null; } }
+    if (!cfg || typeof cfg !== 'object') {
+        cfg = { apiKey: E.FIREBASE_API_KEY, authDomain: E.FIREBASE_AUTH_DOMAIN, databaseURL: E.FIREBASE_DATABASE_URL, projectId: E.FIREBASE_PROJECT_ID,
+            storageBucket: E.FIREBASE_STORAGE_BUCKET, messagingSenderId: E.FIREBASE_MESSAGING_SENDER_ID, appId: E.FIREBASE_APP_ID, measurementId: E.FIREBASE_MEASUREMENT_ID };
+    }
+    const out = {};
+    ['apiKey', 'authDomain', 'databaseURL', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'].forEach(function (k) { if (cfg[k]) out[k] = String(cfg[k]).trim(); });
+    return (out.apiKey && out.databaseURL && out.projectId) ? out : null;
+}
+app.get('/api/public-config/firebase', (req, res) => {
+    res.set({ 'Cache-Control': 'no-store, max-age=0', 'X-Content-Type-Options': 'nosniff' });
+    if (hitRateLimit('pubcfg-fb:' + String(req.ip || ''), 60, 60 * 1000)) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+    const cfg = _firebaseWebConfig();
+    if (!cfg) return res.status(503).json({ error: 'Firebase is not configured on the server. Set FIREBASE_API_KEY, FIREBASE_DATABASE_URL and FIREBASE_PROJECT_ID (plus the other FIREBASE_* values) in the Environment and redeploy.' });
+    res.json(cfg);
+});
+
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -9195,7 +9298,183 @@ function scanPublicSecrets(force) {
     _secretScan = { at: Date.now(), res };
     return res;
 }
+// ── 🐙 GITHUB REPO-FILE ALERT ─────────────────────────────────────────────────────────────────────────────────────────────────
+//  What would a plain `git add . && git push` upload? Walks the project folder (the repo root = the folder holding .git, else this folder),
+//  honours .gitignore, and reports (names + masked hints only, never a full value):
+//   • suspicious FILES  — .env, private keys, service-account JSON, database dumps, data backups, logs, archives, huge files, node_modules …
+//   • SECRETS inside files — passwords / API keys / DB URLs hidden in HTML, JS, JSON … (backend files included: they go to GitHub too)
+//   • .gitignore gaps   — no .gitignore at all, or .env / node_modules / backups not listed in it
+let _repoScan = { at: 0, res: null };
+function _gitignoreMatcher(text) {
+    const pats = [];
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+        let l = raw.trim();
+        if (!l || l.charAt(0) === '#' || l.charAt(0) === '!') return;      // comments and negations are ignored (we stay on the cautious side)
+        let dirOnly = false, anchored = false;
+        if (l.charAt(l.length - 1) === '/') { dirOnly = true; l = l.slice(0, -1); }
+        if (l.charAt(0) === '/') { anchored = true; l = l.slice(1); } else if (l.indexOf('/') >= 0) anchored = true;
+        if (!l) return;
+        const src = l.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\u0000/g, '.*');
+        let re; try { re = new RegExp('^' + src + '$'); } catch (e) { return; }
+        pats.push({ dirOnly: dirOnly, anchored: anchored, re: re });
+    });
+    return function (rel, isDir) {
+        const segs = String(rel).split('/');
+        for (let p = 0; p < pats.length; p++) {
+            const P = pats[p];
+            if (P.anchored) {
+                for (let i = 1; i <= segs.length; i++) { const subDir = i < segs.length || isDir; if (P.dirOnly && !subDir) continue; if (P.re.test(segs.slice(0, i).join('/'))) return true; }
+            } else {
+                for (let i = 0; i < segs.length; i++) { const subDir = i < segs.length - 1 || isDir; if (P.dirOnly && !subDir) continue; if (P.re.test(segs[i])) return true; }
+            }
+        }
+        return false;
+    };
+}
+function scanRepoForGithub(force) {
+    if (!force && _repoScan.res && Date.now() - _repoScan.at < 10 * 60 * 1000) return _repoScan.res;
+    let root = __dirname, hasGitDir = false;
+    { let d = __dirname; for (let i = 0; i < 4; i++) { if (fs.existsSync(path.join(d, '.git'))) { root = d; hasGitDir = true; break; } const up = path.dirname(d); if (up === d) break; d = up; } }
+    let giText = ''; try { giText = fs.readFileSync(path.join(root, '.gitignore'), 'utf8'); } catch (e) { giText = ''; }
+    const hasGitignore = giText.trim().length > 0;
+    const ignored = _gitignoreMatcher(giText);
+    // 1 · .gitignore gaps
+    const gaps = [];
+    if (!hasGitignore) gaps.push({ severity: 'critical', text: 'There is no .gitignore file — .env, node_modules, backups and logs would all be pushed to GitHub.' });
+    else {
+        if (!ignored('.env', false)) gaps.push({ severity: 'critical', text: '.gitignore does not list .env — a local .env file (real passwords / keys) would be pushed.' });
+        if (!ignored('node_modules', true)) gaps.push({ severity: 'warn', text: '.gitignore does not list node_modules/.' });
+        if (!ignored('AnmolLibMatrix-SystemBackup-2026.json', false) && !ignored('backups', true)) gaps.push({ severity: 'warn', text: 'Backup files (e.g. AnmolLibMatrix-SystemBackup-*.json) are not git-ignored — a downloaded backup dropped into this folder would be pushed with all personal records. Add *SystemBackup*.json and backups/ to .gitignore.' });
+        if (!ignored('private.pem', false)) gaps.push({ severity: 'warn', text: 'Key files (*.pem, *.key) are not git-ignored.' });
+    }
+    // 2 · walk
+    const NAME_RULES = [
+        { re: /^\.env(\..+)?$/i, skip: /\.(example|sample|template)$/i, sev: 'critical', why: 'Environment file — normally holds real passwords / API keys' },
+        { re: /\.(pem|key|p12|pfx|jks|keystore|ppk)$/i, sev: 'critical', why: 'Private key / certificate file' },
+        { re: /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i, sev: 'critical', why: 'SSH key' },
+        { re: /(service[-_ ]?account|firebase-adminsdk|client_secret|credentials?)[^/]*\.json$/i, sev: 'critical', why: 'Cloud service-account / credentials file' },
+        { re: /\.(sql|dump|sqlite3?|db|mdb)$/i, sev: 'critical', why: 'Database dump / database file — contains real records' },
+        { re: /(system[-_ ]?backup|backup|restore)[^/]*\.(json|zip|csv|xlsx?)$/i, sev: 'critical', why: 'Data backup file — contains personal records' },
+        { re: /\.(bak|backup|old|orig|swp|tmp)$|~$/i, sev: 'warn', why: 'Backup / temporary copy of a file' },
+        { re: /\.(zip|rar|7z|tar|gz|tgz)$/i, sev: 'warn', why: 'Archive file' },
+        { re: /\.log$/i, sev: 'warn', why: 'Log file — may hold tokens or personal data' },
+        { re: /\.(csv|xlsx?)$/i, sev: 'warn', why: 'Spreadsheet / data export — may hold personal data' },
+        { re: /^(\.ds_store|thumbs\.db)$/i, sev: 'warn', why: 'Operating-system junk file' },
+        { re: /\.(apk|aab|exe|dmg|iso)$/i, sev: 'warn', why: 'Installer / large binary' }
+    ];
+    const TEXT_EXT = ['.html', '.htm', '.js', '.mjs', '.cjs', '.json', '.txt', '.md', '.yml', '.yaml', '.xml', '.ts', '.jsx', '.tsx', '.sh', '.py', '.ini', '.cfg', '.toml', '.properties', '.conf'];
+    const RULES = [
+        { id: 'Private key', sev: 'critical', re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/ },
+        { id: 'AWS access key', sev: 'critical', re: /(?<![A-Za-z0-9+\/=])AKIA[0-9A-Z]{16}/ },
+        { id: 'Meta / WhatsApp access token', sev: 'critical', re: /(?<![A-Za-z0-9+\/=_-])EAA[A-Za-z0-9]{60,}(?![A-Za-z0-9+\/=])/ },
+        { id: 'Stripe secret key', sev: 'critical', re: /(?<![A-Za-z0-9])sk_live_[0-9A-Za-z]{16,}/ },
+        { id: 'Razorpay live key', sev: 'critical', re: /(?<![A-Za-z0-9])rzp_live_[0-9A-Za-z]{10,}/ },
+        { id: 'GitHub token', sev: 'critical', re: /(?<![A-Za-z0-9])(?:ghp|gho|ghs|ghu)_[0-9A-Za-z]{30,}|github_pat_[0-9A-Za-z_]{40,}/ },
+        { id: 'Database URL with password', sev: 'critical', placeholderCheck: true, re: /postgres(?:ql)?:\/\/[^\s:'"\/]+:[^\s@'"]+@/ },
+        { id: 'Login inside a URL', sev: 'critical', placeholderCheck: true, re: /https?:\/\/[^\s:@'"\/]+:[^\s:@'"\/]+@[A-Za-z0-9.-]+/ },
+        { id: 'Google API key', sev: 'warn', re: /(?<![A-Za-z0-9+\/=])AIza[0-9A-Za-z_\-]{35}/ },
+        { id: 'JWT token', sev: 'jwt', re: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
+        { id: 'Hard-coded password / key', sev: 'warn', generic: true, re: /(?:pass(?:word)?|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)['"]?\s*[:=]\s*['"]([^'"\s]{6,})['"]/i }
+    ];
+    const SKIP_VAL = /^(?:your|enter|type|xxx|\*+|[•·]+|password|passwd|example|test|change|undefined|null|true|false|bearer|basic|none|secret|token)/i;
+    const PLACEHOLDER = /[<>\[\]{}$]|your[-_ ]|xxx|example|user:pass|password@/i;
+    const mask = function (v) { return v.length <= 8 ? '••••' : v.slice(0, 3) + '••••' + v.slice(-2) + ' (' + v.length + ' chars)'; };
+    const files = [], secrets = [];
+    let scanned = 0, ignoredCount = 0, skippedLarge = 0, truncated = false;
+    const walk = function (dir, depth) {
+        let names; try { names = fs.readdirSync(dir); } catch (e) { return; }
+        for (let k = 0; k < names.length; k++) {
+            if (truncated) return;
+            const n = names[k];
+            if (n === '.git') continue;
+            const full = path.join(dir, n); let st; try { st = fs.lstatSync(full); } catch (e) { continue; }
+            if (st.isSymbolicLink()) continue;
+            const rel = path.relative(root, full).replace(/\\/g, '/');
+            const isDir = st.isDirectory();
+            if (ignored(rel, isDir)) { ignoredCount++; continue; }
+            if (isDir) {
+                if (n === 'node_modules') { files.push({ path: rel + '/', severity: 'warn', why: 'node_modules folder is not git-ignored — GitHub would receive every installed library', sizeBytes: 0 }); continue; }
+                if (depth < 5) walk(full, depth + 1);
+                continue;
+            }
+            if (++scanned > 6000) { truncated = true; return; }
+            for (let r = 0; r < NAME_RULES.length; r++) {
+                const R = NAME_RULES[r];
+                if (R.re.test(n) && !(R.skip && R.skip.test(n))) { files.push({ path: rel, severity: R.sev, why: R.why, sizeBytes: st.size }); break; }
+            }
+            if (st.size > 10 * 1048576 && !files.some(function (f) { return f.path === rel; })) files.push({ path: rel, severity: 'warn', why: 'Very large file (' + Math.round(st.size / 1048576) + ' MB) — GitHub warns above 50 MB and blocks above 100 MB', sizeBytes: st.size });
+            const ext = path.extname(n).toLowerCase();
+            if (TEXT_EXT.indexOf(ext) < 0 || /\.min\.js$/i.test(n) || /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/i.test(n)) continue;
+            if (st.size > 6 * 1048576) { skippedLarge++; continue; }
+            let text; try { text = fs.readFileSync(full, 'utf8'); } catch (e) { continue; }
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length && secrets.length < 80; i++) {
+                const line = lines[i]; if (line.length > 4000 && !/eyJ|AKIA|AIza|EAA|BEGIN|rzp_live|ghp_/.test(line.slice(0, 4000))) continue;
+                for (let q = 0; q < RULES.length; q++) {
+                    const Q = RULES[q]; const m = Q.re.exec(line); if (!m) continue;
+                    let val = Q.generic ? m[1] : m[0], sev = Q.sev, id = Q.id;
+                    if (Q.placeholderCheck && PLACEHOLDER.test(val)) continue;
+                    if (Q.generic) { if (SKIP_VAL.test(val) || /\$\{|\+|\(|\)|<|>|\.\.\.|placeholder|process\.env/i.test(val) || !/[A-Za-z]/.test(val) || !/\d/.test(val)) continue; }
+                    if (sev === 'jwt') {
+                        let role = ''; try { role = JSON.parse(Buffer.from(m[0].split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).role || ''; } catch (e) { /* not decodable */ }
+                        if (role !== 'service_role') continue;
+                        sev = 'critical'; id = 'Supabase service-role key';
+                    }
+                    secrets.push({ file: rel, line: i + 1, type: id, severity: sev, hint: mask(val) });
+                    break;
+                }
+            }
+        }
+    };
+    walk(root, 0);
+    const rank = function (s) { return s === 'critical' ? 0 : 1; };
+    files.sort(function (a, b) { return rank(a.severity) - rank(b.severity); });
+    secrets.sort(function (a, b) { return rank(a.severity) - rank(b.severity); });
+    const all = files.concat(secrets).concat(gaps);
+    const res = {
+        root: path.basename(root) || '.', hasGitDir: hasGitDir, hasGitignore: hasGitignore, ignoredCount: ignoredCount, scannedFiles: scanned, skippedLarge: skippedLarge, truncated: truncated,
+        gaps: gaps, files: files.slice(0, 60), secrets: secrets.slice(0, 60),
+        critical: all.filter(function (x) { return x.severity === 'critical'; }).length, warnings: all.filter(function (x) { return x.severity !== 'critical'; }).length
+    };
+    _repoScan = { at: Date.now(), res: res };
+    return res;
+}
 const OTP_ERR_HELP = { 190: 'Access token expired or invalid — generate a new permanent token and update WHATSAPP_ACCESS_TOKEN.', 100: 'Parameter / template mismatch — the template body or button does not match what Meta approved.', 132000: 'Template parameter count mismatch.', 132001: 'Template name or language not found / not approved — check WA_TEMPLATE_OTP and language.', 132012: 'Template parameter format is wrong.', 131030: 'Recipient number is not in the allowed test list (app is in test mode).', 131047: 'More than 24 h since the user last messaged — a template is required.', 131026: 'Message could not be delivered to this number.', 131048: 'Spam rate limit reached for this number.', 131056: 'Too many messages to this user — try again later.', 130429: 'Throughput limit reached — slow down.', 368: 'The WhatsApp account is restricted/blocked by Meta.', 80007: 'Rate limit reached for the WhatsApp account.' };
+
+// ── 🗄️ BACKUP COVERAGE (Super Admin → Backup & Data Restore) ──────────────────────────────────────────────────────────────────────
+//  The browser backup can only carry the key-value stores (kv_admin_entities / kv_blob / kv_site_data). This route tells the page what really
+//  exists in the database, so it can list — with exact counts — every table, record group and stored file the backup does NOT contain
+//  (to be copied from Supabase / the database separately). Read-only; counts only, no row data leaves the server.
+app.get('/api/admin/backup-coverage', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const out = { at: new Date().toISOString(), tables: [], kv: [], files: { count: 0, bytes: 0, available: false }, kvTables: ['kv_admin_entities', 'kv_blob', 'kv_site_data'],
+        readable: { entities: ENTITY_KEYS.slice(), blobs: BLOB_KEYS.slice(), privateSiteKeys: PRIVATE_SITE_KEYS.slice() }, notes: [] };
+    // 1 · every table (exact row count; planner estimate only for very large tables so the check stays cheap)
+    const tb = await safeQ('SELECT relname AS name, n_live_tup AS est, pg_total_relation_size(relid) AS bytes FROM pg_stat_user_tables ORDER BY relname', []);
+    for (let i = 0; i < tb.length; i++) {
+        const t = tb[i], name = String(t.name || ''), est = Number(t.est) || 0;
+        let rows = est, exact = false;
+        if (/^[A-Za-z0-9_]+$/.test(name) && est <= 200000) {
+            try { const c = await dbq('SELECT count(*) AS c FROM "' + name + '"', []); rows = Number(c[0] && c[0].c) || 0; exact = true; } catch (e) { rows = est; }
+        }
+        out.tables.push({ name: name, rows: rows, exact: exact, bytes: Number(t.bytes) || 0, transient: name === 'otp_codes' });
+    }
+    // 2 · every key stored in the three key-value tables, with its size and (for lists) its record count
+    for (let k = 0; k < out.kvTables.length; k++) {
+        const table = out.kvTables[k];
+        let rows;
+        try { rows = await dbq('SELECT "key" AS k, length(value) AS bytes, CASE WHEN left(ltrim(value), 1) = \'[\' THEN json_array_length(value::json) END AS records FROM ' + table + ' ORDER BY "key"', []); }
+        catch (e) { rows = await safeQ('SELECT "key" AS k, length(value) AS bytes FROM ' + table + ' ORDER BY "key"', []); }
+        rows.forEach(function (r) {
+            const key = String(r.k);
+            const readable = table === 'kv_admin_entities' ? ENTITY_KEYS.indexOf(key) >= 0 : table === 'kv_blob' ? BLOB_KEYS.indexOf(key) >= 0 : PRIVATE_SITE_KEYS.indexOf(key) < 0;
+            out.kv.push({ table: table, key: key, bytes: Number(r.bytes) || 0, records: r.records == null ? null : Number(r.records), readable: readable });
+        });
+    }
+    // 3 · uploaded files (hero images, logos, APKs …) live in the site_files table, not in the key-value stores
+    const sf = await safeQ('SELECT count(*) AS c, coalesce(sum(size), 0) AS b FROM site_files', []);
+    if (sf.length) { out.files = { count: Number(sf[0].c) || 0, bytes: Number(sf[0].b) || 0, available: true }; }
+    res.json(out);
+}));
 
 app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const out = { at: new Date().toISOString(), checks: {} };
@@ -9238,7 +9517,8 @@ app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(as
         jwtSecret: !!process.env.JWT_SECRET,
         whatsappOtp: !!(wa && wa.otpReady && wa.otpReady()),
         whatsappMissing: (wa && wa.otpMissing) ? wa.otpMissing() : [],
-        publicUrl: !!(process.env.PUBLIC_URL || process.env.BASE_URL || process.env.FRONTEND_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL)
+        publicUrl: !!(process.env.PUBLIC_URL || process.env.BASE_URL || process.env.FRONTEND_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL),
+        firebase: !!_firebaseWebConfig()   // Student_Attendance.html reads its Firebase settings from the server (FIREBASE_* variables)
     };
     // 7 · passwords / API keys visible in the public HTML / JS files
     out.secrets = await safe(async () => scanPublicSecrets(req.query.rescan === '1'));
@@ -9255,6 +9535,19 @@ app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(as
     const last10 = recent.slice(-10), fails = last10.filter(r => !r.ok).length;
     const lastCode = ok(wst) && wst ? Number(wst.lastCode) || 0 : 0;
     out.otp = { configured: out.config.whatsappOtp, missing: out.config.whatsappMissing, attempts: recent.length, recentFailures: fails, lastOkAt: ok(wst) && wst && wst.lastOkAt ? new Date(wst.lastOkAt).toISOString() : null, lastFailAt: ok(wst) && wst && wst.lastFailAt ? new Date(wst.lastFailAt).toISOString() : null, lastError: ok(wst) && wst ? (wst.lastError || '') : '', lastCode, help: OTP_ERR_HELP[lastCode] || '', lastAttemptOk: recent.length ? !!recent[recent.length - 1].ok : null, series: recent.slice(-20).map(r => r.ok ? 1 : 0) };
+    // 10 · files that could be pushed to GitHub: suspicious files, passwords / keys hidden in HTML / JS / backend files, .gitignore gaps
+    out.github = await safe(async () => scanRepoForGithub(req.query.rescan === '1'));
+    if (out.github && out.github.__err) out.github = { error: out.github.__err, gaps: [], files: [], secrets: [], critical: 0, warnings: 0, scannedFiles: 0 };
+    // 11 · Super Admin login protection (settings only — never a password or hash)
+    out.loginSecurity = await safe(async () => {
+        const admins = parseEntityList(await readKv('kv_admin_entities', 'admins'));
+        const plain = admins.filter(a => a && typeof a === 'object' && PASSWORD_FIELD_NAMES.some(f => typeof a[f] === 'string' && a[f] && !looksHashed(a[f]))).length;
+        let otpOn = null; try { otpOn = !!(await loginOtpEnabled('admin')); } catch (e) { otpOn = null; }
+        const rule = _loginRule('admin');
+        return { jwtStrong: !!(process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32), lockActive: true, maxFails: rule.max, lockMinutes: Math.round(rule.lockMs / 60000),
+            adminCount: admins.length, plainPasswords: plain, masterPasswordInEnv: !!process.env.MASTER_ADMIN_PASSWORD, bootstrapSecretInEnv: !!process.env.ADMIN_BOOTSTRAP_SECRET, adminOtp: otpOn };
+    });
+    if (out.loginSecurity && out.loginSecurity.__err) out.loginSecurity = { error: out.loginSecurity.__err };
     res.json(out);
 }));
 

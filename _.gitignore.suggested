@@ -1,0 +1,15 @@
+# rename to .gitignore
+.env
+.env.*
+!.env.example
+node_modules/
+*.log
+backups/
+*SystemBackup*.json
+*SystemBackup*.zip
+*.pem
+*.key
+*.sql
+*.dump
+*.bak
+.DS_Store

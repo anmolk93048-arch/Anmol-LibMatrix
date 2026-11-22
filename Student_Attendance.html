@@ -492,19 +492,42 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
-// ══ FIREBASE CONFIG (Shri Hari Digital Library) ══
-const firebaseConfig = {
-  apiKey: "AIzaSyDnK_3vfnclWSRnvsINBOcaOG02_fEuCKU",
-  authDomain: "digital-library-21663.firebaseapp.com",
-  databaseURL: "https://digital-library-21663-default-rtdb.firebaseio.com/",
-  projectId: "digital-library-21663",
-  storageBucket: "digital-library-21663.firebasestorage.app",
-  messagingSenderId: "410179243155",
-  appId: "1:410179243155:web:6eb1d7825cd4afa58c1166",
-  measurementId: "G-RCKKC4907R"
-};
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const FBDB = firebase.database();
+// ══ FIREBASE CONFIG — loaded from the server (Environment Variables); nothing is written in this file ══
+const firebaseConfig = (function(){
+  try{
+    var base = (window.SHDL_API_BASE || '/api').replace(/\/$/,'');
+    var x = new XMLHttpRequest();
+    x.open('GET', base + '/public-config/firebase', false);   // synchronous on purpose: the page needs the config before anything else runs
+    x.send(null);
+    if(x.status >= 200 && x.status < 300){ var c = JSON.parse(x.responseText); if(c && c.apiKey && c.databaseURL) return c; }
+  }catch(e){ console.warn('Firebase config could not be loaded:', e && e.message); }
+  return null;
+})();
+function _cfgMissingRef(){
+  var err = new Error('Cloud configuration is missing on the server');
+  var snap = {val:function(){return null;}, exists:function(){return false;}, forEach:function(){}, key:null};
+  var bad = function(){ var cb = arguments[arguments.length-1]; if(typeof cb === 'function') try{ cb(err); }catch(e){} var p = Promise.reject(err); p.catch(function(){}); return p; };
+  var api = {
+    once:function(ev,cb){ if(typeof cb === 'function') try{ cb(snap); }catch(e){} return Promise.resolve(snap); },
+    on:function(ev,cb){ return cb; }, off:function(){},
+    set:bad, update:bad, remove:bad, push:bad,
+    child:function(){ return _cfgMissingRef(); }, orderByKey:function(){ return api; }, limitToLast:function(){ return api; }
+  };
+  return api;
+}
+var FBDB;
+if(firebaseConfig){
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  FBDB = firebase.database();
+}else{
+  FBDB = { ref:function(){ return _cfgMissingRef(); } };
+  document.addEventListener('DOMContentLoaded', function(){
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#a32d2d;color:#fff;padding:10px 14px;font:700 13px Arial,sans-serif;text-align:center';
+    d.textContent = '⚠️ Server connection is not configured — attendance will NOT be saved to the cloud. Please contact the administrator.';
+    document.body.appendChild(d);
+  });
+}
 const FB_ROOT = 'shdl';
 
 // ══ MOBILE APP FIREBASE HELPER ══

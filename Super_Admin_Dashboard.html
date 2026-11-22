@@ -4383,6 +4383,7 @@ html,body,#admin-app{width:100%;min-width:0;}
       <div class="card sh-card"><div class="sh-h">📲 WhatsApp OTP delivery</div><div id="sh-otp"></div></div>
     </div>
   </div>
+  <div class="card sh-card"><div class="sh-h">🐙 GitHub repo file alert <span class="sh-sub">(files that a git push could upload)</span> <button class="btn btn-ghost btn-sm" style="float:right" onclick="SH_LOAD(true)">Re-scan</button></div><div id="sh-github"></div></div>
 </div>
 <div class="page" id="page-recycle-bin">
   <div class="page-header"><div><div class="page-title">♻️ Recycle Bin / Restore Center</div><div class="page-sub">Anything deleted or wiped on any portal (users, agents, students, HRMS, invoices, "Reset Factory") is kept here. Restore puts it back on its portal with all original data. <b>Purge</b> erases it for good — it can never be restored.</div></div>
@@ -4914,22 +4915,31 @@ html,body,#admin-app{width:100%;min-width:0;}
               <p class="bkp-card-copy">Collects managed local data plus server records available through the configured admin APIs. The export includes a manifest and any read warnings.</p>
               <label class="bkp-label" for="bkp-export-format">Backup format</label>
               <select id="bkp-export-format" class="bkp-control"><option value="json">JSON backup (.json)</option><option value="zip">ZIP archive containing backup.json (.zip)</option></select>
+              <label class="bkp-label" for="bkp-batch-size" style="margin-top:10px">File size (auto-split)</label>
+              <select id="bkp-batch-size" class="bkp-control"><option value="5242880">Auto — 1 file if small, otherwise Batch 1, 2, 3… (5 MB each)</option><option value="2097152">Auto — smaller Batch files (2 MB each, for slow phones)</option><option value="20971520">Auto — larger Batch files (20 MB each)</option></select>
               <div class="bkp-action-row"><button type="button" class="btn btn-primary" id="bkp-download-btn" onclick="BKP_DOWNLOAD_FULL()">⬇ Download Full System Backup</button></div>
               <div class="bkp-small-note">Cloud data is included only when the current session is authorized and the related endpoint is reachable. Any unavailable source is listed in the manifest.</div>
+              <div id="bkp-batch-list"></div>
             </article>
 
             <article class="bkp-card">
               <div class="bkp-card-heading"><div class="bkp-card-icon bkp-icon-green">↥</div><div><h3>Restore System Data</h3><p>Restore from a saved JSON backup</p></div></div>
               <p class="bkp-card-copy">Choose or drop an Anmol LibMatrix backup file. Review its date and record groups, then confirm before overwriting current data.</p>
               <label class="bkp-drop-zone" id="bkp-drop-zone" for="bkp-file-input" tabindex="0">
-                <input id="bkp-file-input" type="file" accept=".json,.zip,application/json,application/zip" hidden>
-                <span class="bkp-drop-icon">⇧</span><strong>Select Backup File (.json) to Restore</strong><span>Drop a .json or this module's .zip backup here, or click to browse</span>
+                <input id="bkp-file-input" type="file" accept=".json,.zip,application/json,application/zip" multiple hidden>
+                <span class="bkp-drop-icon">⇧</span><strong>Select Backup File(s) (.json) to Restore</strong><span>Drop a .json / .zip backup here, or click to browse. For a Batch backup, select <b>all</b> Batch files together.</span>
               </label>
               <div id="bkp-file-preview" class="bkp-file-preview" hidden></div>
               <div class="bkp-action-row"><button type="button" class="btn btn-success" id="bkp-restore-btn" onclick="BKP_OPEN_RESTORE_CONFIRM()" disabled>Restore Data Now</button><button type="button" class="btn btn-ghost btn-sm" onclick="BKP_CLEAR_SELECTED_FILE()">Clear</button></div>
               <div class="bkp-small-note">Restore validates the format and allowlists keys before writing. Existing records in matching tables may be overwritten.</div>
             </article>
           </div>
+
+          <article class="bkp-card" id="bkp-coverage-card">
+            <div class="bkp-card-heading"><div class="bkp-card-icon bkp-icon-green">✔</div><div><h3>Completeness Check</h3><p>What is — and is not — covered by a backup, with exact counts</p></div></div>
+            <div class="bkp-action-row"><button type="button" class="btn btn-ghost btn-sm" onclick="BKP_RUN_COVERAGE()">⟳ Check database now</button></div>
+            <div id="bkp-coverage-body"><div class="sh-empty">Checking the database…</div></div>
+          </article>
 
           <article class="bkp-card bkp-danger-card">
             <div class="bkp-card-heading"><div class="bkp-card-icon bkp-icon-red">⚠</div><div><h3>Master System Factory Reset</h3><p>Danger zone — permanently clears operational records</p></div></div>
@@ -6443,13 +6453,23 @@ const DB = {
   }
 };
 
+// ─── remove any plain-text admin password that an older version left in this browser's cache (cache only — the server copy is untouched) ───
+function SCRUB_LOCAL_ADMIN_PASSWORDS(){
+  try{
+    var raw=localStorage.getItem('shdl_admins'); if(!raw) return;
+    var list=JSON.parse(raw); if(!Array.isArray(list)) return;
+    var changed=false;
+    list.forEach(function(a){ if(a&&typeof a==='object'){ ['password','pass'].forEach(function(k){ if(k in a){ delete a[k]; changed=true; } }); } });
+    if(changed) localStorage.setItem('shdl_admins',JSON.stringify(list));
+  }catch(e){}
+}
+SCRUB_LOCAL_ADMIN_PASSWORDS();
+
 // ─── INIT DEFAULT DATA ───
 function INIT_DATA(){
-  if(!DB.get('admins')){
-    DB.set('admins',[
-      {id:'adm1',name:'Anmol Kumar',username:'Anmol',password:'Anmol@2003',role:'superadmin',lastLogin:'—',created:NOW()}
-    ]);
-  }
+  // 🔒 No default admin account is created in the browser any more (it used to carry a plain-text password).
+  //    Super Admin accounts exist only on the server, where passwords are bcrypt-hashed.
+  SCRUB_LOCAL_ADMIN_PASSWORDS();
   if(!DB.get('staff')) DB.set('staff',[]);
   if(!DB.get('salary_claims')) DB.set('salary_claims',[]);
   if(!DB.get('hrms_registrations')) DB.set('hrms_registrations',[]);
@@ -6641,63 +6661,58 @@ document.addEventListener('keydown',function(event){
   if(event.key === 'Escape' && modal && modal.classList.contains('open')) BACK_TO_ADMIN_LOGIN();
 });
 
+var _loginBusy=false;
+var _loginFailLocal={n:0,until:0};
 function DO_LOGIN(){
-  var u = document.getElementById('l-user').value.trim();
-  var p = document.getElementById('l-pass').value.trim();
+  var uEl=document.getElementById('l-user'), pEl=document.getElementById('l-pass');
+  // This page has no login form of its own — the Super Admin sign-in (with role + location gate) lives on the secure admin login page.
+  if(!uEl||!pEl){ try{ window.AnmolNav.go('admin','',true); }catch(e){ window.location.href='/'; } return; }
+  var u = uEl.value.trim();
+  var p = pEl.value;
   var capEl = document.getElementById('l-captcha');
   var cap = (capEl && capEl.value ? capEl.value : '').trim().toUpperCase();
   var err = document.getElementById('l-err');
+  function showErr(m){ if(err){ err.textContent=m; err.style.display='block'; } }
 
-  if(!u||!p){ err.textContent='Please enter both username and password.'; err.style.display='block'; return; }
-  if(!_captchaVal){ GEN_CAPTCHA(); err.textContent='A new security code has been generated. Please enter it and log in again.'; err.style.display='block'; return; }
-  if(!cap){ err.textContent='Please enter the captcha code.'; err.style.display='block'; if(capEl) capEl.focus(); return; }
-  if(cap !== String(_captchaVal).toUpperCase()){ err.textContent='Invalid captcha code. Please try again.'; err.style.display='block'; GEN_CAPTCHA(); if(capEl) capEl.focus(); return; }
-  err.style.display='none';
+  if(!u||!p){ showErr('Please enter both username and password.'); return; }
+  if(!_captchaVal){ GEN_CAPTCHA(); showErr('A new security code has been generated. Please enter it and log in again.'); return; }
+  if(!cap){ showErr('Please enter the captcha code.'); if(capEl) capEl.focus(); return; }
+  if(cap !== String(_captchaVal).toUpperCase()){ showErr('Invalid captcha code. Please try again.'); GEN_CAPTCHA(); if(capEl) capEl.focus(); return; }
+  if(_loginBusy) return;
+  var wait=_loginFailLocal.until-Date.now();
+  if(wait>0){ showErr('Too many failed attempts. Please wait '+Math.ceil(wait/1000)+' seconds.'); return; }
+  if(err) err.style.display='none';
+  _loginBusy=true;
 
-  // Agar admins localStorage mein nahi/empty hai to default set karo
-  var admins = DB.get('admins');
-  if(!admins || !admins.length){
-    INIT_DATA();
-    admins = DB.get('admins')||[];
-  }
-
-  var found = admins.find(a=>a.username===u && a.password===p);
-
-  // ⚠️ SECURITY: hardcoded superadmin fallback (username/password seedhe
-  // is file mein likha hua) HATA DIYA GAYA HAI — yeh ek backdoor tha jo
-  // koi bhi page source dekh kar use kar sakta tha. Agar admin record
-  // localStorage/legacy DB se kho jaaye, naya admin banane ke liye ab
-  // legacy DB Console se seedha 'shdl/admins' node edit karein, ya ek
-  // dedicated (auth-protected) "create first admin" Cloud Function
-  // banwayein — is file mein credential kabhi hardcode na karein.
-
-  if(!found){ err.textContent='Invalid username or password.'; err.style.display='block'; GEN_CAPTCHA(); return; }
-  // Update last login
-  found.lastLogin = NOW();
-  DB.set('admins',admins);
-  currentAdmin = found;
-
-  // ══════════════════════════════════════════════════════════════
-  // 🔒 SECURITY BRIDGE: purani DB-match login UI/UX bilkul waisi hi
-  // rehti hai (upar), lekin ab background mein naye backend se ek
-  // asli session token bhi mil jaata hai (non-blocking) — taaki wallet
-  // routes (withdrawal approve/reject) aur admin-entities routes
-  // (agents/staff/students save) caller ki pehchaan verify kar sakein.
-  // ══════════════════════════════════════════════════════════════
+  // 🔒 The password is verified ONLY by the server (bcrypt, rate-limit + lock-out, optional OTP). Nothing is compared in the browser,
+  //    and no default / fallback account exists in this file.
   API.post('/auth/login', { role: 'admin', username: u, password: p })
-    .then(function (result) {
+    .then(function(result){
+      _loginBusy=false; _loginFailLocal={n:0,until:0};
       AUTH_TOKEN = result.token;
       try { localStorage.setItem('shdl_auth_token', AUTH_TOKEN); } catch (e) {}
+      var admins = DB.get('admins')||[];
+      var found = admins.find(function(a){ return a && String(a.username||'').toLowerCase()===u.toLowerCase(); });
+      currentAdmin = found || {id:'srv-'+u.toLowerCase(), name:u, username:u, role:'Super Admin', lastLogin:NOW()};
+      SCRUB_LOCAL_ADMIN_PASSWORDS();
+      var loginScreen = document.getElementById('admin-login');
+      if(loginScreen) loginScreen.classList.add('login-leaving');
+      setTimeout(function(){
+        if(loginScreen) loginScreen.style.display='none';
+        OPEN_ROLE_LOCATION_MODAL();   // role / location selection decides the destination
+      }, 360);
     })
-    .catch(function (e) { console.warn('Secure session bridge failed (wallet/admin actions may not work yet):', e.message); });
-
-  var loginScreen = document.getElementById('admin-login');
-  loginScreen.classList.add('login-leaving');
-  setTimeout(function(){
-    // Pause before opening the dashboard: role/location selection decides the destination.
-    loginScreen.style.display='none';
-    OPEN_ROLE_LOCATION_MODAL();
-  }, 360);
+    .catch(function(e){
+      _loginBusy=false;
+      var msg=(e&&e.message)||'Login failed. Please try again.';
+      if(/otp verification is required/i.test(msg)){
+        showErr('OTP verification is required — opening the secure admin login…');
+        setTimeout(function(){ try{ window.AnmolNav.go('admin','',true); }catch(x){ window.location.href='/'; } },1200);
+        return;
+      }
+      if(!/too many/i.test(msg)){ _loginFailLocal.n++; if(_loginFailLocal.n>=5){ _loginFailLocal.until=Date.now()+30000; _loginFailLocal.n=0; } }
+      showErr(msg); GEN_CAPTCHA();
+    });
 }
 
 function DO_LOGOUT(){
@@ -11311,6 +11326,7 @@ function QUICK_CHG_PWD(){
     // Update current session too if it's the logged-in admin
     if(currentAdmin && currentAdmin.id===adminId) currentAdmin.password=newpwd;
     DB.set('admins',admins);
+    SCRUB_LOCAL_ADMIN_PASSWORDS();   // the new password was already sent to the server (hashed there); do not keep it in the browser cache
     document.getElementById('qchg-pwd').value='';
     document.getElementById('qchg-conf').value='';
     LOG_ACTIVITY('🔒 Admin password changed: '+oldName);
@@ -11850,12 +11866,19 @@ function EXEC_DELETE(){
     var pwdInput = document.getElementById('confirm-pwd-input');
     var pwdErr = document.getElementById('confirm-pwd-err');
     var entered = pwdInput ? pwdInput.value : '';
-    if(!currentAdmin || !entered || entered !== currentAdmin.password){
+    var _badPwd = function(){
       if(pwdErr) pwdErr.style.display = 'block';
       if(pwdInput){ pwdInput.value=''; pwdInput.focus(); }
-      return; // stop — galat password, action cancel
-    }
+    };
+    if(!currentAdmin || !entered){ _badPwd(); return; }
+    // 🔒 the Super Admin password is re-checked on the SERVER (rate-limited) — the browser no longer holds it
+    API.post('/security/verify-admin',{password:entered}).then(function(){ EXEC_DELETE_RUN(); }).catch(function(){ _badPwd(); });
+    return;
   }
+  EXEC_DELETE_RUN();
+}
+function EXEC_DELETE_RUN(){
+  if(!deleteAction){ CLOSE_MODAL('modal-confirm'); return; }
   var [type,id]=deleteAction.split(':');
   if(type==='staff'){ var arr=DB.get('staff')||[];DB.set('staff',arr.filter(x=>x.id!==id));LOG_ACTIVITY('🗑️ Staff deleted: '+id);SHOW_TOAST('The staff record has been deleted.'); if(document.getElementById('page-staff-users').classList.contains('active')) RENDER_STAFF(); if(document.getElementById('page-delete-data').classList.contains('active')) RENDER_DELETE_LISTS(); }
   else if(type==='agent'){ var arr=DB.get('agents')||[];DB.set('agents',arr.filter(x=>x.id!==id));LOG_ACTIVITY('🗑️ Agent deleted: '+id);SHOW_TOAST('The agent has been deleted.'); if(document.getElementById('page-agents').classList.contains('active')) RENDER_AGENTS(); if(document.getElementById('page-delete-data').classList.contains('active')) RENDER_DELETE_LISTS(); }
@@ -15597,7 +15620,8 @@ function SAVE_CONTROL_USER(){
       for(var i=0;i<localStorage.length;i++){
         var key=localStorage.key(i); if(!key||SENSITIVE_STORAGE_KEYS.has(key)||/^(?:.*(?:auth|session|token).*)$/i.test(key)&&key!=='shdl_admins')continue;
         if(/^(shdl_|shri_hari_|agent_|hrms_|student_)/i.test(key)){
-          result[key]=safeParse(localStorage.getItem(key));count++;
+          var _val=safeParse(localStorage.getItem(key));if(/^shdl_(admins|staff|agents|students)$/.test(key))_val=stripPw(_val);   // passwords never go into a backup file
+          result[key]=_val;count++;
         }
       }
     }catch(e){return {items:result,count:count,error:'Browser local storage could not be fully read: '+e.message};}
@@ -15634,35 +15658,164 @@ function SAVE_CONTROL_USER(){
     if(byId('bkp-server-count'))byId('bkp-server-count').textContent=String(BACKUP_ENTITY_KEYS.length+BACKUP_BLOB_KEYS.length+BACKUP_SITE_KEYS.length+BACKUP_CLOUD_KEYS.length);
     if(byId('bkp-last-created'))byId('bkp-last-created').textContent=lastBackupDate?new Date(lastBackupDate).toLocaleString():'Not yet created';
     if(byId('bkp-file-input')&&!byId('bkp-file-input').dataset.bound){
-      var input=byId('bkp-file-input');input.dataset.bound='1';input.addEventListener('change',function(){if(this.files&&this.files[0])BKP_READ_FILE(this.files[0]);});
+      var input=byId('bkp-file-input');input.dataset.bound='1';input.addEventListener('change',function(){if(this.files&&this.files.length)BKP_READ_FILES(this.files);});
       var zone=byId('bkp-drop-zone');
-      if(zone){zone.addEventListener('dragover',function(e){e.preventDefault();zone.classList.add('is-dragging');});zone.addEventListener('dragleave',function(){zone.classList.remove('is-dragging');});zone.addEventListener('drop',function(e){e.preventDefault();zone.classList.remove('is-dragging');var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)BKP_READ_FILE(f);});zone.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click();}});}
+      if(zone){zone.addEventListener('dragover',function(e){e.preventDefault();zone.classList.add('is-dragging');});zone.addEventListener('dragleave',function(){zone.classList.remove('is-dragging');});zone.addEventListener('drop',function(e){e.preventDefault();zone.classList.remove('is-dragging');var fl=e.dataTransfer&&e.dataTransfer.files;if(fl&&fl.length)BKP_READ_FILES(fl);});zone.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click();}});}
     }
     logEvent('Backup manager opened. Local keys: '+snap.count+'.','success');
+    try{BKP_RUN_COVERAGE(true);}catch(e){}
+  };
+
+  // ── helpers for the smart batch backup + completeness check ──
+  var BATCH_BYTES=5*1048576;           // default: one file up to 5 MB, otherwise Batch 1, 2, 3 …
+  var GROUPS=['localStorage','entities','blobs','siteData','cloud'];
+  var lastBatchFiles=[], lastCoverageReport=null;
+  function byteLen(s){try{return new Blob([s]).size;}catch(e){return String(s).length;}}
+  function fmtNum(n){return Number(n||0).toLocaleString('en-IN');}
+  function stripPw(v){
+    if(Array.isArray(v))return v.map(stripPw);
+    if(v&&typeof v==='object'){var o={};Object.keys(v).forEach(function(k){if(k==='password'||k==='pass')return;o[k]=v[k];});return o;}
+    return v;
+  }
+  async function fetchCoverage(){
+    if(!isOnlineBackend())return null;
+    try{var c=await apiGet('/admin/backup-coverage');return(c&&c.kv&&c.tables)?c:{error:'unexpected reply'};}catch(e){return{error:e.message};}
+  }
+  /* What exists in the database vs. what a backup carries. `server` = what was actually exported (null = assume every readable key). */
+  function buildCoverageReport(cov,server){
+    var rep={checkedAt:new Date().toISOString(),available:!!(cov&&!cov.error),error:(cov&&cov.error)||null,tables:[],keys:[],mismatches:[],files:null,totals:{tables:0,rows:0,keys:0,files:0}};
+    if(!rep.available)return rep;
+    var kvT=cov.kvTables||[];
+    cov.tables.forEach(function(t){
+      if(kvT.indexOf(t.name)>=0||t.transient||t.name==='site_files'||!t.rows)return;
+      rep.tables.push({name:t.name,rows:t.rows,exact:!!t.exact,bytes:t.bytes});
+    });
+    cov.kv.forEach(function(r){
+      var grp=r.table==='kv_admin_entities'?'entities':r.table==='kv_blob'?'blobs':'siteData';
+      if(!r.bytes||r.bytes<=4)return;      // empty value ("[]", "{}", "null") — nothing to lose
+      if(!r.readable){rep.keys.push({store:grp,key:r.key,bytes:r.bytes,records:r.records,reason:'no read route on the server'});return;}
+      var got=server?(server[grp]&&Object.prototype.hasOwnProperty.call(server[grp],r.key)):true;
+      if(!got){rep.keys.push({store:grp,key:r.key,bytes:r.bytes,records:r.records,reason:'could not be read'});return;}
+      if(server&&r.records!=null&&Array.isArray(server[grp][r.key])&&server[grp][r.key].length<r.records)rep.mismatches.push({store:grp,key:r.key,expected:r.records,got:server[grp][r.key].length});
+    });
+    if(cov.files&&cov.files.available&&cov.files.count>0)rep.files={count:cov.files.count,bytes:cov.files.bytes};
+    rep.totals={tables:rep.tables.length,rows:rep.tables.reduce(function(a,t){return a+t.rows;},0),keys:rep.keys.length+rep.mismatches.length,files:rep.files?rep.files.count:0};
+    return rep;
+  }
+  function renderCoverage(rep,extra){
+    var el=byId('bkp-coverage-body');if(!el)return;
+    extra=extra||{};
+    var h='',gaps=0;
+    function box(color,bg,html){return '<div style="border:1px solid '+color+';background:'+bg+';border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12px;line-height:1.6">'+html+'</div>';}
+    if(!rep||!rep.available){
+      h+=box('#f2d9aa','#fff6e7','<b>Completeness check unavailable.</b> '+esc((rep&&rep.error)||'Open this page while connected to the server.')+'<br>Until it runs, assume the JSON backup covers <b>only</b> the key-value stores — your other database tables and uploaded files must be copied from Supabase.');
+    }else{
+      var t=rep.totals;gaps=t.tables+t.keys+t.files;
+      if(!gaps)h+=box('#bee7cb','#eaf7ef','<b style="color:#167143">✓ Nothing is left out.</b> Every table with data, every stored key and every uploaded file is covered.');
+      else h+=box('#f2d9aa','#fff6e7','<b style="color:#8a5b0b">⚠ Not included in a backup file: '+t.tables+' table'+(t.tables===1?'':'s')+' ('+fmtNum(t.rows)+' rows)'+(t.keys?', '+t.keys+' record group'+(t.keys===1?'':'s'):'')+(t.files?', '+fmtNum(t.files)+' stored file'+(t.files===1?'':'s'):'')+'.</b><br>Copy these from Supabase: <b>Table Editor → table → Export to CSV</b>, or <b>Database → Backups</b> (or run <code>pg_dump</code>).');
+      if(rep.tables.length)h+='<div style="font-weight:800;font-size:12px;margin-top:8px">🗃 Database tables not in the backup</div>'+rep.tables.map(function(x){return '<div class="sh-kv"><span>'+esc(x.name)+'</span><span>'+(x.exact?'':'≈ ')+fmtNum(x.rows)+' rows · '+prettyBytes(x.bytes)+'</span></div>';}).join('');
+      if(rep.files)h+='<div style="font-weight:800;font-size:12px;margin-top:8px">🖼 Uploaded files (table <code>site_files</code>)</div><div class="sh-kv"><span>Images / logos / APKs</span><span>'+fmtNum(rep.files.count)+' files · '+prettyBytes(rep.files.bytes)+'</span></div>';
+      if(rep.keys.length)h+='<div style="font-weight:800;font-size:12px;margin-top:8px">🔑 Stored records the backup cannot read</div>'+rep.keys.map(function(x){return '<div class="sh-kv"><span>'+esc(x.store+' / '+x.key)+'</span><span>'+(x.records!=null?fmtNum(x.records)+' records · ':'')+prettyBytes(x.bytes)+' — '+esc(x.reason)+'</span></div>';}).join('');
+      if(rep.mismatches.length)h+='<div style="font-weight:800;font-size:12px;margin-top:8px;color:#a51e27">⚠ Record counts differ from the database</div>'+rep.mismatches.map(function(x){return '<div class="sh-kv"><span>'+esc(x.store+' / '+x.key)+'</span><span>exported '+fmtNum(x.got)+' of '+fmtNum(x.expected)+' records ('+fmtNum(x.expected-x.got)+' left)</span></div>';}).join('');
+    }
+    if(extra.restore){
+      var R=extra.restore;
+      h+='<div style="font-weight:800;font-size:13px;margin-top:12px">↥ Restore result</div>';
+      h+=box(R.problems?'#f2d9aa':'#bee7cb',R.problems?'#fff6e7':'#eaf7ef','Restored <b>'+fmtNum(R.done)+'</b> group(s).'+(R.problems?' <b>'+fmtNum(R.problems)+' item(s) were NOT restored</b> — see below.':' Nothing was skipped.'));
+      if(R.missingBatches&&R.missingBatches.length)h+=box('#f3c6c8','#fff0f0','<b>Missing files:</b> '+R.missingBatches.map(function(i){return 'Batch '+i;}).join(', ')+' of '+R.total+'. Select them as well (together or one by one) and restore again.');
+      ['incomplete','skipped','failed'].forEach(function(k){
+        var L=R[k]||[];if(!L.length)return;
+        var title={incomplete:'Left because a Batch file is missing',skipped:'Skipped (key is not allowed to be restored)',failed:'Server write failed'}[k];
+        h+='<div style="font-weight:800;font-size:12px;margin-top:8px">'+title+' ('+L.length+')</div>'+L.slice(0,40).map(function(x){return '<div class="sh-kv"><span>'+esc(x.id)+'</span><span>'+esc(x.note||'')+'</span></div>';}).join('')+(L.length>40?'<div class="sh-empty">+ '+(L.length-40)+' more</div>':'');
+      });
+    }
+    el.innerHTML=h;
+  }
+  window.BKP_RUN_COVERAGE=async function(silent){
+    var el=byId('bkp-coverage-body');if(el&&!silent)el.innerHTML='<div class="sh-empty">Checking the database…</div>';
+    var cov=await fetchCoverage();
+    lastCoverageReport=buildCoverageReport(cov,null);
+    renderCoverage(lastCoverageReport);
   };
 
   async function collectBackup(){
     var warnings=[],local=readLocalStoreSnapshot(),server={entities:{},blobs:{},cloud:{},siteData:{}},sources={};
     if(local.error)warnings.push(local.error);
+    var cov=await fetchCoverage();
+    if(cov&&cov.error){warnings.push('Server completeness check unavailable: '+cov.error);cov=null;}
+    // keys: the built-in lists PLUS every key the server says it can really serve (so newer keys are never silently missed)
+    var entKeys=BACKUP_ENTITY_KEYS.slice(),blobKeys=BACKUP_BLOB_KEYS.slice(),siteKeys=BACKUP_SITE_KEYS.slice();
+    if(cov)cov.kv.forEach(function(r){
+      if(!r.readable)return;
+      var L=r.table==='kv_admin_entities'?entKeys:r.table==='kv_blob'?blobKeys:siteKeys;
+      if(L.indexOf(r.key)<0)L.push(r.key);
+    });
     var tasks=[];
     if(isOnlineBackend()){
-      BACKUP_ENTITY_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/admin-entities/'+key);if(v!==undefined&&v!==null){server.entities[key]=v;sources['entity:'+key]='server';}else{warnings.push('Server returned no data for '+key);}}catch(e){warnings.push('Could not read server entity '+key+': '+e.message);}})());});
-      BACKUP_BLOB_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/blob/'+key);if(v!==undefined&&v!==null){server.blobs[key]=v;sources['blob:'+key]='server';}else{warnings.push('Server returned no data for blob '+key);}}catch(e){warnings.push('Could not read server blob '+key+': '+e.message);}})());});
-      BACKUP_SITE_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/site-data/'+key);if(v!==undefined&&v!==null){server.siteData[key]=(Object.prototype.hasOwnProperty.call(v,'value')?v.value:v);sources['site:'+key]='server';}else warnings.push('No server site-data for '+key);}catch(e){warnings.push('Could not read site-data '+key+': '+e.message);}})());});
+      entKeys.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/admin-entities/'+key);if(v!==undefined&&v!==null){server.entities[key]=v;sources['entity:'+key]='server';}else{warnings.push('Server returned no data for '+key);}}catch(e){warnings.push('Could not read server entity '+key+': '+e.message);}})());});
+      blobKeys.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/blob/'+key);if(v!==undefined&&v!==null){server.blobs[key]=v;sources['blob:'+key]='server';}else{warnings.push('Server returned no data for blob '+key);}}catch(e){warnings.push('Could not read server blob '+key+': '+e.message);}})());});
+      siteKeys.forEach(function(key){tasks.push((async function(){try{var v=await apiGet('/site-data/'+key);if(v!==undefined&&v!==null){server.siteData[key]=(Object.prototype.hasOwnProperty.call(v,'value')?v.value:v);sources['site:'+key]='server';}else warnings.push('No server site-data for '+key);}catch(e){warnings.push('Could not read site-data '+key+': '+e.message);}})());});
       BACKUP_CLOUD_KEYS.forEach(function(key){tasks.push((async function(){try{var v=await readCloudValue(key);if(v!==null){server.cloud[key]=v;sources['cloud:'+key]='server';}}catch(e){warnings.push('Could not read cloud node '+key+': '+e.message);}})());});
     }else{
       warnings.push('Backend is not reachable from this file/offline session; this export uses the local browser cache only.');
     }
     await Promise.all(tasks);
+    var coverage=buildCoverageReport(cov,server);
+    lastCoverageReport=coverage;
     var backup={
       format:'AnmolLibMatrix.SystemBackup',version:1,
       createdAt:new Date().toISOString(),
       createdBy:(typeof currentAdmin!=='undefined'&&currentAdmin&&currentAdmin.username)?String(currentAdmin.username):'Super Admin',
-      scope:{description:'Managed local cache and available server datasets; session tokens excluded.',entityKeys:BACKUP_ENTITY_KEYS,blobKeys:BACKUP_BLOB_KEYS,siteDataKeys:BACKUP_SITE_KEYS,cloudKeys:BACKUP_CLOUD_KEYS},
+      scope:{description:'Managed local cache and available server datasets; session tokens and passwords excluded.',entityKeys:entKeys,blobKeys:blobKeys,siteDataKeys:siteKeys,cloudKeys:BACKUP_CLOUD_KEYS},
       data:{localStorage:local.items,entities:server.entities,blobs:server.blobs,siteData:server.siteData,cloud:server.cloud},
-      manifest:{localKeyCount:local.count,serverEntityCount:Object.keys(server.entities).length,serverBlobCount:Object.keys(server.blobs).length,siteDataCount:Object.keys(server.siteData).length,cloudNodeCount:Object.keys(server.cloud).length,warnings:warnings,sources:sources}
+      manifest:{localKeyCount:local.count,serverEntityCount:Object.keys(server.entities).length,serverBlobCount:Object.keys(server.blobs).length,siteDataCount:Object.keys(server.siteData).length,cloudNodeCount:Object.keys(server.cloud).length,warnings:warnings,sources:sources,coverage:coverage}
     };
     return backup;
+  }
+  /* Split oversize lists / objects into slices that each fit one batch file. */
+  function splitUnit(u,limit){
+    var v;try{v=JSON.parse(u.s);}catch(e){return [u];}
+    var isArr=Array.isArray(v),isObj=!isArr&&v&&typeof v==='object';
+    if(!isArr&&!isObj)return [u];
+    var keys=isArr?null:Object.keys(v),parts=[],cur=isArr?[]:{},curSize=2,curCount=0,list=isArr?v:keys;
+    list.forEach(function(e){
+      var item=isArr?e:v[e],sz=byteLen(JSON.stringify(item))+(isArr?1:byteLen(JSON.stringify(e))+2);
+      if(curCount&&curSize+sz>limit){parts.push(cur);cur=isArr?[]:{};curSize=2;curCount=0;}
+      if(isArr)cur.push(item);else cur[e]=item;
+      curSize+=sz;curCount++;
+    });
+    parts.push(cur);
+    if(parts.length<2)return [u];
+    return parts.map(function(p,i){var s=JSON.stringify(p);return{g:u.g,k:u.k,s:s,size:byteLen(s),part:i+1,of:parts.length,kind:isArr?'array':'object'};});
+  }
+  /* Auto-detect: small → one .json; large → Batch 1, 2, 3 … each below the size limit. */
+  function planFiles(backup,limit,stamp){
+    var compact=JSON.stringify(backup),total=byteLen(compact);
+    var base='AnmolLibMatrix-SystemBackup-'+stamp;
+    if(total<=limit)return[{name:base+'.json',json:JSON.stringify(backup,null,2),items:GROUPS.reduce(function(a,g){return a+Object.keys(backup.data[g]||{}).length;},0)}];
+    var units=[];
+    GROUPS.forEach(function(g){Object.keys(backup.data[g]||{}).forEach(function(k){var s=JSON.stringify(backup.data[g][k]);units.push({g:g,k:k,s:s,size:byteLen(s)});});});
+    var flat=[];units.forEach(function(u){if(u.size>limit*0.9)splitUnit(u,Math.floor(limit*0.9)).forEach(function(p){flat.push(p);});else flat.push(u);});
+    var expectedMap={};flat.forEach(function(u){var id=u.g+'.'+u.k;expectedMap[id]=u.of||1;});
+    var expected=Object.keys(expectedMap).map(function(id){return{id:id,parts:expectedMap[id]};});
+    var bins=[],cur=null;
+    flat.forEach(function(u){
+      var id=u.g+'.'+u.k;
+      if(!cur||(cur.size+u.size>limit&&cur.units.length)||cur.ids[id]){cur={units:[],size:0,ids:{}};bins.push(cur);}
+      cur.units.push(u);cur.size+=u.size;cur.ids[id]=1;
+    });
+    var setId='BK-'+stamp,out=[];
+    bins.forEach(function(bin,i){
+      var parts={},dataStr=GROUPS.map(function(g){
+        var items=bin.units.filter(function(u){return u.g===g;});
+        items.forEach(function(u){if(u.of)parts[g+'.'+u.k]={part:u.part,of:u.of,kind:u.kind};});
+        return JSON.stringify(g)+':{'+items.map(function(u){return JSON.stringify(u.k)+':'+u.s;}).join(',')+'}';
+      }).join(',');
+      var head={format:backup.format,version:2,createdAt:backup.createdAt,createdBy:backup.createdBy,scope:backup.scope,batch:{setId:setId,index:i+1,total:bins.length,expected:expected},parts:parts,manifest:backup.manifest};
+      var json=JSON.stringify(head).slice(0,-1)+',"data":{'+dataStr+'}}';
+      out.push({name:base+'-Batch-'+(i+1)+'-of-'+bins.length+'.json',json:json,items:bin.units.length});
+    });
+    return out;
   }
   function downloadBlob(blob,name){var url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url);},1200);}
   function crc32(bytes){var crc=-1;for(var i=0;i<bytes.length;i++){crc^=bytes[i];for(var j=0;j<8;j++)crc=(crc>>>1)^((crc&1)?0xEDB88320:0);}return (crc^-1)>>>0;}
@@ -15675,21 +15828,39 @@ function SAVE_CONTROL_USER(){
     var end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(4,0,true);e.setUint16(6,0,true);e.setUint16(8,1,true);e.setUint16(10,1,true);e.setUint32(12,central.length,true);e.setUint32(16,local.length,true);e.setUint16(20,0,true);
     return new Blob([local,central,end],{type:'application/zip'});
   }
+  function renderBatchList(){
+    var el=byId('bkp-batch-list');if(!el)return;
+    if(!lastBatchFiles.length){el.innerHTML='';return;}
+    var multi=lastBatchFiles.length>1;
+    el.innerHTML='<div style="font-weight:800;font-size:12px;margin:10px 0 4px">'+(multi?'📦 Large data — saved as '+lastBatchFiles.length+' Batch files':'📄 Small data — saved as 1 file')+'</div>'+
+      lastBatchFiles.map(function(f,i){return '<div class="sh-kv"><span>'+esc(f.name)+'</span><span>'+prettyBytes(f.bytes)+' · '+fmtNum(f.items)+' groups <button type="button" class="btn btn-ghost btn-sm" onclick="BKP_REDOWNLOAD('+i+')">⬇</button></span></div>';}).join('')+
+      (multi?'<div class="bkp-small-note">Keep <b>all</b> Batch files together. If your browser blocked some automatic downloads, use the ⬇ buttons above. To restore, select every Batch file at once.</div>':'');
+  }
+  window.BKP_REDOWNLOAD=function(i){var f=lastBatchFiles[i];if(f)downloadBlob(f.blob,f.name);};
   window.BKP_DOWNLOAD_FULL=async function(){
     var btn=byId('bkp-download-btn');if(btn&&btn.disabled)return;
     if(btn){btn.disabled=true;btn.textContent='Collecting data…';}
     setStatus('Collecting data…','busy');
     try{
-      var backup=await collectBackup(),json=JSON.stringify(backup,null,2),stamp=new Date().toISOString().replace(/[:.]/g,'-'),format=byId('bkp-export-format')?byId('bkp-export-format').value:'json';
-      if(format==='zip')downloadBlob(zipStoredFile('AnmolLibMatrix-SystemBackup.json',json),'AnmolLibMatrix-SystemBackup-'+stamp+'.zip');
-      else downloadBlob(new Blob([json],{type:'application/json;charset=utf-8'}),'AnmolLibMatrix-SystemBackup-'+stamp+'.json');
+      var backup=await collectBackup(),stamp=new Date().toISOString().replace(/[:.]/g,'-'),format=byId('bkp-export-format')?byId('bkp-export-format').value:'json';
+      var limit=Number(byId('bkp-batch-size')&&byId('bkp-batch-size').value)||BATCH_BYTES;
+      if(btn)btn.textContent='Preparing files…';
+      var plan=planFiles(backup,limit,stamp);
+      lastBatchFiles=plan.map(function(p){
+        var blob=format==='zip'?zipStoredFile(p.name.replace(/\.json$/,'.json'),p.json):new Blob([p.json],{type:'application/json;charset=utf-8'});
+        return{name:format==='zip'?p.name.replace(/\.json$/,'.zip'):p.name,blob:blob,bytes:blob.size,items:p.items};
+      });
+      for(var i=0;i<lastBatchFiles.length;i++){downloadBlob(lastBatchFiles[i].blob,lastBatchFiles[i].name);if(i<lastBatchFiles.length-1)await new Promise(function(r){setTimeout(r,900);});}
+      renderBatchList();
       lastBackupDate=backup.createdAt;if(byId('bkp-last-created'))byId('bkp-last-created').textContent=new Date(lastBackupDate).toLocaleString();
       if(byId('bkp-local-count'))byId('bkp-local-count').textContent=String(backup.manifest.localKeyCount);
-      var warningCount=backup.manifest.warnings.length;
-      setStatus(warningCount?'Downloaded with warnings':'Backup downloaded',warningCount?'warn':'success');
-      logEvent('Backup downloaded ('+format.toUpperCase()+'). Local keys '+backup.manifest.localKeyCount+', server groups '+(backup.manifest.serverEntityCount+backup.manifest.serverBlobCount+backup.manifest.siteDataCount+backup.manifest.cloudNodeCount)+'.',warningCount?'warn':'success');
-      if(warningCount)logEvent('Some data sources were unavailable; inspect manifest.warnings inside the backup file.','warn');
-      if(typeof SHOW_TOAST==='function')SHOW_TOAST(warningCount?'Backup downloaded with source warnings. Check its manifest.':'Full backup downloaded successfully. Store it securely.',5000);
+      var cov=backup.manifest.coverage,gaps=cov&&cov.available?(cov.totals.tables+cov.totals.keys+cov.totals.files):0,warningCount=backup.manifest.warnings.length;
+      renderCoverage(cov);
+      setStatus(gaps||warningCount?'Downloaded — check what is left':'Backup downloaded',gaps||warningCount?'warn':'success');
+      logEvent('Backup downloaded as '+lastBatchFiles.length+' file'+(lastBatchFiles.length>1?'s (Batch 1…'+lastBatchFiles.length+')':'')+' ('+format.toUpperCase()+'). Local keys '+backup.manifest.localKeyCount+', server groups '+(backup.manifest.serverEntityCount+backup.manifest.serverBlobCount+backup.manifest.siteDataCount+backup.manifest.cloudNodeCount)+'.',gaps||warningCount?'warn':'success');
+      if(gaps)logEvent('NOT in this backup: '+cov.totals.tables+' table(s) ('+fmtNum(cov.totals.rows)+' rows)'+(cov.totals.files?', '+fmtNum(cov.totals.files)+' stored files':'')+(cov.totals.keys?', '+cov.totals.keys+' record group(s)':'')+' — see the Completeness Check below and copy them from Supabase.','warn');
+      if(warningCount)logEvent(warningCount+' data source warning(s) — listed inside the backup manifest.','warn');
+      if(typeof SHOW_TOAST==='function')SHOW_TOAST(gaps?'Backup downloaded — but some tables/files are NOT included. See the Completeness Check.':(warningCount?'Backup downloaded with source warnings. Check its manifest.':'Full backup downloaded successfully. Store it securely.'),6000);
     }catch(e){setStatus('Backup failed','error');logEvent('Backup failed: '+e.message,'error');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Backup failed: '+e.message,6000);}
     finally{if(btn){btn.disabled=false;btn.textContent='⬇ Download Full System Backup';}}
   };
@@ -15701,28 +15872,92 @@ function SAVE_CONTROL_USER(){
     }
     throw new Error('No backup JSON file was found in this ZIP archive.');
   }
-  window.BKP_READ_FILE=async function(file){
-    selectedBackup=null;
-    var prev=byId('bkp-file-preview'),btn=byId('bkp-restore-btn');if(btn)btn.disabled=true;if(prev){prev.hidden=false;prev.textContent='Reading '+file.name+'…';}
-    if(file.size>100*1024*1024){if(prev)prev.textContent='File is over the 100 MB safety limit.';logEvent('Backup rejected: file exceeds 100 MB.','error');return;}
+  var restoreSet=null;
+  async function readOneBackup(file){
+    if(file.size>100*1024*1024)throw new Error(file.name+' is over the 100 MB safety limit.');
+    var text;
+    if(/\.zip$/i.test(file.name)){text=parseZipBackup(await file.arrayBuffer());}else{text=await file.text();}
+    var data=JSON.parse(text);
+    if(!data||data.format!=='AnmolLibMatrix.SystemBackup'||(data.version!==1&&data.version!==2)||!data.data||typeof data.data!=='object')throw new Error(file.name+': not an Anmol LibMatrix System Backup file (or an unsupported version).');
+    GROUPS.forEach(function(g){if(!data.data[g]||typeof data.data[g]!=='object')data.data[g]={};});
+    return data;
+  }
+  /* Join Batch files back into one normal backup; lists that were split are re-assembled only when EVERY slice is present. */
+  function assembleSet(set){
+    var out={format:'AnmolLibMatrix.SystemBackup',version:1,createdAt:set.createdAt,createdBy:set.createdBy,data:{localStorage:{},entities:{},blobs:{},siteData:{},cloud:{}},manifest:set.manifest||{},
+      _set:{setId:set.setId,total:set.total,missingBatches:[],incomplete:[],loaded:Object.keys(set.files).map(Number).sort(function(a,b){return a-b;})}};
+    for(var i=1;i<=set.total;i++)if(!set.files[i])out._set.missingBatches.push(i);
+    var pieces={};
+    Object.keys(set.files).forEach(function(idx){
+      var d=set.files[idx].data;
+      GROUPS.forEach(function(g){Object.keys(d.data[g]||{}).forEach(function(k){
+        var id=g+'.'+k,pm=d.parts&&d.parts[id],p=pieces[id]||(pieces[id]={g:g,k:k,of:pm?pm.of:1,kind:pm?pm.kind:null,vals:{}});
+        p.vals[pm?pm.part:1]=d.data[g][k];
+      });});
+    });
+    Object.keys(pieces).forEach(function(id){
+      var p=pieces[id],got=Object.keys(p.vals).length;
+      if(got<p.of){out._set.incomplete.push({id:id,note:'only '+got+' of '+p.of+' parts loaded'});return;}
+      var v;
+      if(p.of===1)v=p.vals[1];
+      else if(p.kind==='array'){v=[];for(var n=1;n<=p.of;n++)v=v.concat(p.vals[n]);}
+      else{v={};for(var m=1;m<=p.of;m++)Object.assign(v,p.vals[m]);}
+      out.data[p.g][p.k]=v;
+    });
+    (set.expected||[]).forEach(function(e){if(!pieces[e.id])out._set.incomplete.push({id:e.id,note:'its Batch file is not selected'});});
+    return out;
+  }
+  function renderPreview(names){
+    var prev=byId('bkp-file-preview'),btn=byId('bkp-restore-btn'),d=selectedBackup;
+    if(!d){if(prev)prev.hidden=true;if(btn)btn.disabled=true;return;}
+    var groupCount=Object.keys(d.data.entities).length+Object.keys(d.data.blobs).length+Object.keys(d.data.siteData).length+Object.keys(d.data.cloud).length;
+    var html='<strong>Selected:</strong> '+names.map(esc).join(', ')+'<br><strong>Created:</strong> '+esc(d.createdAt||'Unknown')+'<br><strong>Local keys:</strong> '+Object.keys(d.data.localStorage).length+' · <strong>Server/cloud groups:</strong> '+groupCount;
+    var cov=d.manifest&&d.manifest.coverage;
+    if(d._set){
+      var S=d._set;
+      html+='<br><strong>Batch set:</strong> '+S.loaded.length+' of '+S.total+' files loaded ('+S.loaded.map(function(i){return 'Batch '+i;}).join(', ')+')';
+      if(S.missingBatches.length)html+='<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:#fff0f0;border:1px solid #f3c6c8;color:#a51e27"><b>⚠ Missing: '+S.missingBatches.map(function(i){return 'Batch '+i;}).join(', ')+'.</b> '+(S.incomplete.length?fmtNum(S.incomplete.length)+' record group(s) cannot be restored until you add them (you can select them now or later).':'Add them to restore everything.')+'</div>';
+      else if(S.incomplete.length)html+='<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:#fff0f0;border:1px solid #f3c6c8;color:#a51e27"><b>⚠ '+S.incomplete.length+' record group(s) are incomplete.</b></div>';
+      else html+='<div style="margin-top:6px;color:#167143"><b>✓ Complete set.</b></div>';
+    }
+    if(cov&&cov.available&&(cov.totals.tables+cov.totals.keys+cov.totals.files))html+='<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:#fff6e7;border:1px solid #f2d9aa;color:#8a5b0b">This backup was made <b>without</b> '+cov.totals.tables+' table(s) ('+fmtNum(cov.totals.rows)+' rows)'+(cov.totals.files?' and '+fmtNum(cov.totals.files)+' stored files':'')+' — those must be restored from Supabase.</div>';
+    if(prev){prev.hidden=false;prev.innerHTML=html;}
+    if(btn)btn.disabled=!(Object.keys(d.data.localStorage).length||groupCount);
+  }
+  window.BKP_READ_FILES=async function(fileList){
+    var files=Array.prototype.slice.call(fileList||[]);if(!files.length)return;
+    var prev=byId('bkp-file-preview'),btn=byId('bkp-restore-btn');if(btn)btn.disabled=true;if(prev){prev.hidden=false;prev.textContent='Reading '+files.length+' file'+(files.length>1?'s':'')+'…';}
+    var singles=[],batches=[],errors=[];
+    for(var i=0;i<files.length;i++){
+      try{var d=await readOneBackup(files[i]);(d.version===2&&d.batch?batches:singles).push({name:files[i].name,data:d});}
+      catch(e){errors.push(e.message);}
+    }
     try{
-      var text;
-      if(/\.zip$/i.test(file.name)){var arr=await file.arrayBuffer();text=parseZipBackup(arr);}else{text=await file.text();}
-      var data=JSON.parse(text);
-      if(!data||data.format!=='AnmolLibMatrix.SystemBackup'||data.version!==1||!data.data||typeof data.data!=='object')throw new Error('Unsupported backup format or version. Select an Anmol LibMatrix System Backup file.');
-      if(!data.data.localStorage||typeof data.data.localStorage!=='object')data.data.localStorage={};
-      ['entities','blobs','siteData','cloud'].forEach(function(k){if(!data.data[k]||typeof data.data[k]!=='object')data.data[k]={};});
-      selectedBackup=data;
-      var groupCount=Object.keys(data.data.entities).length+Object.keys(data.data.blobs).length+Object.keys(data.data.siteData).length+Object.keys(data.data.cloud).length;
-      if(prev){prev.innerHTML='<strong>Selected:</strong> '+esc(file.name)+' ('+prettyBytes(file.size)+')<br><strong>Created:</strong> '+esc(data.createdAt||'Unknown')+'<br><strong>Local keys:</strong> '+Object.keys(data.data.localStorage).length+' · <strong>Server/cloud groups:</strong> '+groupCount+'<br><span style="color:#9a6700">Restoring can overwrite current data. A safety confirmation is required next.</span>';prev.hidden=false;}
-      if(btn)btn.disabled=false;
-      setStatus('Backup file validated','success');logEvent('Backup file selected and validated: '+file.name+'.','success');
-    }catch(e){selectedBackup=null;if(prev){prev.hidden=false;prev.textContent='Could not read backup: '+e.message;}if(btn)btn.disabled=true;setStatus('Invalid backup','error');logEvent('Restore file rejected: '+e.message,'error');}
+      if(errors.length)throw new Error(errors[0]+(errors.length>1?' (+'+(errors.length-1)+' more file problem(s))':''));
+      if(singles.length&&batches.length)throw new Error('Select either one single backup file or a set of Batch files — not both.');
+      if(singles.length>1)throw new Error('Select only one single backup file (or all the Batch files of one backup).');
+      var names;
+      if(singles.length){restoreSet=null;selectedBackup=singles[0].data;names=[singles[0].name];}
+      else{
+        var ids={};batches.forEach(function(b){ids[b.data.batch.setId]=1;});
+        if(Object.keys(ids).length>1)throw new Error('These Batch files belong to different backups. Select the files of one backup only.');
+        var b0=batches[0].data;
+        if(!restoreSet||restoreSet.setId!==b0.batch.setId)restoreSet={setId:b0.batch.setId,total:b0.batch.total,expected:b0.batch.expected,createdAt:b0.createdAt,createdBy:b0.createdBy,manifest:b0.manifest,files:{}};
+        batches.forEach(function(b){restoreSet.files[b.data.batch.index]={name:b.name,data:b.data};});
+        selectedBackup=assembleSet(restoreSet);
+        names=Object.keys(restoreSet.files).map(function(k){return restoreSet.files[k].name;});
+      }
+      renderPreview(names);
+      var inc=selectedBackup._set&&(selectedBackup._set.missingBatches.length||selectedBackup._set.incomplete.length);
+      setStatus(inc?'Backup set incomplete':'Backup file validated',inc?'warn':'success');
+      logEvent((inc?'Backup selected, but the Batch set is incomplete: ':'Backup file selected and validated: ')+names.join(', ')+'.',inc?'warn':'success');
+    }catch(e){selectedBackup=null;restoreSet=null;if(prev){prev.hidden=false;prev.textContent='Could not read backup: '+e.message;}if(btn)btn.disabled=true;setStatus('Invalid backup','error');logEvent('Restore file rejected: '+e.message,'error');}
   };
-  window.BKP_CLEAR_SELECTED_FILE=function(){selectedBackup=null;if(byId('bkp-file-input'))byId('bkp-file-input').value='';if(byId('bkp-file-preview')){byId('bkp-file-preview').hidden=true;byId('bkp-file-preview').textContent='';}if(byId('bkp-restore-btn'))byId('bkp-restore-btn').disabled=true;setStatus('Ready','success');};
+  window.BKP_READ_FILE=function(file){return window.BKP_READ_FILES([file]);};
+  window.BKP_CLEAR_SELECTED_FILE=function(){selectedBackup=null;restoreSet=null;if(byId('bkp-file-input'))byId('bkp-file-input').value='';if(byId('bkp-file-preview')){byId('bkp-file-preview').hidden=true;byId('bkp-file-preview').textContent='';}if(byId('bkp-restore-btn'))byId('bkp-restore-btn').disabled=true;setStatus('Ready','success');};
   function openModal(id){var el=byId(id);if(el){el.classList.add('is-open');el.setAttribute('aria-hidden','false');}}
   function closeModal(id){var el=byId(id);if(el){el.classList.remove('is-open');el.setAttribute('aria-hidden','true');}}
-  window.BKP_OPEN_RESTORE_CONFIRM=function(){if(!selectedBackup){logEvent('Select a valid backup file first.','warn');return;}if(byId('bkp-restore-phrase'))byId('bkp-restore-phrase').value='';if(byId('bkp-restore-message')){byId('bkp-restore-message').className='bkp-modal-msg';byId('bkp-restore-message').textContent='';}openModal('bkp-restore-modal');};
+  window.BKP_OPEN_RESTORE_CONFIRM=function(){if(!selectedBackup){logEvent('Select a valid backup file first.','warn');return;}if(byId('bkp-restore-phrase'))byId('bkp-restore-phrase').value='';if(byId('bkp-restore-message')){byId('bkp-restore-message').className='bkp-modal-msg';byId('bkp-restore-message').textContent='';}var S=selectedBackup._set;if(S&&(S.missingBatches.length||S.incomplete.length))showRestoreMessage('Incomplete set — '+(S.missingBatches.length?'missing '+S.missingBatches.map(function(i){return 'Batch '+i;}).join(', ')+'. ':'')+S.incomplete.length+' record group(s) will be SKIPPED (never half-restored). You can restore the rest now and add the missing files later.','error');openModal('bkp-restore-modal');};
   window.BKP_CLOSE_RESTORE_CONFIRM=function(){closeModal('bkp-restore-modal');};
   function showRestoreMessage(text,type){var el=byId('bkp-restore-message');if(el){el.textContent=text;el.className='bkp-modal-msg show '+(type||'error');}}
   function storageKeyAllowed(key){return /^(shdl_|shri_hari_|agent_|hrms_|student_)/i.test(key)&&!SENSITIVE_STORAGE_KEYS.has(key)&&!/(?:auth[_-]?token|access[_-]?token|refresh[_-]?token|session[_-]?token)/i.test(key);}
@@ -15732,29 +15967,33 @@ function SAVE_CONTROL_USER(){
     if(!selectedBackup){showRestoreMessage('Select a valid backup file first.','error');return;}
     var phrase=(byId('bkp-restore-phrase').value||'').trim();if(phrase!=='RESTORE'){showRestoreMessage('Type RESTORE exactly to confirm this overwrite.','error');return;}
     var button=byId('bkp-restore-confirm-btn');if(button){button.disabled=true;button.textContent='Restoring…';}setStatus('Restore in progress…','busy');showRestoreMessage('','');
-    var failures=[],succeeded=[];var d=selectedBackup.data;
+    var failures=[],succeeded=[],skipped=[],d=selectedBackup.data,S=selectedBackup._set||{missingBatches:[],incomplete:[]};
     try{
-      // Attempt cloud writes first so local state is not replaced until sync outcomes are known.
+      // allowed keys = the built-in lists + keys this server really serves (the server still validates every write)
+      var okEnt=BACKUP_ENTITY_KEYS.slice(),okBlob=BACKUP_BLOB_KEYS.slice(),okSite=BACKUP_SITE_KEYS.slice(),cov=await fetchCoverage();
+      if(cov&&!cov.error){cov.readable.entities.forEach(function(k){if(okEnt.indexOf(k)<0)okEnt.push(k);});cov.readable.blobs.forEach(function(k){if(okBlob.indexOf(k)<0)okBlob.push(k);});cov.kv.forEach(function(r){if(r.table==='kv_site_data'&&r.readable&&okSite.indexOf(r.key)<0)okSite.push(r.key);});}
+      function pick(group,allow){return Object.keys(d[group]||{}).filter(function(k){if(allow.indexOf(k)>=0)return true;skipped.push({id:group+'.'+k,note:'key is not on the allowed list'});return false;});}
       if(isOnlineBackend()){
         var tasks=[];
-        allowedObjectKeys(d.entities,BACKUP_ENTITY_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/admin-entities/'+key,d.entities[key]);succeeded.push('entity:'+key);} )().catch(function(e){failures.push('entity '+key+': '+e.message);}));});
-        allowedObjectKeys(d.blobs,BACKUP_BLOB_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/blob/'+key,d.blobs[key]);succeeded.push('blob:'+key);} )().catch(function(e){failures.push('blob '+key+': '+e.message);}));});
-        allowedObjectKeys(d.siteData,BACKUP_SITE_KEYS).forEach(function(key){tasks.push((async function(){await API.post('/site-data/'+key,{value:d.siteData[key]});succeeded.push('site:'+key);} )().catch(function(e){failures.push('site-data '+key+': '+e.message);}));});
-        allowedObjectKeys(d.cloud,BACKUP_CLOUD_KEYS).forEach(function(key){tasks.push((async function(){await writeCloudValue(key,d.cloud[key]);succeeded.push('cloud:'+key);} )().catch(function(e){failures.push('Cloud '+key+': '+e.message);}));});
+        pick('entities',okEnt).forEach(function(key){tasks.push((async function(){await API.post('/admin-entities/'+key,d.entities[key]);succeeded.push('entity:'+key);})().catch(function(e){failures.push({id:'entities.'+key,note:e.message});}));});
+        pick('blobs',okBlob).forEach(function(key){tasks.push((async function(){await API.post('/blob/'+key,d.blobs[key]);succeeded.push('blob:'+key);})().catch(function(e){failures.push({id:'blobs.'+key,note:e.message});}));});
+        pick('siteData',okSite).forEach(function(key){tasks.push((async function(){await API.post('/site-data/'+key,{value:d.siteData[key]});succeeded.push('site:'+key);})().catch(function(e){failures.push({id:'siteData.'+key,note:e.message});}));});
+        allowedObjectKeys(d.cloud,BACKUP_CLOUD_KEYS).forEach(function(key){tasks.push((async function(){await writeCloudValue(key,d.cloud[key]);succeeded.push('cloud:'+key);})().catch(function(e){failures.push({id:'cloud.'+key,note:e.message});}));});
         await Promise.all(tasks);
-      }else{failures.push('Backend is unavailable in this file/offline session; cloud/server tables were not restored.');}
-      // Restore only managed, namespaced browser keys; never import auth tokens.
+      }else{failures.push({id:'server',note:'Backend is unavailable in this file/offline session; cloud/server tables were not restored.'});}
       var localRestored=0;
       try{
-        Object.keys(d.localStorage||{}).forEach(function(key){if(!storageKeyAllowed(key))return;try{localStorage.setItem(key,typeof d.localStorage[key]==='string'&&key.indexOf('shdl_raw_')===0?d.localStorage[key]:JSON.stringify(d.localStorage[key]));localRestored++;}catch(e){failures.push('Local key '+key+': '+e.message);}});
-        // Server snapshot values take precedence over possibly older local cached values.
-        Object.keys(d.entities||{}).forEach(function(k){if(BACKUP_ENTITY_KEYS.indexOf(k)>=0)try{localStorage.setItem('shdl_'+k,JSON.stringify(d.entities[k]));}catch(e){failures.push('Local entity cache '+k+': '+e.message);}});
-        Object.keys(d.blobs||{}).forEach(function(k){if(BACKUP_BLOB_KEYS.indexOf(k)>=0)try{localStorage.setItem('shdl_'+k,JSON.stringify(d.blobs[k]));}catch(e){failures.push('Local blob cache '+k+': '+e.message);}});
-      }catch(e){failures.push('Browser cache restore issue: '+e.message);}
-      var successCount=succeeded.length;
-      closeModal('bkp-restore-modal');BKP_CLEAR_SELECTED_FILE();
-      if(failures.length){setStatus('Restore partially completed','warn');logEvent('Restore applied locally to '+localRestored+' keys; cloud/server writes succeeded '+successCount+', failed '+failures.length+'.','warn');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Restore partially completed. '+failures.length+' source(s) failed; open Backup & Restore to review console/log and verify server data.',7000);alert('Restore completed with warnings.\nLocal keys restored: '+localRestored+'\nServer/cloud writes succeeded: '+successCount+'\nFailures: '+failures.length+'\n\n'+failures.slice(0,5).join('\n')+'\n\nReview your server tables before using the restored system.');}
-      else{setStatus('Restore complete','success');logEvent('Restore completed. Local keys restored: '+localRestored+'; server/cloud groups written: '+successCount+'.','success');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Backup restore completed successfully.',5000);}
+        Object.keys(d.localStorage||{}).forEach(function(key){if(!storageKeyAllowed(key))return;try{localStorage.setItem(key,typeof d.localStorage[key]==='string'&&key.indexOf('shdl_raw_')===0?d.localStorage[key]:JSON.stringify(d.localStorage[key]));localRestored++;}catch(e){failures.push({id:'local.'+key,note:e.message});}});
+        Object.keys(d.entities||{}).forEach(function(k){if(okEnt.indexOf(k)>=0)try{localStorage.setItem('shdl_'+k,JSON.stringify(d.entities[k]));}catch(e){failures.push({id:'localcache.'+k,note:e.message});}});
+        Object.keys(d.blobs||{}).forEach(function(k){if(okBlob.indexOf(k)>=0)try{localStorage.setItem('shdl_'+k,JSON.stringify(d.blobs[k]));}catch(e){failures.push({id:'localcache.'+k,note:e.message});}});
+        SCRUB_LOCAL_ADMIN_PASSWORDS();
+      }catch(e){failures.push({id:'browser-cache',note:e.message});}
+      var problems=failures.length+skipped.length+(S.incomplete||[]).length;
+      closeModal('bkp-restore-modal');
+      renderCoverage(lastCoverageReport||buildCoverageReport(null,null),{restore:{done:succeeded.length,problems:problems,total:S.total,missingBatches:S.missingBatches,incomplete:S.incomplete||[],skipped:skipped,failed:failures}});
+      BKP_CLEAR_SELECTED_FILE();
+      if(problems){setStatus('Restore partially completed','warn');logEvent('Restore applied locally to '+localRestored+' keys; server writes succeeded '+succeeded.length+', not restored '+problems+' (see Completeness Check).','warn');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Restore finished, but '+problems+' item(s) were NOT restored. See the Completeness Check below.',8000);}
+      else{setStatus('Restore complete','success');logEvent('Restore completed. Local keys restored: '+localRestored+'; server/cloud groups written: '+succeeded.length+'.','success');if(typeof SHOW_TOAST==='function')SHOW_TOAST('Backup restore completed successfully.',5000);}
       if(byId('bkp-local-count'))byId('bkp-local-count').textContent=String(readLocalStoreSnapshot().count);
     }catch(e){setStatus('Restore failed','error');showRestoreMessage('Restore stopped: '+e.message,'error');logEvent('Restore failed: '+e.message,'error');}
     finally{if(button){button.disabled=false;button.textContent='Restore Data Now';}}
@@ -17677,6 +17916,12 @@ window.OTPSET=(function(){
     add(cfg.jwtSecret?'ok':'bad','Login security secret',cfg.jwtSecret?'JWT secret is set':'JWT_SECRET is not set',1);
     var sc=d.secrets||{},dm=d.domain||{},ot=d.otp||{};
     add(sc.error?'warn':sc.critical?'bad':sc.warnings?'warn':'ok','Passwords / API keys in public files',sc.error?('Scan failed: '+sc.error):(sc.critical||sc.warnings)?((sc.critical?sc.critical+' critical, ':'')+sc.warnings+' possible — see the list below'):'None found in '+(sc.scannedFiles||0)+' HTML/JS files',2);
+    var gh=d.github||{},ls=d.loginSecurity||{};
+    var ghBad=!d.github?'na':gh.error?'warn':gh.critical?'bad':gh.warnings?'warn':'ok';
+    add(ghBad,'GitHub repo files',gh.error?('Scan failed: '+gh.error):(gh.critical||gh.warnings)?((gh.critical?gh.critical+' critical, ':'')+gh.warnings+' to check — see “GitHub repo file alert” below'):'No suspicious files or secrets in '+(gh.scannedFiles||0)+' files that git would upload',2);
+    var lsBad=!d.loginSecurity?'na':ls.error?'warn':(!ls.jwtStrong||ls.plainPasswords)?'bad':(ls.masterPasswordInEnv||ls.adminOtp===false)?'warn':'ok';
+    add(lsBad,'Super Admin login protection',ls.error?('Check failed: '+ls.error):(!ls.jwtStrong?'JWT secret is missing or shorter than 32 characters. ':'')+(ls.plainPasswords?ls.plainPasswords+' admin password(s) are stored as plain text. ':'')+(ls.masterPasswordInEnv?'MASTER_ADMIN_PASSWORD is still in the Environment — remove it after the first login. ':'')+(ls.adminOtp===false?'Admin OTP is switched off. ':'')+((!ls.jwtStrong||ls.plainPasswords||ls.masterPasswordInEnv||ls.adminOtp===false)?'':'Passwords hashed · lock after '+ls.maxFails+' wrong tries for '+ls.lockMinutes+' min · '+(ls.adminOtp?'OTP on':'OTP status unknown')),2);
+    add(cfg.firebase?'ok':'warn','Student attendance cloud config',cfg.firebase?'Firebase settings are supplied by the server':'FIREBASE_* variables are not set — Student_Attendance.html cannot connect to its database',1);
     var dl=dm.daysLeft; add(dl==null?'na':dl<0?'bad':dl<=30?'bad':dl<=90?'warn':'ok','Domain expiry',dl==null?'Unknown':(dm.name?dm.name+' · ':'')+(dl<0?'EXPIRED on ':'expires ')+dm.expiresOn+(dl<0?'':' ('+dl+' days left)'),1);
     var otpSt=!ot.configured?'bad':ot.lastAttemptOk===false?'bad':(ot.recentFailures>=3?'warn':(ot.attempts?'ok':'na'));
     add(otpSt,'WhatsApp OTP delivery',!ot.configured?('Not configured — missing '+((ot.missing||[]).join(', ')||'settings')):ot.lastAttemptOk===false?('Last OTP failed: '+(ot.lastError||'unknown')):ot.attempts?(ot.attempts-ot.recentFailures>=0?'Last '+Math.min(ot.attempts,10)+' sends: '+(Math.min(ot.attempts,10)-ot.recentFailures)+' ok, '+ot.recentFailures+' failed':''):'No OTP has been sent since monitoring started',2);
@@ -17695,12 +17940,23 @@ window.OTPSET=(function(){
     var top=Math.max.apply(null,tb.map(function(t){return t.bytes;}).concat([1]));
     document.getElementById('sh-tables').innerHTML=tb.length?tb.map(function(t){return '<div class="sh-bar"><span class="n" title="'+esc(t.name)+'">'+esc(t.name)+'</span><span class="b"><i style="width:'+Math.max(2,Math.round(t.bytes/top*100))+'%"></i></span><span class="v">'+mb(t.bytes)+' · '+t.rows.toLocaleString('en-IN')+' rows</span></div>';}).join(''):'<div class="sh-empty">No table data.</div>';
     document.getElementById('sh-backups').innerHTML=bk.length?bk.map(function(b){return '<div class="sh-kv"><span>'+esc(b.source)+'</span><span>'+(b.lastAt?esc(new Date(b.lastAt).toLocaleString()):'')+' '+esc(b.detail||'')+'</span></div>';}).join(''):'<div class="sh-empty">No backup can be detected from inside the app.<br>Use <b>Backup / Restore</b> to download a full copy, and check your database provider’s own backup settings.</div>';
-    document.getElementById('sh-server').innerHTML=kv('Hosting (auto-detected)',sv.host||'—')+kv('Environment',sv.env||'—')+kv('Node.js',sv.node||'—')+kv('Uptime',dur(sv.uptimeSec))+kv('Server memory (RSS)',(sv.rssMB||0)+' MB')+kv('Database',(db.version||'—'))+kv('Public site URL set',cfg.publicUrl?'Yes':'No')+kv('WhatsApp OTP',cfg.whatsappOtp?'Ready':'Not configured');
+    document.getElementById('sh-server').innerHTML=kv('Hosting (auto-detected)',sv.host||'—')+kv('Environment',sv.env||'—')+kv('Node.js',sv.node||'—')+kv('Uptime',dur(sv.uptimeSec))+kv('Server memory (RSS)',(sv.rssMB||0)+' MB')+kv('Database',(db.version||'—'))+kv('Public site URL set',cfg.publicUrl?'Yes':'No')+kv('Firebase config (attendance)',cfg.firebase?'Set':'Not set')+kv('Admin login lock',ls.maxFails?(ls.maxFails+' wrong tries → '+ls.lockMinutes+' min'):'—')+kv('WhatsApp OTP',cfg.whatsappOtp?'Ready':'Not configured');
     var sf=sc.findings||[],sh='';
     sh+=sc.error?'<div class="sh-alert warn">Scan could not run: '+esc(sc.error)+'</div>':sc.critical?'<div class="sh-alert bad"><b>'+sc.critical+' critical secret'+(sc.critical>1?'s':'')+' visible to anyone who opens the page source.</b> Move them to server environment variables and change the exposed value.</div>':sc.warnings?'<div class="sh-alert warn"><b>'+sc.warnings+' possible hard-coded password / key.</b> Anyone can read HTML/JS files in the browser — check each one below.</div>':'<div class="sh-alert ok">No passwords or API keys found in '+(sc.scannedFiles||0)+' public HTML / JS files.</div>';
     sh+=sf.map(function(f){return '<div class="sh-f"><span class="sh-pill sh-'+(f.severity==='critical'?'bad':'warn')+'">'+(f.severity==='critical'?'CRITICAL':'CHECK')+'</span>'+esc(f.type)+' · <code>'+esc(f.file)+':'+f.line+'</code> · '+esc(f.hint)+'</div>';}).join('');
     sh+='<div class="sh-f" style="color:var(--text-muted)">Values are never shown in full. Scanned files: '+(sc.scannedFiles||0)+(sc.skippedLarge?' (+'+sc.skippedLarge+' too large to scan)':'')+'. Only files the site serves publicly are checked.</div>';
     document.getElementById('sh-secrets').innerHTML=sh;
+    var gx='';
+    if(gh.error)gx+='<div class="sh-alert warn">Scan could not run: '+esc(gh.error)+'</div>';
+    else if(gh.critical)gx+='<div class="sh-alert bad"><b>'+gh.critical+' critical item'+(gh.critical>1?'s':'')+' could go to GitHub.</b> Remove them from the repo and change any exposed password / key.</div>';
+    else if(gh.warnings)gx+='<div class="sh-alert warn"><b>'+gh.warnings+' item'+(gh.warnings>1?'s':'')+' to check before pushing to GitHub.</b></div>';
+    else gx+='<div class="sh-alert ok">No suspicious files or hidden secrets found in '+(gh.scannedFiles||0)+' files'+(gh.hasGitignore?' (.gitignore is present)':'')+'.</div>';
+    (gh.gaps||[]).forEach(function(g){gx+='<div class="sh-f"><span class="sh-pill sh-'+(g.severity==='critical'?'bad':'warn')+'">'+(g.severity==='critical'?'CRITICAL':'CHECK')+'</span>'+esc(g.text)+'</div>';});
+    (gh.files||[]).forEach(function(x){gx+='<div class="sh-f"><span class="sh-pill sh-'+(x.severity==='critical'?'bad':'warn')+'">'+(x.severity==='critical'?'CRITICAL':'CHECK')+'</span>File <code>'+esc(x.path)+'</code> — '+esc(x.why)+'</div>';});
+    (gh.secrets||[]).forEach(function(x){gx+='<div class="sh-f"><span class="sh-pill sh-'+(x.severity==='critical'?'bad':'warn')+'">'+(x.severity==='critical'?'CRITICAL':'CHECK')+'</span>'+esc(x.type)+' inside <code>'+esc(x.file)+':'+x.line+'</code> · '+esc(x.hint)+'</div>';});
+    if(gh.critical||gh.warnings)gx+='<div class="sh-f" style="color:var(--text-muted)"><b>How to remove from GitHub:</b> add the name to <code>.gitignore</code>, run <code>git rm --cached &lt;file&gt;</code>, commit and push. A password or key that was ever pushed stays in the history — <b>change it</b> (and clean the history with <code>git filter-repo</code> or BFG if needed).</div>';
+    gx+='<div class="sh-f" style="color:var(--text-muted)">Values are never shown in full. Checked: '+(gh.scannedFiles||0)+' files'+(gh.ignoredCount?' (+'+gh.ignoredCount+' skipped because they are in .gitignore)':'')+(gh.truncated?' — scan stopped at the file limit':'')+'.'+(gh.hasGitDir?'':' No .git folder was found next to the app, so the list assumes everything in the project folder could be pushed.')+'</div>';
+    document.getElementById('sh-github').innerHTML=gx;
     var dcls=dl==null?'warn':dl<0||dl<=30?'bad':dl<=90?'warn':'ok';
     document.getElementById('sh-domain').innerHTML='<div class="sh-alert '+dcls+'"><b>'+(dl==null?'Expiry date unknown':dl<0?'Domain EXPIRED '+Math.abs(dl)+' days ago':dl<=30?'Renew now — only '+dl+' days left':dl<=90?'Renew soon — '+dl+' days left':dl+' days left ('+Math.floor(Math.floor(dl/30.44)/12)+' y '+(Math.floor(dl/30.44)%12)+' m)')+'</b></div>'+kv('Domain',dm.name||'—')+kv('Expires on',dm.expiresOn||'—')+kv('Source',dm.fromEnv?'DOMAIN_EXPIRY_DATE setting':'Default date (set DOMAIN_EXPIRY_DATE to change)');
     var oc=otpSt==='ok'?'ok':otpSt==='na'?'warn':otpSt==='warn'?'warn':'bad',spark=(ot.series||[]).map(function(v){return '<span title="'+(v?'sent':'failed')+'" style="display:inline-block;width:9px;height:18px;margin-right:2px;border-radius:2px;background:'+(v?'#0F6E56':'#A32D2D')+'"></span>';}).join('');
