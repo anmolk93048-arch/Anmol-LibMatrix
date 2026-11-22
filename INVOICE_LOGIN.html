@@ -485,7 +485,8 @@
   .gst-cell{display:flex;align-items:center;width:100%;min-width:0}
   .gst-cell .gst-pick{width:5.9em;max-width:100%;min-width:0;border:1px solid #d1d5db;border-radius:4px;padding:4px 2px;font-size:13px;background:#fff}
   .gst-cell .gst-edit{display:flex;align-items:center;gap:2px;min-width:0}
-  .gst-cell .gst-select{flex:0 1 3em;width:3em;min-width:0;border:1px solid #d1d5db;border-radius:4px;padding:4px 3px;font-size:13px;text-align:right}
+  .gst-cell .gst-select{flex:0 0 auto;min-width:3em;max-width:9em;-moz-appearance:textfield;appearance:textfield;box-sizing:content-box;border:1px solid #d1d5db;border-radius:4px;padding:4px 3px;font-size:13px;text-align:right}
+  .gst-cell .gst-select::-webkit-outer-spin-button,.gst-cell .gst-select::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .gst-cell .gst-pct{font-size:12px;color:#4b5563}
   .gst-cell .gst-back{flex:0 0 14px;width:14px;height:26px;border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;padding:0;line-height:1}
   .gst-cell .gst-back:hover{color:#0d1e3d}
@@ -2113,15 +2114,18 @@ function gstCellHTML(gstVal){
   return `<div class="gst-cell">
       <select class="gst-pick" onchange="onGstPick(this)" title="GST %"${preset ? '' : ' style="display:none"'}>${gstOptions(preset ? n : 'custom')}</select>
       <div class="gst-edit"${preset ? ' style="display:none"' : ''}>
-        <input type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="GST" class="gst-select" value="${n}" oninput="calculateAll()">
+        <input type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="GST" class="gst-select" value="${n}" style="width:${gstFitCh(n)}ch" oninput="gstFit(this);calculateAll()">
         <span class="gst-pct">%</span>
         <button type="button" class="gst-back" onclick="onGstBack(this)" title="Choose from list" aria-label="Choose GST from list">▾</button>
       </div>
     </div>`;
 }
+/* the custom box grows with what is typed (2 → 4+ digits) between a min and max width, so no digit is ever cut off */
+function gstFitCh(v){ const len = Math.max(String(v == null ? '' : v).length, 2); return Math.min(Math.max(len + 1.5, 4), 11); }
+function gstFit(inp){ inp.style.width = gstFitCh(inp.value) + 'ch'; }
 function onGstPick(sel){
   const cell = sel.parentElement, edit = cell.querySelector('.gst-edit'), inp = cell.querySelector('.gst-select');
-  if(sel.value === 'custom'){ sel.style.display = 'none'; edit.style.display = 'flex'; inp.focus(); inp.select(); }
+  if(sel.value === 'custom'){ sel.style.display = 'none'; edit.style.display = 'flex'; gstFit(inp); inp.focus(); inp.select(); }
   else { inp.value = sel.value; }
   calculateAll();
 }
