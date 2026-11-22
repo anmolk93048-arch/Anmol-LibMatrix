@@ -2375,6 +2375,20 @@ html,body,#admin-app{width:100%;min-width:0;}
 #admin-app #page-material-users th,#admin-app #page-material-users td,#admin-app #page-bills th,#admin-app #page-bills td{vertical-align:middle!important;white-space:nowrap!important}
 #admin-app #page-material-users td:nth-child(4){white-space:normal!important;min-width:110px}
 </style>
+<style id="system-health-css">
+  .sh-card{padding:14px 16px}.sh-h{font-size:13px;font-weight:800;color:var(--text-main);margin-bottom:10px}.sh-sub{font-weight:600;font-size:11px;color:var(--text-muted)}
+  .sh-gauges{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-around}.sh-g{text-align:center;min-width:130px}.sh-g svg{display:block;margin:0 auto}
+  .sh-g .t{font-size:12px;font-weight:700;color:var(--text-main);margin-top:6px}.sh-g .s{font-size:11px;color:var(--text-muted)}
+  .sh-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:900px){.sh-two{grid-template-columns:1fr}}
+  .sh-steps{list-style:none;margin:0;padding:0}.sh-steps li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-main)}
+  .sh-steps li:last-child{border:0}.sh-dot{flex:0 0 22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .sh-ok{background:#0F6E56}.sh-warn{background:#d97706}.sh-bad{background:#A32D2D}.sh-na{background:#8896a8}
+  .sh-steps small{display:block;color:var(--text-muted);font-size:11px;margin-top:1px}
+  .sh-kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-main)}.sh-kv:last-child{border:0}.sh-kv span:first-child{color:var(--text-muted)}
+  .sh-bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11.5px;color:var(--text-main)}.sh-bar .n{flex:0 0 38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sh-bar .b{flex:1;background:var(--row-hover);border-radius:4px;height:12px;overflow:hidden}.sh-bar .b i{display:block;height:100%;background:linear-gradient(90deg,#1a3a6b,#c9a227);border-radius:4px}.sh-bar .v{flex:0 0 auto;color:var(--text-muted);font-size:11px;min-width:92px;text-align:right}
+  .sh-empty{padding:18px;text-align:center;color:var(--text-muted);font-size:12.5px}
+</style>
 </head>
 <!-- Clean UI asset policy: official brand logo retained; large photo backgrounds removed. -->
 <body>
@@ -2609,6 +2623,7 @@ html,body,#admin-app{width:100%;min-width:0;}
   <button class="nav-item" data-tooltip="Website Notices & Navigation" onclick="GOTO('config-navigation')"><span class="nav-icon">📢</span><span class="nav-text">Website Notices</span></button>
   <button class="nav-item" data-tooltip="Admin Security & System" onclick="GOTO('config-security')"><span class="nav-icon">🛡️</span><span class="nav-text">Admin Security</span></button>
   <button class="nav-item" data-tooltip="OTP Settings (per portal)" onclick="GOTO('config-otp')"><span class="nav-icon">📲</span><span class="nav-text">OTP Settings</span></button>
+  <button class="nav-item" data-tooltip="System Health" onclick="GOTO('system-health')"><span class="nav-icon">🩺</span><span class="nav-text">System Health</span></button>
   <button class="nav-item" data-tooltip="Recycle Bin" onclick="GOTO('recycle-bin')"><span class="nav-icon">♻️</span><span class="nav-text">Recycle Bin</span></button>
   <button class="nav-item" data-tooltip="Theme & Appearance" onclick="GOTO('theme-appearance')"><span class="nav-icon">🎨</span><span class="nav-text">Theme &amp; Appearance</span></button>
  </div>
@@ -4345,6 +4360,19 @@ html,body,#admin-app{width:100%;min-width:0;}
     <div id="otpset-list" aria-live="polite"><div class="otp-empty">Loading portals…</div></div>
     <div class="otp-note">• Only a <b>new device</b> is asked for an OTP. After one successful OTP the device is remembered (about 1 year) — logging out and in again on the same laptop/phone does <b>not</b> send another OTP.<br>• Turning a portal ON later asks each device for one OTP the next time; turning it OFF (Emergency Mode) never sends a message and takes effect within a few seconds.<br>• New portals appear in this list on their own once the server registers them.<br>• These switches exist only here — they do not appear on any login or portal page.</div>
     <div id="otpset-msg" style="min-height:18px;margin:8px 0 4px;font-size:12px"></div>
+  </div>
+</div>
+<div class="page" id="page-system-health">
+  <div class="page-header"><div><div class="page-title">🩺 System Health</div><div class="page-sub">Live status of the server, database, stored data, backups and storage — detected automatically from the running app, so it works on any host or database. Loads when opened or refreshed (no background polling).</div></div>
+    <div class="actions-row"><span id="sh-updated" style="font-size:11px;color:var(--text-muted);align-self:center"></span><button class="btn btn-ghost" onclick="SH_LOAD()">⟳ Refresh</button></div></div>
+  <div class="card sh-card"><div class="sh-gauges" id="sh-gauges"><div class="sh-empty">Loading…</div></div></div>
+  <div class="sh-two">
+    <div class="card sh-card"><div class="sh-h">✅ Step-by-step checks</div><ol class="sh-steps" id="sh-steps"></ol></div>
+    <div class="card sh-card"><div class="sh-h">📈 Database response time <span class="sh-sub">(ms, this session)</span></div><div id="sh-lat"></div><div class="sh-h" style="margin-top:14px">🗄️ Largest tables <span class="sh-sub">(size on disk)</span></div><div id="sh-tables"></div></div>
+  </div>
+  <div class="sh-two">
+    <div class="card sh-card"><div class="sh-h">💾 Backups detected</div><div id="sh-backups"></div></div>
+    <div class="card sh-card"><div class="sh-h">🖥️ Server &amp; configuration</div><div id="sh-server"></div></div>
   </div>
 </div>
 <div class="page" id="page-recycle-bin">
@@ -6811,6 +6839,7 @@ function GOTO(page){
   if(page==='pending-regs') LOAD_PENDING_REGS();
   if(page==='backup-restore') INIT_BACKUP_RESTORE_PAGE();
   if(page==='recycle-bin' && window.RB_LOAD) RB_LOAD();
+  if(page==='system-health' && window.SH_LOAD) SH_LOAD();
   // Close mobile sidebar
   if(window.innerWidth<=768){ var sb=document.getElementById('sidebar');sb.classList.remove('mobile-open');document.getElementById('sidebar-overlay').classList.remove('show'); }
   // Scroll to top
@@ -17602,6 +17631,67 @@ window.OTPSET=(function(){
   return {load:load,save:save};
 })();
 (function(){var g=window.GOTO;window.GOTO=function(page){var r=g.apply(this,arguments);if(page==='config-otp')OTPSET.load();return r;};})();
+</script>
+<script>
+/* 🩺 System Health — one request to /api/admin/system-health when the page opens or Refresh is clicked. Nothing is polled. */
+(function(){
+  var LAT=[];   // response-time history for this browser session
+  function esc(v){ return String(v==null?'':v).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function mb(b){ b=Number(b)||0; return b>=1073741824?(b/1073741824).toFixed(2)+' GB':b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB'; }
+  function dur(s){ s=Number(s)||0; var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return (d?d+'d ':'')+(h?h+'h ':'')+m+'m'; }
+  function col(p){ return p>=85?'#0F6E56':p>=60?'#d97706':'#A32D2D'; }              // score colour (higher = healthier)
+  function usedCol(p){ return p<70?'#0F6E56':p<90?'#d97706':'#A32D2D'; }           // usage colour (higher = worse)
+  function gauge(pct,color,label,sub,center){
+    var r=46,c=2*Math.PI*r,v=Math.max(0,Math.min(100,pct)),off=c*(1-v/100);
+    return '<div class="sh-g"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="'+r+'" fill="none" stroke="#e5e9f2" stroke-width="10"/><circle cx="58" cy="58" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 58 58)"/><text x="58" y="63" text-anchor="middle" font-size="19" font-weight="800" fill="'+color+'">'+esc(center)+'</text></svg><div class="t">'+esc(label)+'</div><div class="s">'+esc(sub)+'</div></div>';
+  }
+  function lineChart(a){
+    if(!a.length) return '<div class="sh-empty">No samples yet.</div>';
+    var W=420,H=110,P=24,mx=Math.max.apply(null,a.concat([50])),n=a.length,pts=a.map(function(v,i){ return [P+(n===1?(W-2*P)/2:i*(W-2*P)/(n-1)),H-P-(v/mx)*(H-2*P)]; });
+    var d=pts.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ');
+    return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto"><line x1="'+P+'" y1="'+(H-P)+'" x2="'+(W-P)+'" y2="'+(H-P)+'" stroke="#dde3ef"/><text x="2" y="'+(P-8)+'" font-size="9" fill="#8896a8">'+mx+' ms</text><path d="'+d+'" fill="none" stroke="#1a3a6b" stroke-width="2"/>'+pts.map(function(p,i){return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="#c9a227"><title>'+a[i]+' ms</title></circle>';}).join('')+'<text x="'+(W-P)+'" y="'+(H-6)+'" font-size="9" fill="#8896a8" text-anchor="end">latest '+a[n-1]+' ms</text></svg>';
+  }
+  function step(st,title,detail){ var sym={ok:'✓',warn:'!',bad:'✕',na:'–'}[st]; return '<li><span class="sh-dot sh-'+st+'">'+sym+'</span><div>'+esc(title)+'<small>'+esc(detail)+'</small></div></li>'; }
+  function kv(k,v){ return '<div class="sh-kv"><span>'+esc(k)+'</span><span>'+esc(v)+'</span></div>'; }
+  function render(d){
+    var db=d.db||{},sv=d.server||{},stg=d.storage||{},cfg=d.config||{},tb=d.tables||[],bk=d.backups||[];
+    var steps=[],score=0,total=0;
+    function add(st,t,det,w){ steps.push(step(st,t,det)); total+=w; score+=st==='ok'?w:(st==='warn'||st==='na')?w*0.5:0; }
+    add('ok','Server is running','Host: '+(sv.host||'unknown')+' · Node '+(sv.node||'?')+' · up '+dur(sv.uptimeSec),1);
+    add(db.up?'ok':'bad','Database reachable',db.up?(db.version||'connected')+(db.name?' · '+db.name:''):('Cannot connect: '+(db.error||'unknown error')),2);
+    var lat=db.latencyMs; add(lat==null?'bad':lat<150?'ok':lat<500?'warn':'bad','Database response time',lat==null?'No reply':lat+' ms average of '+(db.latencySamples||[]).length+' pings'+(lat<150?' (fast)':lat<500?' (a little slow)':' (slow)'),1);
+    add(tb.length?'ok':(db.up?'warn':'bad'),'Live data found',tb.length?(db.tableCount||tb.length)+' tables · '+tb.reduce(function(a,t){return a+t.rows;},0).toLocaleString('en-IN')+' rows (estimate)':'No tables detected',1);
+    var usedPct=stg.limitBytes?Math.round((stg.usedBytes||0)/stg.limitBytes*100):0;
+    add(!db.up?'bad':usedPct<70?'ok':usedPct<90?'warn':'bad','Storage headroom',mb(stg.usedBytes)+' of '+mb(stg.limitBytes)+' ('+usedPct+'%)'+(stg.limitIsDefault?' — limit assumed 500 MB; set DB_STORAGE_LIMIT_MB for your plan':''),2);
+    add(bk.length?(bk.some(function(b){return b.status!=='ok';})?'warn':'ok'):'na','Backups',bk.length?bk.length+' backup source'+(bk.length>1?'s':'')+' detected':'None detectable from inside the app — check your database provider’s backup page, or download a full backup from Backup / Restore',1);
+    add(cfg.whatsappOtp?'ok':'warn','WhatsApp OTP configured',cfg.whatsappOtp?'Token, Phone Number ID and OTP template are set':'Missing: '+((cfg.whatsappMissing||[]).join(', ')||'—'),1);
+    add(cfg.jwtSecret?'ok':'bad','Login security secret',cfg.jwtSecret?'JWT secret is set':'JWT_SECRET is not set',1);
+    var pct=total?Math.round(score/total*100):0;
+    var memPct=sv.heapTotalMB?Math.round(sv.heapUsedMB/sv.heapTotalMB*100):0;
+    var connPct=db.maxConnections?Math.round((db.connections||0)/db.maxConnections*100):0;
+    document.getElementById('sh-gauges').innerHTML=
+      gauge(pct,col(pct),'Overall health',pct>=85?'All good':pct>=60?'Needs attention':'Action needed',pct+'%')+
+      gauge(db.up?100:0,db.up?'#0F6E56':'#A32D2D','Database',db.up?'Online':'Offline',db.up?(lat==null?'OK':lat+'ms'):'DOWN')+
+      gauge(usedPct,usedCol(usedPct),'Storage used',mb(stg.usedBytes)+' / '+mb(stg.limitBytes),usedPct+'%')+
+      gauge(connPct,usedCol(connPct),'Connections',(db.connections==null?'?':db.connections)+' of '+(db.maxConnections||'?'),String(db.connections==null?'–':db.connections))+
+      gauge(memPct,usedCol(memPct),'Server memory',(sv.heapUsedMB||0)+' / '+(sv.heapTotalMB||0)+' MB heap',memPct+'%');
+    document.getElementById('sh-steps').innerHTML=steps.join('');
+    if(lat!=null){ LAT.push(lat); if(LAT.length>20) LAT.shift(); }
+    document.getElementById('sh-lat').innerHTML=lineChart(LAT);
+    var top=Math.max.apply(null,tb.map(function(t){return t.bytes;}).concat([1]));
+    document.getElementById('sh-tables').innerHTML=tb.length?tb.map(function(t){return '<div class="sh-bar"><span class="n" title="'+esc(t.name)+'">'+esc(t.name)+'</span><span class="b"><i style="width:'+Math.max(2,Math.round(t.bytes/top*100))+'%"></i></span><span class="v">'+mb(t.bytes)+' · '+t.rows.toLocaleString('en-IN')+' rows</span></div>';}).join(''):'<div class="sh-empty">No table data.</div>';
+    document.getElementById('sh-backups').innerHTML=bk.length?bk.map(function(b){return '<div class="sh-kv"><span>'+esc(b.source)+'</span><span>'+(b.lastAt?esc(new Date(b.lastAt).toLocaleString()):'')+' '+esc(b.detail||'')+'</span></div>';}).join(''):'<div class="sh-empty">No backup can be detected from inside the app.<br>Use <b>Backup / Restore</b> to download a full copy, and check your database provider’s own backup settings.</div>';
+    document.getElementById('sh-server').innerHTML=kv('Hosting (auto-detected)',sv.host||'—')+kv('Environment',sv.env||'—')+kv('Node.js',sv.node||'—')+kv('Uptime',dur(sv.uptimeSec))+kv('Server memory (RSS)',(sv.rssMB||0)+' MB')+kv('Database',(db.version||'—'))+kv('Public site URL set',cfg.publicUrl?'Yes':'No')+kv('WhatsApp OTP',cfg.whatsappOtp?'Ready':'Not configured');
+    document.getElementById('sh-updated').textContent='Updated '+new Date(d.at||Date.now()).toLocaleTimeString();
+  }
+  window.SH_LOAD=function(){
+    var g=document.getElementById('sh-gauges'); if(g&&!g.querySelector('svg')) g.innerHTML='<div class="sh-empty">Checking…</div>';
+    return apiFetch('/admin/system-health').then(render).catch(function(e){
+      document.getElementById('sh-gauges').innerHTML='<div class="sh-empty" style="color:#A32D2D">Could not read system health: '+esc(e&&e.message||e)+'<br>If the server itself is down this is expected — check your hosting dashboard.</div>';
+      document.getElementById('sh-steps').innerHTML=step('bad','Server / database reachable','The health request failed: '+(e&&e.message||e));
+    });
+  };
+})();
 </script>
 </body>
 </html>

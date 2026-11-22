@@ -9123,6 +9123,58 @@ app.use((req, res, next) => {
 });
 
 // 1) Koi bhi /api/* route jo upar define nahi hua — HTML 404 ki jagah JSON 404
+// ═══════════════════════════════════════════════════════════════════════════
+//  🩺 SYSTEM HEALTH (Super Admin → System Health)
+//  Everything is auto-detected from the running app and its database — no hosting platform, dashboard or API key is hard-wired, so the
+//  page keeps working after a move to any other Postgres / host. Read-only, tiny result (catalog statistics only, never table scans),
+//  and it runs ONLY when the page is opened or Refresh is clicked (no polling).
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+    const out = { at: new Date().toISOString(), checks: {} };
+    const safe = async (fn) => { try { return await fn(); } catch (e) { return { __err: String(e && e.message || e).slice(0, 160) }; } };
+    const ok = (v) => v && !v.__err;
+    // 1 · server / host (auto-detected from the environment variables the host injects)
+    const host = process.env.VERCEL ? 'Vercel' : process.env.RENDER ? 'Render' : process.env.RAILWAY_ENVIRONMENT ? 'Railway' : process.env.FLY_APP_NAME ? 'Fly.io' : process.env.K_SERVICE ? 'Google Cloud Run' : process.env.AWS_EXECUTION_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME ? 'AWS' : process.env.HEROKU_APP_NAME || process.env.DYNO ? 'Heroku' : 'Self-hosted / other';
+    const mem = process.memoryUsage();
+    out.server = { host, node: process.version, uptimeSec: Math.round(process.uptime()), rssMB: Math.round(mem.rss / 1048576), heapUsedMB: Math.round(mem.heapUsed / 1048576), heapTotalMB: Math.round(mem.heapTotal / 1048576), env: process.env.NODE_ENV || 'production' };
+    // 2 · database: reachability + latency (3 quick pings) + version + size
+    const lat = [];
+    let dbUp = true, dbErr = '';
+    for (let i = 0; i < 3; i++) { const t = Date.now(); try { await dbq('SELECT 1 AS ok', []); lat.push(Date.now() - t); } catch (e) { dbUp = false; dbErr = String(e.message || e).slice(0, 160); break; } }
+    out.db = { up: dbUp, error: dbErr, latencyMs: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : null, latencySamples: lat };
+    if (dbUp) {
+        const info = await safe(async () => (await dbq('SELECT version() AS v, current_database() AS d, pg_database_size(current_database()) AS sz, now() AS n', []))[0]);
+        if (ok(info)) { out.db.version = String(info.v || '').split(' on ')[0].slice(0, 60); out.db.name = info.d; out.db.sizeBytes = Number(info.sz) || 0; }
+        const conn = await safe(async () => (await dbq('SELECT count(*) AS c FROM pg_stat_activity WHERE datname = current_database()', []))[0]);
+        if (ok(conn)) out.db.connections = Number(conn.c) || 0;
+        const maxc = await safe(async () => (await dbq("SELECT setting::int AS m FROM pg_settings WHERE name = 'max_connections'", []))[0]);
+        if (ok(maxc)) out.db.maxConnections = Number(maxc.m) || 0;
+        // 3 · live data: biggest tables + row estimates (planner statistics — no table scan, so it costs next to nothing)
+        const tb = await safe(async () => await dbq('SELECT relname AS name, n_live_tup AS rows, pg_total_relation_size(relid) AS bytes FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 12', []));
+        out.tables = Array.isArray(tb) ? tb.map(r => ({ name: r.name, rows: Number(r.rows) || 0, bytes: Number(r.bytes) || 0 })) : [];
+        const cnt = await safe(async () => (await dbq('SELECT count(*) AS c FROM pg_stat_user_tables', []))[0]);
+        out.db.tableCount = ok(cnt) ? Number(cnt.c) || 0 : out.tables.length;
+        // 4 · backups — only what can really be detected from inside the app; anything else is reported as "not detectable", never guessed
+        const bk = [];
+        const arch = await safe(async () => (await dbq('SELECT archived_count AS n, last_archived_time AS t, failed_count AS f FROM pg_stat_archiver', []))[0]);
+        if (ok(arch) && Number(arch.n) > 0) bk.push({ source: 'Database WAL archiving (point-in-time backup)', status: Number(arch.f) > 0 ? 'warn' : 'ok', lastAt: arch.t ? new Date(arch.t).toISOString() : null, detail: Number(arch.n) + ' segments archived' + (Number(arch.f) > 0 ? ', ' + arch.f + ' failed' : '') });
+        const rbn = await safe(async () => await dbq("SELECT relname AS name, n_live_tup AS rows FROM pg_stat_user_tables WHERE relname ILIKE '%recycle%' OR relname ILIKE '%backup%' OR relname ILIKE '%snapshot%'", []));
+        if (Array.isArray(rbn)) rbn.forEach(r => bk.push({ source: 'App table “' + r.name + '”', status: 'ok', lastAt: null, detail: (Number(r.rows) || 0) + ' saved records' }));
+        out.backups = bk;
+    } else { out.tables = []; out.backups = []; }
+    // 5 · storage headroom against the plan limit (set DB_STORAGE_LIMIT_MB for your plan; 500 MB = a common free-tier size)
+    const limMb = Number(process.env.DB_STORAGE_LIMIT_MB) > 0 ? Number(process.env.DB_STORAGE_LIMIT_MB) : 500;
+    out.storage = { usedBytes: out.db.sizeBytes || 0, limitBytes: limMb * 1048576, limitIsDefault: !(Number(process.env.DB_STORAGE_LIMIT_MB) > 0) };
+    // 6 · configuration present (names only — never values)
+    out.config = {
+        jwtSecret: !!process.env.JWT_SECRET,
+        whatsappOtp: !!(wa && wa.otpReady && wa.otpReady()),
+        whatsappMissing: (wa && wa.otpMissing) ? wa.otpMissing() : [],
+        publicUrl: !!(process.env.PUBLIC_URL || process.env.BASE_URL || process.env.FRONTEND_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL)
+    };
+    res.json(out);
+}));
+
 app.use('/api', (req, res) => {
     res.status(404).json({ error: 'This API route does not exist: ' + req.method + ' ' + req.originalUrl });
 });
