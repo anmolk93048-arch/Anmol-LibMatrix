@@ -5179,8 +5179,21 @@ function otpSendFailed(res, e, where) {
 }
 async function otpServiceConfigured() { return wa.otpReady(); }
 // Every OTP (all portals: login + password recovery + forgot-username) goes through here → WhatsApp authentication template.
+// 🩺 System Health: every OTP send result (never the OTP or the number) is kept in a small rolling record
+async function recordOtpResult(err) {
+    try {
+        const k = 'waotp|stat', cur = (await _otpStore.get(k)) || { recent: [] };
+        const now = Date.now();
+        cur.recent = (cur.recent || []).concat([{ t: now, ok: !err, code: err ? (err.gatewayCode || 0) : 0, msg: err ? String(err.message || err).slice(0, 220) : '' }]).slice(-20);
+        if (err) { cur.lastFailAt = now; cur.lastError = String(err.message || err).slice(0, 220); cur.lastCode = err.gatewayCode || 0; } else { cur.lastOkAt = now; }
+        cur.exp = now + 30 * 24 * 60 * 60 * 1000;
+        await _otpStore.set(k, cur);
+    } catch (e) { /* health bookkeeping must never break a login */ }
+}
 async function sendOtpMessage(mobile, otp) {
-    await sendOtpWhatsApp(mobile, otp);
+    try { await sendOtpWhatsApp(mobile, otp); }
+    catch (e) { await recordOtpResult(e); throw e; }
+    recordOtpResult(null);
     return 'whatsapp';
 }
 
@@ -9129,6 +9142,61 @@ app.use((req, res, next) => {
 //  page keeps working after a move to any other Postgres / host. Read-only, tiny result (catalog statistics only, never table scans),
 //  and it runs ONLY when the page is opened or Refresh is clicked (no polling).
 // ═══════════════════════════════════════════════════════════════════════════
+// ── scan of the files this site serves publicly for passwords / API keys (names + masked hints only, never the full value) ──
+let _secretScan = { at: 0, res: null };
+function scanPublicSecrets(force) {
+    if (!force && _secretScan.res && Date.now() - _secretScan.at < 10 * 60 * 1000) return _secretScan.res;
+    const RULES = [
+        { id: 'Private key', sev: 'critical', re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/ },
+        { id: 'AWS access key', sev: 'critical', re: /(?<![A-Za-z0-9+\/=])AKIA[0-9A-Z]{16}/ },
+        { id: 'Meta / WhatsApp access token', sev: 'critical', re: /(?<![A-Za-z0-9+\/=_-])EAA[A-Za-z0-9]{60,}(?![A-Za-z0-9+\/=])/ },
+        { id: 'Stripe secret key', sev: 'critical', re: /(?<![A-Za-z0-9])sk_live_[0-9A-Za-z]{16,}/ },
+        { id: 'Database URL with password', sev: 'critical', re: /postgres(?:ql)?:\/\/[^\s:'"\/]+:[^\s@'"]+@/ },
+        { id: 'Google API key', sev: 'warn', re: /(?<![A-Za-z0-9+\/=])AIza[0-9A-Za-z_\-]{35}/ },
+        { id: 'JWT token', sev: 'jwt', re: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
+        { id: 'Hard-coded password / key', sev: 'warn', generic: true, re: /(?:pass(?:word)?|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)['"]?\s*[:=]\s*['"]([^'"\s]{10,})['"]/i }
+    ];
+    const SKIP_VAL = /^(?:your|enter|type|xxx|\*+|[•·]+|password|example|test|change|undefined|null|true|false|bearer|basic|none)/i;
+    const mask = (v) => v.length <= 8 ? '••••' : v.slice(0, 3) + '••••' + v.slice(-2) + ' (' + v.length + ' chars)';
+    const findings = []; let files = 0, skipped = 0;
+    const seen = new Set();
+    const walk = (dir, depth) => {
+        let names; try { names = fs.readdirSync(dir); } catch (e) { return; }
+        names.forEach((n) => {
+            if (n.charAt(0) === '.' || n === 'node_modules' || n === 'out') return;
+            const full = path.join(dir, n); let st; try { st = fs.statSync(full); } catch (e) { return; }
+            if (st.isDirectory()) { if (depth < 2) walk(full, depth + 1); return; }
+            const ext = path.extname(n).toLowerCase();
+            if (['.html', '.htm', '.js', '.mjs', '.json', '.txt', '.xml'].indexOf(ext) < 0) return;
+            if (ROOT_DENY_NAMES.has(n.toLowerCase()) || /^\.?env/i.test(n) || seen.has(full)) return;   // backend-only files are not served, so they are not scanned
+            if (st.size > 6 * 1024 * 1024) { skipped++; return; }
+            seen.add(full); files++;
+            let text; try { text = fs.readFileSync(full, 'utf8'); } catch (e) { return; }
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length && findings.length < 40; i++) {
+                const line = lines[i]; if (line.length > 4000 && !/eyJ|AKIA|AIza|EAA|BEGIN/.test(line.slice(0, 4000))) continue;
+                for (const r of RULES) {
+                    const m = r.re.exec(line); if (!m) continue;
+                    let val = r.generic ? m[1] : m[0], sev = r.sev;
+                    if (r.generic) { if (SKIP_VAL.test(val) || /\$\{|\+|\(|\)|<|>|\.\.\.|placeholder/i.test(val) || !/[A-Za-z]/.test(val) || !/\d/.test(val)) continue; }
+                    if (sev === 'jwt') {
+                        let role = ''; try { role = JSON.parse(Buffer.from(m[0].split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).role || ''; } catch (e) {}
+                        if (role !== 'service_role') continue;      // an "anon" key is meant to be public; only the service-role key is a leak
+                        sev = 'critical'; r.id = 'Supabase service-role key';
+                    }
+                    findings.push({ file: path.relative(__dirname, full).replace(/\\/g, '/'), line: i + 1, type: r.id, severity: sev, hint: mask(val) });
+                    break;
+                }
+            }
+        });
+    };
+    (typeof STATIC_DIRS !== 'undefined' ? STATIC_DIRS : [__dirname]).forEach((d) => walk(d, 0));
+    const res = { scannedFiles: files, skippedLarge: skipped, findings, critical: findings.filter(f => f.severity === 'critical').length, warnings: findings.filter(f => f.severity !== 'critical').length };
+    _secretScan = { at: Date.now(), res };
+    return res;
+}
+const OTP_ERR_HELP = { 190: 'Access token expired or invalid — generate a new permanent token and update WHATSAPP_ACCESS_TOKEN.', 100: 'Parameter / template mismatch — the template body or button does not match what Meta approved.', 132000: 'Template parameter count mismatch.', 132001: 'Template name or language not found / not approved — check WA_TEMPLATE_OTP and language.', 132012: 'Template parameter format is wrong.', 131030: 'Recipient number is not in the allowed test list (app is in test mode).', 131047: 'More than 24 h since the user last messaged — a template is required.', 131026: 'Message could not be delivered to this number.', 131048: 'Spam rate limit reached for this number.', 131056: 'Too many messages to this user — try again later.', 130429: 'Throughput limit reached — slow down.', 368: 'The WhatsApp account is restricted/blocked by Meta.', 80007: 'Rate limit reached for the WhatsApp account.' };
+
 app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
     const out = { at: new Date().toISOString(), checks: {} };
     const safe = async (fn) => { try { return await fn(); } catch (e) { return { __err: String(e && e.message || e).slice(0, 160) }; } };
@@ -9172,6 +9240,21 @@ app.get('/api/admin/system-health', noStore, requireRole('admin'), asyncRoute(as
         whatsappMissing: (wa && wa.otpMissing) ? wa.otpMissing() : [],
         publicUrl: !!(process.env.PUBLIC_URL || process.env.BASE_URL || process.env.FRONTEND_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL)
     };
+    // 7 · passwords / API keys visible in the public HTML / JS files
+    out.secrets = await safe(async () => scanPublicSecrets(req.query.rescan === '1'));
+    if (out.secrets && out.secrets.__err) out.secrets = { error: out.secrets.__err, findings: [], critical: 0, warnings: 0, scannedFiles: 0 };
+    // 8 · domain expiry (date supplied by the owner: DOMAIN_EXPIRY_DATE, default 2029-11-20 — it cannot be read from DNS reliably)
+    const expRaw = process.env.DOMAIN_EXPIRY_DATE && /^\d{4}-\d{2}-\d{2}$/.test(process.env.DOMAIN_EXPIRY_DATE.trim()) ? process.env.DOMAIN_EXPIRY_DATE.trim() : '2029-11-20';
+    let domName = '';
+    try { domName = process.env.DOMAIN_NAME || new URL(liveBaseUrl(req)).hostname; } catch (e) { domName = ''; }
+    const expMs = Date.parse(expRaw + 'T23:59:59+05:30');
+    out.domain = { name: domName, expiresOn: expRaw, daysLeft: Math.ceil((expMs - Date.now()) / 86400000), fromEnv: !!process.env.DOMAIN_EXPIRY_DATE };
+    // 9 · WhatsApp OTP delivery record (last results of real OTP sends)
+    const wst = await safe(async () => (await _otpStore.get('waotp|stat')) || null);
+    const recent = ok(wst) && wst ? (wst.recent || []) : [];
+    const last10 = recent.slice(-10), fails = last10.filter(r => !r.ok).length;
+    const lastCode = ok(wst) && wst ? Number(wst.lastCode) || 0 : 0;
+    out.otp = { configured: out.config.whatsappOtp, missing: out.config.whatsappMissing, attempts: recent.length, recentFailures: fails, lastOkAt: ok(wst) && wst && wst.lastOkAt ? new Date(wst.lastOkAt).toISOString() : null, lastFailAt: ok(wst) && wst && wst.lastFailAt ? new Date(wst.lastFailAt).toISOString() : null, lastError: ok(wst) && wst ? (wst.lastError || '') : '', lastCode, help: OTP_ERR_HELP[lastCode] || '', lastAttemptOk: recent.length ? !!recent[recent.length - 1].ok : null, series: recent.slice(-20).map(r => r.ok ? 1 : 0) };
     res.json(out);
 }));
 

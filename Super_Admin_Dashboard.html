@@ -2387,6 +2387,8 @@ html,body,#admin-app{width:100%;min-width:0;}
   .sh-kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-main)}.sh-kv:last-child{border:0}.sh-kv span:first-child{color:var(--text-muted)}
   .sh-bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11.5px;color:var(--text-main)}.sh-bar .n{flex:0 0 38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sh-bar .b{flex:1;background:var(--row-hover);border-radius:4px;height:12px;overflow:hidden}.sh-bar .b i{display:block;height:100%;background:linear-gradient(90deg,#1a3a6b,#c9a227);border-radius:4px}.sh-bar .v{flex:0 0 auto;color:var(--text-muted);font-size:11px;min-width:92px;text-align:right}
+  .sh-alert{border-radius:8px;padding:9px 11px;font-size:12.5px;margin-bottom:8px;border:1px solid}.sh-alert.bad{background:#fdecec;border-color:#e9a9a9;color:#7a1f1f}.sh-alert.warn{background:#fff6e0;border-color:#e8c46a;color:#7a5200}.sh-alert.ok{background:#e8f6f1;border-color:#9fd3c2;color:#0b5a46}
+  .sh-f{font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);color:var(--text-main)}.sh-f:last-child{border:0}.sh-f code{background:var(--row-hover);padding:1px 5px;border-radius:4px;font-size:11px}.sh-pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:10.5px;font-weight:800;color:#fff;margin-right:6px}
   .sh-empty{padding:18px;text-align:center;color:var(--text-muted);font-size:12.5px}
 </style>
 </head>
@@ -4373,6 +4375,13 @@ html,body,#admin-app{width:100%;min-width:0;}
   <div class="sh-two">
     <div class="card sh-card"><div class="sh-h">💾 Backups detected</div><div id="sh-backups"></div></div>
     <div class="card sh-card"><div class="sh-h">🖥️ Server &amp; configuration</div><div id="sh-server"></div></div>
+  </div>
+  <div class="sh-two">
+    <div class="card sh-card"><div class="sh-h">🔑 Passwords / API keys in public HTML &amp; JS <button class="btn btn-ghost btn-sm" style="float:right" onclick="SH_LOAD(true)">Re-scan</button></div><div id="sh-secrets"></div></div>
+    <div>
+      <div class="card sh-card"><div class="sh-h">🌐 Domain expiry</div><div id="sh-domain"></div></div>
+      <div class="card sh-card"><div class="sh-h">📲 WhatsApp OTP delivery</div><div id="sh-otp"></div></div>
+    </div>
   </div>
 </div>
 <div class="page" id="page-recycle-bin">
@@ -17666,6 +17675,11 @@ window.OTPSET=(function(){
     add(bk.length?(bk.some(function(b){return b.status!=='ok';})?'warn':'ok'):'na','Backups',bk.length?bk.length+' backup source'+(bk.length>1?'s':'')+' detected':'None detectable from inside the app — check your database provider’s backup page, or download a full backup from Backup / Restore',1);
     add(cfg.whatsappOtp?'ok':'warn','WhatsApp OTP configured',cfg.whatsappOtp?'Token, Phone Number ID and OTP template are set':'Missing: '+((cfg.whatsappMissing||[]).join(', ')||'—'),1);
     add(cfg.jwtSecret?'ok':'bad','Login security secret',cfg.jwtSecret?'JWT secret is set':'JWT_SECRET is not set',1);
+    var sc=d.secrets||{},dm=d.domain||{},ot=d.otp||{};
+    add(sc.error?'warn':sc.critical?'bad':sc.warnings?'warn':'ok','Passwords / API keys in public files',sc.error?('Scan failed: '+sc.error):(sc.critical||sc.warnings)?((sc.critical?sc.critical+' critical, ':'')+sc.warnings+' possible — see the list below'):'None found in '+(sc.scannedFiles||0)+' HTML/JS files',2);
+    var dl=dm.daysLeft; add(dl==null?'na':dl<0?'bad':dl<=30?'bad':dl<=90?'warn':'ok','Domain expiry',dl==null?'Unknown':(dm.name?dm.name+' · ':'')+(dl<0?'EXPIRED on ':'expires ')+dm.expiresOn+(dl<0?'':' ('+dl+' days left)'),1);
+    var otpSt=!ot.configured?'bad':ot.lastAttemptOk===false?'bad':(ot.recentFailures>=3?'warn':(ot.attempts?'ok':'na'));
+    add(otpSt,'WhatsApp OTP delivery',!ot.configured?('Not configured — missing '+((ot.missing||[]).join(', ')||'settings')):ot.lastAttemptOk===false?('Last OTP failed: '+(ot.lastError||'unknown')):ot.attempts?(ot.attempts-ot.recentFailures>=0?'Last '+Math.min(ot.attempts,10)+' sends: '+(Math.min(ot.attempts,10)-ot.recentFailures)+' ok, '+ot.recentFailures+' failed':''):'No OTP has been sent since monitoring started',2);
     var pct=total?Math.round(score/total*100):0;
     var memPct=sv.heapTotalMB?Math.round(sv.heapUsedMB/sv.heapTotalMB*100):0;
     var connPct=db.maxConnections?Math.round((db.connections||0)/db.maxConnections*100):0;
@@ -17682,11 +17696,23 @@ window.OTPSET=(function(){
     document.getElementById('sh-tables').innerHTML=tb.length?tb.map(function(t){return '<div class="sh-bar"><span class="n" title="'+esc(t.name)+'">'+esc(t.name)+'</span><span class="b"><i style="width:'+Math.max(2,Math.round(t.bytes/top*100))+'%"></i></span><span class="v">'+mb(t.bytes)+' · '+t.rows.toLocaleString('en-IN')+' rows</span></div>';}).join(''):'<div class="sh-empty">No table data.</div>';
     document.getElementById('sh-backups').innerHTML=bk.length?bk.map(function(b){return '<div class="sh-kv"><span>'+esc(b.source)+'</span><span>'+(b.lastAt?esc(new Date(b.lastAt).toLocaleString()):'')+' '+esc(b.detail||'')+'</span></div>';}).join(''):'<div class="sh-empty">No backup can be detected from inside the app.<br>Use <b>Backup / Restore</b> to download a full copy, and check your database provider’s own backup settings.</div>';
     document.getElementById('sh-server').innerHTML=kv('Hosting (auto-detected)',sv.host||'—')+kv('Environment',sv.env||'—')+kv('Node.js',sv.node||'—')+kv('Uptime',dur(sv.uptimeSec))+kv('Server memory (RSS)',(sv.rssMB||0)+' MB')+kv('Database',(db.version||'—'))+kv('Public site URL set',cfg.publicUrl?'Yes':'No')+kv('WhatsApp OTP',cfg.whatsappOtp?'Ready':'Not configured');
+    var sf=sc.findings||[],sh='';
+    sh+=sc.error?'<div class="sh-alert warn">Scan could not run: '+esc(sc.error)+'</div>':sc.critical?'<div class="sh-alert bad"><b>'+sc.critical+' critical secret'+(sc.critical>1?'s':'')+' visible to anyone who opens the page source.</b> Move them to server environment variables and change the exposed value.</div>':sc.warnings?'<div class="sh-alert warn"><b>'+sc.warnings+' possible hard-coded password / key.</b> Anyone can read HTML/JS files in the browser — check each one below.</div>':'<div class="sh-alert ok">No passwords or API keys found in '+(sc.scannedFiles||0)+' public HTML / JS files.</div>';
+    sh+=sf.map(function(f){return '<div class="sh-f"><span class="sh-pill sh-'+(f.severity==='critical'?'bad':'warn')+'">'+(f.severity==='critical'?'CRITICAL':'CHECK')+'</span>'+esc(f.type)+' · <code>'+esc(f.file)+':'+f.line+'</code> · '+esc(f.hint)+'</div>';}).join('');
+    sh+='<div class="sh-f" style="color:var(--text-muted)">Values are never shown in full. Scanned files: '+(sc.scannedFiles||0)+(sc.skippedLarge?' (+'+sc.skippedLarge+' too large to scan)':'')+'. Only files the site serves publicly are checked.</div>';
+    document.getElementById('sh-secrets').innerHTML=sh;
+    var dcls=dl==null?'warn':dl<0||dl<=30?'bad':dl<=90?'warn':'ok';
+    document.getElementById('sh-domain').innerHTML='<div class="sh-alert '+dcls+'"><b>'+(dl==null?'Expiry date unknown':dl<0?'Domain EXPIRED '+Math.abs(dl)+' days ago':dl<=30?'Renew now — only '+dl+' days left':dl<=90?'Renew soon — '+dl+' days left':dl+' days left ('+Math.floor(Math.floor(dl/30.44)/12)+' y '+(Math.floor(dl/30.44)%12)+' m)')+'</b></div>'+kv('Domain',dm.name||'—')+kv('Expires on',dm.expiresOn||'—')+kv('Source',dm.fromEnv?'DOMAIN_EXPIRY_DATE setting':'Default date (set DOMAIN_EXPIRY_DATE to change)');
+    var oc=otpSt==='ok'?'ok':otpSt==='na'?'warn':otpSt==='warn'?'warn':'bad',spark=(ot.series||[]).map(function(v){return '<span title="'+(v?'sent':'failed')+'" style="display:inline-block;width:9px;height:18px;margin-right:2px;border-radius:2px;background:'+(v?'#0F6E56':'#A32D2D')+'"></span>';}).join('');
+    document.getElementById('sh-otp').innerHTML='<div class="sh-alert '+oc+'"><b>'+(!ot.configured?'WhatsApp OTP is not configured':ot.lastAttemptOk===false?'The last OTP could not be sent':ot.recentFailures>=3?'Several recent OTPs failed':ot.attempts?'OTP sending is working':'No OTP sent yet — nothing to judge')+'</b></div>'
+      +(ot.lastError&&ot.lastAttemptOk===false?'<div class="sh-f">Error'+(ot.lastCode?' code '+ot.lastCode:'')+': '+esc(ot.lastError)+'</div>':'')+(ot.help&&ot.lastAttemptOk===false?'<div class="sh-f"><b>Fix:</b> '+esc(ot.help)+'</div>':'')
+      +(spark?'<div class="sh-f">Last '+(ot.series||[]).length+' sends: '+spark+'</div>':'')
+      +kv('Last success',ot.lastOkAt?new Date(ot.lastOkAt).toLocaleString():'—')+kv('Last failure',ot.lastFailAt?new Date(ot.lastFailAt).toLocaleString():'—')+kv('Failures in last 10',ot.attempts?String(ot.recentFailures):'—');
     document.getElementById('sh-updated').textContent='Updated '+new Date(d.at||Date.now()).toLocaleTimeString();
   }
-  window.SH_LOAD=function(){
+  window.SH_LOAD=function(rescan){
     var g=document.getElementById('sh-gauges'); if(g&&!g.querySelector('svg')) g.innerHTML='<div class="sh-empty">Checking…</div>';
-    return apiFetch('/admin/system-health').then(render).catch(function(e){
+    return apiFetch('/admin/system-health'+(rescan===true?'?rescan=1':'')).then(render).catch(function(e){
       document.getElementById('sh-gauges').innerHTML='<div class="sh-empty" style="color:#A32D2D">Could not read system health: '+esc(e&&e.message||e)+'<br>If the server itself is down this is expected — check your hosting dashboard.</div>';
       document.getElementById('sh-steps').innerHTML=step('bad','Server / database reachable','The health request failed: '+(e&&e.message||e));
     });
