@@ -493,6 +493,111 @@
   </div>
 </div>
 
+<!-- =====================================================================
+     TOP-UP / NOTICE STRIP — VIEW-ONLY  (reusable — copy this whole block, from this comment to its end,
+     into any other login page where the strip should appear. Edit only TU_CONFIG below.
+     Notices are added / edited only in Super Admin Dashboard → Portal Control.)
+     ===================================================================== -->
+<style>
+  #tu-strip{position:relative;display:flex;align-items:stretch;background:#fff8e6;border-top:1px solid #ecd28a;border-bottom:1px solid #ecd28a;font-size:12.5px}
+  #tu-strip .tu-label{flex:none;display:flex;align-items:center;gap:6px;background:var(--gov-navy,#0b2545);color:#fff;font-weight:800;font-size:11px;letter-spacing:.07em;padding:0 12px;border-right:4px solid var(--gov-saffron,#ff9933)}
+  #tu-strip .tu-win{flex:1;min-width:0;overflow:hidden;position:relative;padding:7px 0;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 24px),transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 24px,#000 calc(100% - 24px),transparent 100%)}
+  #tu-strip .tu-track{display:inline-flex;white-space:nowrap;will-change:transform;animation:tuScroll var(--tu-dur,40s) linear infinite}
+  #tu-strip .tu-win:hover .tu-track,#tu-strip .tu-win:focus-within .tu-track,#tu-strip.tu-paused .tu-track{animation-play-state:paused}
+  @keyframes tuScroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  #tu-strip .tu-item{display:inline-flex;align-items:center;gap:8px;padding:0 22px;color:#3b2f0b;font-weight:600}
+  #tu-strip .tu-item::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--gov-saffron,#ff9933);flex:none}
+  #tu-strip a.tu-item{color:var(--gov-blue,#13315c);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+  #tu-strip a.tu-item:hover{color:#0b2545}
+  #tu-strip a.tu-item .tu-ext{font-size:10px;font-weight:800;background:#eaf1fb;border:1px solid #cfe0f5;border-radius:3px;padding:0 5px;text-decoration:none}
+  #tu-strip .tu-empty{padding:0 14px;color:#6b7280;font-weight:600}
+  #tu-strip .tu-btns{flex:none;display:flex;align-items:center;gap:4px;padding:0 8px;background:#fff8e6}
+  #tu-strip .tu-btns button{width:26px;height:26px;border-radius:4px;border:1px solid var(--gov-blue,#13315c);background:#fff;color:var(--gov-blue,#13315c);font-weight:800;font-size:15px;line-height:1;cursor:pointer}
+  #tu-strip .tu-btns button:hover{background:#eaf1fb}
+  @media (prefers-reduced-motion:reduce){#tu-strip .tu-track{animation:none}#tu-strip .tu-win{overflow-x:auto}}
+  @media print{#tu-strip{display:none !important}}
+</style>
+<div id="tu-strip" class="no-print" role="region" aria-label="Top-Up and notices">
+  <div class="tu-label">📢 TOP-UP / NOTICE</div>
+  <div class="tu-win" id="tu-win" tabindex="-1"></div>
+  <div class="tu-btns">
+    <button type="button" id="tu-pause" title="Pause / resume scrolling" aria-label="Pause or resume scrolling">❚❚</button>
+  </div>
+</div>
+<script>
+(function(){
+  /* ---------- CONFIG: the only part to change when reusing this strip on another login ---------- */
+  var TU_CONFIG = {
+    portalId: 'sessionb',       // id of this portal in Super Admin → Portal Control (invoice / sessionb / agent / hrms / …)
+    speedPxPerSec: 55,          // used until the Super Admin's scroll speed is loaded
+    defaults: [                 // shown only until the Super Admin has published notices for this portal
+      { text: 'Welcome to the Anmol LibMatrix Invoice Portal (Session B) — for any support, call the Helpline: 6202119756.', url: '' },
+      { text: 'Please renew your Invoice Plan before it expires to keep creating and printing bills.', url: '' }
+    ]
+  };
+  /* ------------------------------------------------------------------------------------------------ */
+  var $ = function(id){ return document.getElementById(id); };
+  var items = TU_CONFIG.defaults.slice(), userPaused = false;
+  try{ localStorage.removeItem('tu_items_v1'); }catch(e){}     // old locally-edited notices are no longer used
+  /* Everything shown here is published from Super Admin Dashboard → Portal Control (view-only on this page). */
+  function pcFetch(pid){
+    if(window.__pcPromise && window.__pcPromise.pid===pid) return window.__pcPromise;
+    var url = (window.SHDL_API_BASE || '/api') + '/portal-control/' + encodeURIComponent(pid);
+    var pr = fetch(url, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+      try{ if(d && d.configured) localStorage.setItem('pc_remote_'+pid+'_v1', JSON.stringify(d)); else if(d && d.configured===false) localStorage.removeItem('pc_remote_'+pid+'_v1'); }catch(e){}
+      return d;
+    }).catch(function(){ return null; });
+    pr.pid = pid; window.__pcPromise = pr; return pr;
+  }
+  function pcCached(pid){ try{ var d = JSON.parse(localStorage.getItem('pc_remote_'+pid+'_v1')||'null'); return d && d.configured ? d : null; }catch(e){ return null; } }
+  function safeUrl(u){ u = String(u||'').trim(); return /^(https?:\/\/|\/(?!\/))\S*$/i.test(u) ? u : ''; }
+  function el(tag, attrs, kids){
+    var n = document.createElement(tag);
+    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else if(attrs[k]!==null) n.setAttribute(k, attrs[k]); });
+    (kids||[]).forEach(function(c){ if(c) n.appendChild(c); });
+    return n;
+  }
+
+  function itemNode(it){
+    var u = safeUrl(it.url);
+    if(u) return el('a',{class:'tu-item', href:u, target:'_blank', rel:'noopener noreferrer', title:'Opens in a new tab'},[ document.createTextNode(it.text), el('span',{class:'tu-ext',text:'OPEN ↗'}) ]);
+    return el('span',{class:'tu-item',text:it.text});
+  }
+  function renderStrip(){
+    var win = $('tu-win'); win.innerHTML = '';
+    if(!items.length){ win.appendChild(el('span',{class:'tu-empty',text:'No Top-Up notices at present.'})); return; }
+    var track = el('div',{class:'tu-track'});
+    var setA = el('div',{style:'display:inline-flex'}), setB = el('div',{style:'display:inline-flex','aria-hidden':'true'});
+    items.forEach(function(it){ setA.appendChild(itemNode(it)); var n = itemNode(it); n.tabIndex = -1; setB.appendChild(n); });
+    track.appendChild(setA); track.appendChild(setB); win.appendChild(track);
+    requestAnimationFrame(function(){      // seamless loop: each half must be at least as wide as the window
+      var w = setA.getBoundingClientRect().width || 1, need = Math.ceil(win.clientWidth / w);
+      for(var i=1;i<need;i++){ items.forEach(function(it){ setA.appendChild(itemNode(it)); var b = itemNode(it); b.tabIndex = -1; setB.appendChild(b); }); }
+      var half = setA.getBoundingClientRect().width || w;
+      track.style.setProperty('--tu-dur', Math.max(12, half / TU_CONFIG.speedPxPerSec) + 's');
+    });
+  }
+  function applyRemote(d){
+    if(!d || !d.configured || !d.topup) return false;
+    $('tu-strip').style.display = (d.features && d.features.topupStrip === false) ? 'none' : '';
+    items = (d.topup.items || []).map(function(i){ return { text:String(i.text||''), url:safeUrl(i.url) }; });
+    TU_CONFIG.speedPxPerSec = 2200 / (Number(d.topup.speed) || 40);      // Portal Control speed: 10 fast … 120 slow
+    renderStrip(); return true;
+  }
+  $('tu-pause').addEventListener('click', function(){ userPaused = !userPaused; $('tu-strip').classList.toggle('tu-paused', userPaused); this.textContent = userPaused ? '▶' : '❚❚'; });
+  var rt; window.addEventListener('resize', function(){ clearTimeout(rt); rt = setTimeout(renderStrip, 250); });
+  var _c = pcCached(TU_CONFIG.portalId);
+  if(!(_c && applyRemote(_c))) renderStrip();
+  pcFetch(TU_CONFIG.portalId).then(function(d){
+    if(d && d.configured) applyRemote(d);
+    else if(d && d.configured === false){ items = TU_CONFIG.defaults.slice(); $('tu-strip').style.display = ''; renderStrip(); }
+  });
+  window.TopUpStrip = { refresh:function(){ pcFetch(TU_CONFIG.portalId); } };
+})();
+</script>
+<!-- ===================== END TOP-UP / NOTICE STRIP ===================== -->
+
 <main class="max-w-6xl mx-auto px-3 md:px-4 py-6 space-y-6 no-print">
   <div id="lockNote" class="login-error" style="display:block;background:#fff8e6;border-color:#f1d48a;color:#7a5a05">🔒 Company, bank and tax details are your locked Session B business profile, set by the administrator. Just enter the customer and material details.</div>
   <div id="planBanner"></div>
@@ -582,7 +687,25 @@
     <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
     <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
   </section>
-  <section id="devCredit" class="no-print text-center py-2"><p class="text-[11px] text-gray-400">Developer: <span class="font-semibold text-gray-500">Anmol Kumar</span> &nbsp;|&nbsp; Helping Number: <span class="font-semibold text-gray-500">6202119756</span></p></section>
+  <style>
+  #devCredit .dev-foot{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 14px;background:#fff;border:1px solid #d6deea;border-top:3px solid var(--gov-navy,#0b2545);border-radius:3px;padding:8px 16px;font-size:12px;color:#334155}
+  #devCredit .dev-foot b{color:var(--gov-navy,#0b2545)}
+  #devCredit .dev-foot a{color:var(--gov-blue,#13315c);font-weight:800;text-decoration:none}
+  #devCredit .dev-foot a:hover{text-decoration:underline}
+  #devCredit .dev-copy{border:1px solid var(--gov-blue,#13315c);background:#fff;color:var(--gov-blue,#13315c);border-radius:3px;font-size:10.5px;font-weight:700;padding:1px 7px;cursor:pointer}
+  #devCredit .dev-sep{color:#94a3b8}
+  #devCredit{padding-bottom:64px}   /* keeps the footer clear of the floating Help button */
+</style>
+<section id="devCredit" class="no-print text-center py-3">
+    <div class="dev-foot">
+      <span>Developer: <b>Anmol Kumar</b></span>
+      <span class="dev-sep">|</span>
+      <span>Helpline: <a href="tel:6202119756" title="Tap to call">6202119756</a>
+        <button type="button" class="dev-copy" onclick="(function(b){var n='6202119756';(navigator.clipboard?navigator.clipboard.writeText(n):Promise.reject()).then(function(){b.textContent='Copied ✓';setTimeout(function(){b.textContent='Copy'},1500)}).catch(function(){window.prompt('Copy the number:',n)})})(this)">Copy</button></span>
+      <span class="dev-sep">|</span>
+      <a href="#" onclick="if(window.HelpGuidelines){HelpGuidelines.open();}return false;">Help &amp; Guidelines</a>
+    </div>
+  </section>
 </main>
 
 <style>@media (min-width:640px){ #sidebarOverlay{ display:none !important; } }  /* Saved Bills stays beside the form; it closes only with × / Back */</style>
@@ -712,8 +835,53 @@ function api(path, opt){
     });
   });
 }
+/* ---- Official-portal "Log out" confirmation (replaces the browser confirm() box) ---- */
+window.anmolConfirmLogout = window.anmolConfirmLogout || function(onOk){
+  if(document.getElementById('anmol-logout-modal')) return;                       // already open
+  var prevFocus = document.activeElement;
+  if(!document.getElementById('anmol-logout-css')){
+    var st = document.createElement('style'); st.id = 'anmol-logout-css';
+    st.textContent =
+      '#anmol-logout-modal{position:fixed;inset:0;z-index:2147483000;background:rgba(11,37,69,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit}' +
+      '#anmol-logout-modal .alm-card{background:#fff;color:#1f2937;width:100%;max-width:380px;border-radius:6px;overflow:hidden;box-shadow:0 18px 50px rgba(11,37,69,.45);border-top:4px solid #ff9933;animation:almIn .16s ease-out}' +
+      '@keyframes almIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}' +
+      '#anmol-logout-modal .alm-head{background:#0b2545;color:#fff;padding:11px 16px;font-size:13px;font-weight:800;letter-spacing:.05em}' +
+      '#anmol-logout-modal .alm-body{padding:20px 18px 6px;text-align:center}' +
+      '#anmol-logout-modal .alm-ico{width:46px;height:46px;border-radius:50%;background:#eef3fb;color:#13315c;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px}' +
+      '#anmol-logout-modal .alm-msg{font-size:16px;font-weight:800;color:#0b2545;margin:0 0 4px}' +
+      '#anmol-logout-modal .alm-sub{font-size:12px;color:#6b7280;margin:0}' +
+      '#anmol-logout-modal .alm-btns{display:flex;gap:10px;padding:16px 18px 18px}' +
+      '#anmol-logout-modal button{flex:1;padding:10px 12px;border-radius:4px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}' +
+      '#anmol-logout-modal .alm-cancel{background:#fff;color:#13315c;border:1px solid #9fb0c8}' +
+      '#anmol-logout-modal .alm-cancel:hover{background:#eef3fb}' +
+      '#anmol-logout-modal .alm-ok{background:#b42318;color:#fff;border:1px solid #b42318}' +
+      '#anmol-logout-modal .alm-ok:hover{background:#912018}' +
+      '#anmol-logout-modal button:focus-visible{outline:2px solid #13315c;outline-offset:2px}' +
+      '@media print{#anmol-logout-modal{display:none!important}}';
+    document.head.appendChild(st);
+  }
+  var m = document.createElement('div'); m.id = 'anmol-logout-modal'; m.className = 'no-print';
+  m.setAttribute('role','alertdialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-labelledby','alm-title'); m.setAttribute('aria-describedby','alm-desc');
+  m.innerHTML = '<div class="alm-card"><div class="alm-head">CONFIRM LOGOUT</div>' +
+    '<div class="alm-body"><div class="alm-ico" aria-hidden="true">🚪</div><p class="alm-msg" id="alm-title">Do you want to log out?</p>' +
+    '<p class="alm-sub" id="alm-desc">You will need to sign in again to continue.</p></div>' +
+    '<div class="alm-btns"><button type="button" class="alm-cancel">Cancel</button><button type="button" class="alm-ok">Logout</button></div></div>';
+  function closeIt(){ document.removeEventListener('keydown', onKey, true); if(m.parentNode) m.parentNode.removeChild(m); try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){} }
+  function onKey(e){
+    if(e.key === 'Escape'){ e.preventDefault(); closeIt(); }
+    else if(e.key === 'Tab'){ var b = m.querySelectorAll('button'); if(e.shiftKey && document.activeElement === b[0]){ e.preventDefault(); b[b.length-1].focus(); } else if(!e.shiftKey && document.activeElement === b[b.length-1]){ e.preventDefault(); b[0].focus(); } }
+  }
+  m.addEventListener('mousedown', function(e){ if(e.target === m) closeIt(); });
+  m.querySelector('.alm-cancel').addEventListener('click', closeIt);
+  m.querySelector('.alm-ok').addEventListener('click', function(){ this.disabled = true; this.textContent = 'Logging out…'; document.removeEventListener('keydown', onKey, true); try{ onOk(); }catch(e){ closeIt(); throw e; } });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(m);
+  m.querySelector('.alm-ok').focus();
+};
+
 function logoutPortal(){
-  if (!confirm('Do you want to logout?')) return;
+  if (window.__anmolLogoutOk !== true) { window.anmolConfirmLogout(function(){ window.__anmolLogoutOk = true; logoutPortal(); }); return; }
+  window.__anmolLogoutOk = false;
   try { api('/auth/logout', { method: 'POST', body: '{}' }).catch(function(){}); } catch (e) {}
   try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
   location.href = HOME_URL;
@@ -1027,7 +1195,7 @@ var _wasLocked = false;
 function applyPlanLock(on){
   document.body.classList.toggle('plan-locked', on);
   Array.prototype.forEach.call(document.body.children, function(el){
-    if (el.id === 'planLockOv' || el.id === 'dvPlanOv' || el.classList.contains('dv-ov') || /^(SCRIPT|STYLE|LINK)$/.test(el.tagName)) return;
+    if (el.id === 'planLockOv' || el.id === 'dvPlanOv' || el.id === 'anmol-logout-modal' || el.classList.contains('dv-ov') || /^(SCRIPT|STYLE|LINK)$/.test(el.tagName)) return;
     if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert');
   });
   if (on) {
@@ -1168,4 +1336,152 @@ function pdfBill(id){ if (planBlocked()) return; (LOADED[id] ? Promise.resolve(L
 })();
 
 </script>
+<!-- =====================================================================
+     HELP & GUIDELINES PANEL — VIEW-ONLY  (reusable — copy this whole block, from this comment to its end,
+     into any other login page just before </body>. Edit only HG_CONFIG below.
+     Helpline, videos and guidelines are added / edited only in Super Admin Dashboard → Portal Control.)
+     ===================================================================== -->
+<style>
+  #hg-fab{position:fixed;left:14px;bottom:14px;z-index:9000;display:flex;align-items:center;gap:6px;background:var(--gov-navy,#0b2545);color:#fff;border:2px solid var(--gov-gold,#b8860b);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.02em;cursor:pointer;box-shadow:0 4px 14px rgba(11,37,69,.35)}
+  #hg-fab:hover{background:var(--gov-blue,#13315c)}
+  #hg-overlay{position:fixed;inset:0;background:rgba(11,37,69,.45);z-index:9001;display:none}
+  #hg-drawer{position:fixed;left:0;top:0;height:100%;width:100%;max-width:400px;background:#fff;z-index:9002;transform:translateX(-102%);transition:transform .28s ease;display:flex;flex-direction:column;box-shadow:6px 0 24px rgba(11,37,69,.3);border-right:1px solid #c9d2e0;font-family:inherit}
+  #hg-drawer.open{transform:none}
+  #hg-drawer .hg-head{background:var(--gov-navy,#0b2545);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid var(--gov-saffron,#ff9933)}
+  #hg-drawer .hg-head h2{font-size:14px;font-weight:800;margin:0;letter-spacing:.03em}
+  #hg-drawer .hg-head small{display:block;font-size:10.5px;font-weight:500;opacity:.8}
+  #hg-drawer .hg-x{background:none;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer}
+  #hg-drawer .hg-body{flex:1;overflow-y:auto;padding:12px 14px;background:#f6f8fb}
+  #hg-drawer .hg-sec{background:#fff;border:1px solid #d6deea;border-radius:4px;margin-bottom:12px}
+  #hg-drawer .hg-sec>h3{margin:0;padding:7px 10px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--gov-navy,#0b2545);background:#e9edf3;border-bottom:1px solid #d6deea;display:flex;justify-content:space-between;align-items:center}
+  #hg-drawer .hg-pad{padding:10px}
+  #hg-drawer .hg-phone{font-size:20px;font-weight:800;color:var(--gov-blue,#13315c);text-decoration:none}
+  #hg-drawer .hg-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  #hg-drawer button.hg-btn,#hg-drawer a.hg-btn{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:4px;border:1px solid var(--gov-blue,#13315c);background:#fff;color:var(--gov-blue,#13315c);cursor:pointer;text-decoration:none;display:inline-block}
+  #hg-drawer .hg-btn:hover{background:#eaf1fb}
+  #hg-drawer .hg-btn.pri{background:var(--gov-blue,#13315c);color:#fff}
+  #hg-drawer .hg-btn.pri:hover{opacity:.9}
+  #hg-drawer .hg-btn[disabled]{opacity:.45;cursor:not-allowed}
+  #hg-drawer .hg-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #edf0f5}
+  #hg-drawer .hg-item:last-child{border-bottom:0}
+  #hg-drawer .hg-ico{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex:none;background:#eaf1fb;color:var(--gov-blue,#13315c)}
+  #hg-drawer .hg-t{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:#1f2937}
+  #hg-drawer .hg-t em{display:block;font-style:normal;font-weight:500;font-size:10.5px;color:#6b7280}
+  #hg-drawer .hg-empty{padding:10px;font-size:11.5px;color:#6b7280}
+  #hg-drawer .hg-note{font-size:10.5px;color:#6b7280;margin-top:6px}
+  #hg-drawer .hg-player{aspect-ratio:16/9;width:100%;border:0;background:#000;display:block}
+  #hg-drawer .hg-msg{font-size:11.5px;font-weight:700;margin-top:6px}
+  @media print{#hg-fab,#hg-overlay,#hg-drawer{display:none !important}}
+</style>
+<button type="button" id="hg-fab" class="no-print" aria-haspopup="dialog" aria-controls="hg-drawer">❓ Help &amp; Guidelines</button>
+<div id="hg-overlay" class="no-print"></div>
+<aside id="hg-drawer" class="no-print" role="dialog" aria-modal="true" aria-label="Help and Guidelines" aria-hidden="true">
+  <div class="hg-head"><div><h2>HELP &amp; GUIDELINES</h2><small>Support, video guides and manuals</small></div><button type="button" class="hg-x" id="hg-close" aria-label="Close">×</button></div>
+  <div class="hg-body" id="hg-body"></div>
+</aside>
+<script>
+(function(){
+  /* ---------- CONFIG: the only part to change when reusing this panel on another login ---------- */
+  var HG_CONFIG = {
+    portalId: 'sessionb',                   // id of this portal in Super Admin → Portal Control (invoice / sessionb / agent / hrms / …)
+    helplineLabel: 'Helpline & Support',
+    helpline: '6202119756'                  // shown until the Super Admin's helpline is loaded
+  };
+  /* ------------------------------------------------------------------------------------------------ */
+  var $ = function(id){ return document.getElementById(id); };
+  var cfg = { helpline: HG_CONFIG.helpline, videos: [], guides: [] };
+  try{ localStorage.removeItem('hg_guide_config_v1'); localStorage.removeItem('hg_admin_pin_v1'); localStorage.removeItem('tu_items_v1'); }catch(e){}   // old local editor data is no longer used
+  /* Everything shown here is published from Super Admin Dashboard → Portal Control (view-only on this page). */
+  function pcFetch(pid){
+    if(window.__pcPromise && window.__pcPromise.pid===pid) return window.__pcPromise;
+    var url = (window.SHDL_API_BASE || '/api') + '/portal-control/' + encodeURIComponent(pid);
+    var pr = fetch(url, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+      try{ if(d && d.configured) localStorage.setItem('pc_remote_'+pid+'_v1', JSON.stringify(d)); else if(d && d.configured===false) localStorage.removeItem('pc_remote_'+pid+'_v1'); }catch(e){}
+      return d;
+    }).catch(function(){ return null; });
+    pr.pid = pid; window.__pcPromise = pr; return pr;
+  }
+  function pcCached(pid){ try{ var d = JSON.parse(localStorage.getItem('pc_remote_'+pid+'_v1')||'null'); return d && d.configured ? d : null; }catch(e){ return null; } }
+  function safeUrl(u){ u = String(u||'').trim(); return /^(https?:\/\/|\/(?!\/))\S*$/i.test(u) ? u : ''; }
+  function el(tag, attrs, kids){
+    var n = document.createElement(tag);
+    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else if(attrs[k]!==null) n.setAttribute(k, attrs[k]); });
+    (kids||[]).forEach(function(c){ if(c) n.appendChild(c); });
+    return n;
+  }
+
+  function ytId(u){ var m = String(u).match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/i); return m ? m[1] : ''; }
+  function isFb(u){ return /^https?:\/\/(?:[\w-]+\.)?(facebook\.com|fb\.watch)\//i.test(u); }
+  function embedUrl(u){ var y = ytId(u); if(y) return 'https://www.youtube-nocookie.com/embed/' + y + '?rel=0'; if(isFb(u)) return 'https://www.facebook.com/plugins/video.php?show_text=false&href=' + encodeURIComponent(u); return ''; }
+  function btn(text, cls, fn){ return el('button', { type:'button', class:'hg-btn ' + (cls||''), text:text, onclick:fn }); }
+  function sec(title, body){ return el('div',{class:'hg-sec'},[ el('h3',{},[ el('span',{text:title}) ]), body ]); }
+
+  function secContact(){
+    var tel = String(cfg.helpline).replace(/[^\d+]/g,'');
+    return sec(HG_CONFIG.helplineLabel, el('div',{class:'hg-pad'},[
+      el('a',{class:'hg-phone', href:'tel:'+tel, text:'📞 '+cfg.helpline}),
+      el('div',{class:'hg-row'},[
+        el('a',{class:'hg-btn pri', href:'tel:'+tel, text:'Call Now'}),
+        btn('Copy Number','',function(e){ var b=e.currentTarget; (navigator.clipboard?navigator.clipboard.writeText(tel):Promise.reject()).then(function(){ b.textContent='Copied ✓'; setTimeout(function(){b.textContent='Copy Number';},1500); }).catch(function(){ window.prompt('Copy the number:', tel); }); })
+      ]),
+      el('p',{class:'hg-note',text:'For any billing, login or invoice problem, please call the helpline above.'})
+    ]));
+  }
+  function listSec(key, title, isVideo){
+    var items = cfg[key], wrap = el('div');
+    if(isVideo) wrap.appendChild(el('div',{id:'hg-player-host'}));
+    if(!items.length) wrap.appendChild(el('div',{class:'hg-empty',text:'No entries available yet.'}));
+    items.forEach(function(it){
+      var u = safeUrl(it.url), sub;
+      if(isVideo) sub = ytId(u) ? 'YouTube' : isFb(u) ? 'Facebook' : 'Video link';
+      else sub = it.note || (it.type==='download' ? 'Download' : 'View');
+      var row = el('div',{class:'hg-item'},[ el('div',{class:'hg-ico',text:isVideo ? '▶' : (it.type==='download' ? '⬇' : '📄')}),
+        el('div',{class:'hg-t'},[ document.createTextNode(it.title), el('em',{text:sub}) ]) ]);
+      if(isVideo){ if(u) row.appendChild(btn('Watch','pri',function(){ watch(it); })); }
+      else if(u) row.appendChild(el('a',{class:'hg-btn pri', href:u, target:'_blank', rel:'noopener noreferrer', text: it.type==='download'?'Download':'View', download: it.type==='download' ? '' : null}));
+      wrap.appendChild(row);
+    });
+    return sec(title, wrap);
+  }
+  function watch(it){
+    var host = $('hg-player-host'); if(!host) return;
+    host.innerHTML = ''; var u = safeUrl(it.url), emb = embedUrl(u);
+    var box = el('div',{class:'hg-pad'});
+    box.appendChild(el('div',{class:'hg-t',text:it.title}));
+    if(emb) box.appendChild(el('iframe',{class:'hg-player', src:emb, title:it.title, allow:'accelerometer; encrypted-media; picture-in-picture; fullscreen', allowfullscreen:'', referrerpolicy:'strict-origin-when-cross-origin'}));
+    box.appendChild(el('div',{class:'hg-row'},[ el('a',{class:'hg-btn', href:u, target:'_blank', rel:'noopener noreferrer', text:'Open in new tab ↗'}), btn('Close Player','',function(){ host.innerHTML=''; }) ]));
+    host.appendChild(box); host.scrollIntoView({block:'nearest'});
+  }
+  function render(){
+    var b = $('hg-body'); b.innerHTML = '';
+    b.appendChild(secContact());
+    b.appendChild(listSec('videos','Video Guides',true));
+    b.appendChild(listSec('guides','Guidelines & Manuals',false));
+  }
+  function applyRemote(d){
+    if(!d || !d.configured) return false;
+    var on = !(d.features && d.features.helpPanel === false);
+    $('hg-fab').style.display = on ? '' : 'none';
+    Array.prototype.forEach.call(document.querySelectorAll('#devCredit a[onclick*="HelpGuidelines"]'), function(a){ a.style.display = on ? '' : 'none'; });
+    cfg = { helpline: d.helpline || HG_CONFIG.helpline,
+      videos: (d.videos||[]).map(function(v){ return {title:v.title, url:v.url}; }),
+      guides: (d.guides||[]).map(function(g){ return {title:g.title, url:g.url, note:g.note||'', type:g.type==='download'?'download':'view'}; }) };
+    if($('hg-drawer').classList.contains('open')) render();
+    return true;
+  }
+  function open(){ render(); $('hg-overlay').style.display='block'; $('hg-drawer').classList.add('open'); $('hg-drawer').setAttribute('aria-hidden','false'); }
+  function close(){ $('hg-overlay').style.display='none'; $('hg-drawer').classList.remove('open'); $('hg-drawer').setAttribute('aria-hidden','true'); var h=$('hg-player-host'); if(h) h.innerHTML=''; }
+  $('hg-fab').addEventListener('click', open);
+  $('hg-close').addEventListener('click', close);
+  $('hg-overlay').addEventListener('click', close);
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && $('hg-drawer').classList.contains('open')) close(); });
+  var _c = pcCached(HG_CONFIG.portalId); if(_c) applyRemote(_c);
+  pcFetch(HG_CONFIG.portalId).then(function(d){
+    if(d && d.configured) applyRemote(d);
+    else if(d && d.configured === false){ cfg = { helpline: HG_CONFIG.helpline, videos: [], guides: [] }; }
+  });
+  window.HelpGuidelines = { open:open, close:close };   // other pages/buttons can call HelpGuidelines.open()
+})();
+</script>
+<!-- ===================== END HELP & GUIDELINES PANEL ===================== -->
 </body></html>

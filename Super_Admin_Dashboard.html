@@ -18060,7 +18060,7 @@ var PC = (function(){
         videos:(Array.isArray(p.videos)?p.videos:[]).map(function(v){ return {title:v.title||'',url:v.url||'',active:v.active!==false}; }),
         guides:(Array.isArray(p.guides)?p.guides:[]).map(function(g){ return {title:g.title||'',url:g.url||'',note:g.note||'',type:g.type==='download'?'download':'view',active:g.active!==false}; }) };
     });
-    [['invoice','Invoice Login'],['agent','Agent Login'],['hrms','HRMS']].forEach(function(a){ if(!o.portals[a[0]]) o.portals[a[0]] = blank(a[1]); });
+    [['invoice','Invoice Login'],['sessionb','Invoice Session B'],['agent','Agent Login'],['hrms','HRMS']].forEach(function(a){ if(!o.portals[a[0]]) o.portals[a[0]] = blank(a[1]); });
     return o;
   }
   function api(method, body){
@@ -18096,7 +18096,7 @@ var PC = (function(){
     h += '<div class="sa-card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">📄 Guidelines / Manuals</h3><button class="btn btn-ghost btn-sm" type="button" data-a="add" data-l="guides">＋ Add guideline</button></div>'+
       (p.guides.map(function(g,i){ return '<div class="sa-row" style="grid-template-columns:1.4fr 1.6fr 1.6fr auto auto auto auto auto">'+inp('guides',i,'title','Title',g.title,'maxlength="120"')+inp('guides',i,'url','Link (optional, https://… or /file.pdf)',g.url)+inp('guides',i,'note','Short note (optional)',g.note,'maxlength="400"')+
         '<select class="sa-in" style="width:auto" data-l="guides" data-i="'+i+'" data-f="type"><option value="view"'+(g.type==='view'?' selected':'')+'>View</option><option value="download"'+(g.type==='download'?' selected':'')+'>Download</option></select>'+live('guides',i,g.active)+rowTools('guides',i)+'</div>'; }).join('')||'<div style="font-size:12px;opacity:.7;padding:8px 0">No guidelines yet. Use “Add guideline”.</div>')+'</div>';
-    h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" type="button" onclick="PC.exportOne()">⬇ Export this portal only</button>'+(['invoice','agent','hrms'].indexOf(cur)<0?'<button class="btn btn-ghost btn-sm" type="button" data-a="delportal">🗑 Remove this portal</button>':'')+'</div>';
+    h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" type="button" onclick="PC.exportOne()">⬇ Export this portal only</button>'+(['invoice','sessionb','agent','hrms'].indexOf(cur)<0?'<button class="btn btn-ghost btn-sm" type="button" data-a="delportal">🗑 Remove this portal</button>':'')+'</div>';
     $('pc-body').innerHTML = h;
   }
   function onInput(e){

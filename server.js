@@ -5976,10 +5976,10 @@ function pcClean(raw) {
     const src = (raw && typeof raw === 'object' && raw.portals && typeof raw.portals === 'object') ? raw.portals : {};
     const portals = {};
     const ids = Object.keys(src).filter(k => /^[a-z0-9_-]{2,30}$/.test(k)).slice(0, 12);
-    ['invoice', 'agent', 'hrms'].forEach(k => { if (ids.indexOf(k) < 0) ids.push(k); });
+    ['invoice', 'sessionb', 'agent', 'hrms'].forEach(k => { if (ids.indexOf(k) < 0) ids.push(k); });
     ids.forEach(id => {
         const p = src[id] || {};
-        const base = pcDefaultPortal(id === 'invoice' ? 'Invoice Login' : id === 'agent' ? 'Agent Login' : id === 'hrms' ? 'HRMS' : id);
+        const base = pcDefaultPortal(id === 'invoice' ? 'Invoice Login' : id === 'sessionb' ? 'Invoice Session B' : id === 'agent' ? 'Agent Login' : id === 'hrms' ? 'HRMS' : id);
         const f = p.features || {};
         portals[id] = {
             label: cleanText(p.label, 40) || base.label,
