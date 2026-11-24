@@ -5958,6 +5958,78 @@ async function saveAnnouncements(req, res) {
 app.put('/api/admin/announcements', requireRole('admin'), saveAnnouncements);
 app.post('/api/admin/announcements', requireRole('admin'), saveAnnouncements);
 
+// ══════════════════════════════════════════════════════════════
+// 🎛️ PORTAL CONTROL (Super Admin → Configuration Center → Portal Control)
+//   One document ('portal_control' in kv_site_data) holds, PER PORTAL (invoice / agent / hrms / any custom id):
+//   feature switches, helpline, Top-Up strip items, Video Guides and Guidelines / Manuals.
+//   Public read:  GET /api/portal-control/:portal   (active items only — used by the login / portal pages)
+//   Admin  read:  GET /api/admin/portal-control     (full document)
+//   Admin  write: PUT|POST /api/admin/portal-control
+//   Nothing here touches invoices, GST / HSN toggles or any calculation.
+// ══════════════════════════════════════════════════════════════
+const PC_URL_RE = /^(https?:\/\/|\/)[^\s<>"']*$/i;
+function pcUrl(v) { v = String(v || '').trim().slice(0, 500); return PC_URL_RE.test(v) ? v : ''; }
+function pcDefaultPortal(label) {
+    return { label: label, features: { helpPanel: true, topupStrip: true }, helpline: '6202119756', topup: { items: [], speed: 40 }, videos: [], guides: [] };
+}
+function pcClean(raw) {
+    const src = (raw && typeof raw === 'object' && raw.portals && typeof raw.portals === 'object') ? raw.portals : {};
+    const portals = {};
+    const ids = Object.keys(src).filter(k => /^[a-z0-9_-]{2,30}$/.test(k)).slice(0, 12);
+    ['invoice', 'agent', 'hrms'].forEach(k => { if (ids.indexOf(k) < 0) ids.push(k); });
+    ids.forEach(id => {
+        const p = src[id] || {};
+        const base = pcDefaultPortal(id === 'invoice' ? 'Invoice Login' : id === 'agent' ? 'Agent Login' : id === 'hrms' ? 'HRMS' : id);
+        const f = p.features || {};
+        portals[id] = {
+            label: cleanText(p.label, 40) || base.label,
+            features: { helpPanel: f.helpPanel !== false, topupStrip: f.topupStrip !== false },
+            helpline: String(p.helpline || base.helpline).replace(/[^0-9+\s-]/g, '').slice(0, 15) || base.helpline,
+            topup: {
+                speed: Math.min(Math.max(Number(p.topup && p.topup.speed) || 40, 10), 120),
+                items: (Array.isArray(p.topup && p.topup.items) ? p.topup.items : []).slice(0, 30)
+                    .map(i => ({ text: cleanText(i && i.text, 300), url: pcUrl(i && i.url), active: !(i && i.active === false) })).filter(i => i.text)
+            },
+            videos: (Array.isArray(p.videos) ? p.videos : []).slice(0, 50)
+                .map(v => ({ title: cleanText(v && v.title, 120), url: pcUrl(v && v.url), active: !(v && v.active === false) })).filter(v => v.title),
+            guides: (Array.isArray(p.guides) ? p.guides : []).slice(0, 50)
+                .map(g => ({ title: cleanText(g && g.title, 120), url: pcUrl(g && g.url), note: cleanText(g && g.note, 400),
+                    type: (g && g.type) === 'download' ? 'download' : 'view', active: !(g && g.active === false) })).filter(g => g.title)
+        };
+    });
+    return { version: 1, portals: portals, updatedAt: new Date().toISOString() };
+}
+async function pcRead() {
+    const r = await dbq('SELECT value FROM kv_site_data WHERE `key` = ?', ['portal_control']);
+    let v = null; try { v = JSON.parse(r[0] && r[0].value); } catch (e) { v = null; }
+    return v ? Object.assign(pcClean(v), { updatedAt: v.updatedAt || null, saved: true }) : Object.assign(pcClean({}), { updatedAt: null, saved: false });
+}
+app.get('/api/portal-control/:portal', noStore, async (req, res) => {
+    try {
+        const id = String(req.params.portal || '').toLowerCase();
+        const doc = await pcRead(), p = doc.portals[id];
+        if (!doc.saved || !p) return res.json({ configured: false });
+        res.json({
+            configured: true, portal: id, updatedAt: doc.updatedAt, features: p.features, helpline: p.helpline,
+            topup: { speed: p.topup.speed, items: p.topup.items.filter(i => i.active).map(i => ({ text: i.text, url: i.url })) },
+            videos: p.videos.filter(v => v.active).map(v => ({ title: v.title, url: v.url })),
+            guides: p.guides.filter(g => g.active).map(g => ({ title: g.title, url: g.url, note: g.note, type: g.type }))
+        });
+    } catch (e) { res.json({ configured: false }); }
+});
+app.get('/api/admin/portal-control', requireRole('admin'), noStore, async (req, res) => {
+    try { res.json(await pcRead()); } catch (e) { res.status(500).json({ error: 'Unable to load Portal Control.' }); }
+});
+async function pcSave(req, res) {
+    try {
+        const out = pcClean(req.body);
+        await dbq('INSERT INTO kv_site_data ("key", value) VALUES (?, ?) ON CONFLICT ("key") DO UPDATE SET value = EXCLUDED.value', ['portal_control', JSON.stringify(out)]);
+        res.json(Object.assign({ success: true, saved: true }, out));
+    } catch (e) { res.status(500).json({ error: 'Unable to save Portal Control.' }); }
+}
+app.put('/api/admin/portal-control', requireRole('admin'), pcSave);
+app.post('/api/admin/portal-control', requireRole('admin'), pcSave);
+
 app.get('/api/students/next-id', (req, res) => {
     db.query("SELECT value FROM kv_admin_entities WHERE \"key\"='students'", (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });

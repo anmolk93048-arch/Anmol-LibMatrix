@@ -2623,6 +2623,7 @@ html,body,#admin-app{width:100%;min-width:0;}
   <div class="sidebar-label">Configuration Center</div>
   <button class="nav-item" data-tooltip="Login & App Access" onclick="GOTO('config-login-apps')"><span class="nav-icon">🔐</span><span class="nav-text">Login &amp; App Access</span></button>
   <button class="nav-item" data-tooltip="Website Notices & Navigation" onclick="GOTO('config-navigation')"><span class="nav-icon">📢</span><span class="nav-text">Website Notices</span></button>
+  <button class="nav-item" data-tooltip="Portal Control (Top-Up, Videos, Guidelines)" onclick="GOTO('portal-control')"><span class="nav-icon">🎛️</span><span class="nav-text">Portal Control</span></button>
   <button class="nav-item" data-tooltip="Admin Security & System" onclick="GOTO('config-security')"><span class="nav-icon">🛡️</span><span class="nav-text">Admin Security</span></button>
   <button class="nav-item" data-tooltip="OTP Settings (per portal)" onclick="GOTO('config-otp')"><span class="nav-icon">📲</span><span class="nav-text">OTP Settings</span></button>
   <button class="nav-item" data-tooltip="System Health" onclick="GOTO('system-health')"><span class="nav-icon">🩺</span><span class="nav-text">System Health</span></button>
@@ -4592,6 +4593,21 @@ html,body,#admin-app{width:100%;min-width:0;}
 <button class="btn btn-gold btn-sm" onclick="SAVE_HOMEPAGE_CONTENT()">💾 Save Homepage</button>
 </div>
 </div>
+</div>
+
+<div class="page" id="page-portal-control">
+  <div class="page-header">
+    <div><div class="page-title">🎛️ Portal Control</div><div class="page-sub">One place to manage the Top-Up strip, Video Guides, Guidelines / Manuals and feature switches of each portal (Invoice Login first; Agent Login, HRMS and others use the same structure). Saved changes go live on the portal without any redeploy.</div></div>
+    <div class="actions-row">
+      <button class="btn btn-ghost" type="button" onclick="PC.exportAll()">⬇ Export JSON</button>
+      <button class="btn btn-ghost" type="button" onclick="PC.importPick()">⬆ Import JSON</button>
+      <button class="btn btn-gold" type="button" id="pc-save" onclick="PC.save()">💾 Save All</button>
+    </div>
+  </div>
+  <input type="file" id="pc-file" accept="application/json" style="display:none" onchange="PC.importFile(this)">
+  <div class="sa-msg" id="pc-msg" style="margin:0 0 6px"></div>
+  <div class="sa-tabs" id="pc-tabs"></div>
+  <div id="pc-body"></div>
 </div>
 
 <div class="page" id="page-config-navigation">
@@ -17975,5 +17991,126 @@ window.OTPSET=(function(){
   };
 })();
 </script>
+<script id="portal-control-js">
+/* ═══════════ PORTAL CONTROL — Top-Up strip · Video Guides · Guidelines · feature switches, per portal ═══════════
+   Data lives on the server (GET/PUT /api/admin/portal-control). Structure (also the Export / Import JSON format):
+   { "version":1, "portals": { "<portalId>": { "label":"Invoice Login",
+        "features":{ "helpPanel":true, "topupStrip":true }, "helpline":"6202119756",
+        "topup":{ "speed":40, "items":[ {"text":"…","url":"https://… (optional)","active":true} ] },
+        "videos":[ {"title":"…","url":"https://youtu.be/… or facebook.com/…","active":true} ],
+        "guides":[ {"title":"…","url":"https://… (optional)","note":"…","type":"view|download","active":true} ] } } }  */
+var PC = (function(){
+  var S = null, cur = 'invoice', dirty = false;
+  var $ = function(i){ return document.getElementById(i); };
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function msg(t, ok){ var m=$('pc-msg'); if(m){ m.textContent=t||''; m.className='sa-msg '+(ok?'ok':'err'); } }
+  function blank(label){ return { label:label, features:{helpPanel:true,topupStrip:true}, helpline:'6202119756', topup:{speed:40,items:[]}, videos:[], guides:[] }; }
+  function norm(d){
+    var o = { version:1, portals:{} }, src = (d && d.portals) || {};
+    Object.keys(src).forEach(function(k){
+      if(!/^[a-z0-9_-]{2,30}$/.test(k)) return; var p = src[k] || {}, b = blank(p.label || k), f = p.features || {};
+      o.portals[k] = { label: p.label || b.label, features:{ helpPanel: f.helpPanel!==false, topupStrip: f.topupStrip!==false }, helpline: String(p.helpline||b.helpline),
+        topup:{ speed: +(p.topup&&p.topup.speed)||40, items:(p.topup&&Array.isArray(p.topup.items)?p.topup.items:[]).map(function(i){ return {text:i.text||'',url:i.url||'',active:i.active!==false}; }) },
+        videos:(Array.isArray(p.videos)?p.videos:[]).map(function(v){ return {title:v.title||'',url:v.url||'',active:v.active!==false}; }),
+        guides:(Array.isArray(p.guides)?p.guides:[]).map(function(g){ return {title:g.title||'',url:g.url||'',note:g.note||'',type:g.type==='download'?'download':'view',active:g.active!==false}; }) };
+    });
+    [['invoice','Invoice Login'],['agent','Agent Login'],['hrms','HRMS']].forEach(function(a){ if(!o.portals[a[0]]) o.portals[a[0]] = blank(a[1]); });
+    return o;
+  }
+  function api(method, body){
+    return fetch(API_BASE+'/admin/portal-control',{method:method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+AUTH_TOKEN},body:body?JSON.stringify(body):undefined})
+      .then(function(r){ return r.json().then(function(d){ if(!r.ok) throw new Error(d.error||'Request failed'); return d; }); });
+  }
+  function load(){
+    msg('Loading…',true);
+    api('GET').then(function(d){ S = norm(d); dirty=false; if(!S.portals[cur]) cur='invoice'; msg(d.updatedAt?('Last saved: '+new Date(d.updatedAt).toLocaleString('en-IN')):'Nothing saved yet — portals keep their built-in defaults until you press Save All.',true); render(); })
+      .catch(function(e){ if(!S) S = norm({}); msg(e.message||'Could not load Portal Control.'); render(); });
+  }
+  function P(){ return S.portals[cur]; }
+  function platform(u){ return /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/)/i.test(u)?'YouTube':/(?:facebook\.com|fb\.watch)\//i.test(u)?'Facebook':(u?'Other link':'No link'); }
+  function rowTools(list, i){ return '<button class="btn btn-ghost btn-sm" type="button" data-a="up" data-l="'+list+'" data-i="'+i+'" title="Move up" aria-label="Move up">↑</button>'+
+    '<button class="btn btn-ghost btn-sm" type="button" data-a="down" data-l="'+list+'" data-i="'+i+'" title="Move down" aria-label="Move down">↓</button>'+
+    '<button class="btn btn-ghost btn-sm" type="button" data-a="del" data-l="'+list+'" data-i="'+i+'" title="Delete" aria-label="Delete">✕</button>'; }
+  function inp(list,i,f,ph,v,extra){ return '<input class="sa-in" data-l="'+list+'" data-i="'+i+'" data-f="'+f+'" placeholder="'+ph+'" value="'+esc(v)+'" '+(extra||'')+'>'; }
+  function live(list,i,on){ return '<label style="font-size:12px;white-space:nowrap;display:flex;gap:5px;align-items:center"><input type="checkbox" data-l="'+list+'" data-i="'+i+'" data-f="active" '+(on?'checked':'')+' style="width:auto"> Live</label>'; }
+  function render(){
+    if(!S) return;
+    $('pc-tabs').innerHTML = Object.keys(S.portals).map(function(k){ return '<button type="button" class="sa-tab'+(k===cur?' on':'')+'" data-a="tab" data-k="'+esc(k)+'">'+esc(S.portals[k].label)+'</button>'; }).join('')+'<button type="button" class="sa-tab" data-a="addportal">＋ Add portal</button>';
+    var p = P(), h = '';
+    h += '<div class="sa-card"><h3>⚙️ Feature switches — '+esc(p.label)+'</h3><div class="sa-grid">'+
+      '<label class="sa-lbl" style="display:flex;gap:8px;align-items:center;font-size:12.5px"><input type="checkbox" data-f="helpPanel" data-g="features" '+(p.features.helpPanel?'checked':'')+' style="width:auto"> Show “Help &amp; Guidelines” panel</label>'+
+      '<label class="sa-lbl" style="display:flex;gap:8px;align-items:center;font-size:12.5px"><input type="checkbox" data-f="topupStrip" data-g="features" '+(p.features.topupStrip?'checked':'')+' style="width:auto"> Show Top-Up / Notice strip</label>'+
+      '<div><span class="sa-lbl">Helpline number</span><input class="sa-in" data-g="meta" data-f="helpline" maxlength="15" value="'+esc(p.helpline)+'"></div>'+
+      '<div><span class="sa-lbl">Portal display name</span><input class="sa-in" data-g="meta" data-f="label" maxlength="40" value="'+esc(p.label)+'"></div></div>'+
+      '<div style="font-size:11.5px;color:var(--text-muted,#6b829b);margin-top:8px">These switches only show or hide the Help panel and Top-Up strip. Invoice fields, GST / HSN toggles and calculations are not affected.</div></div>';
+    h += '<div class="sa-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">📢 Top-Up strip items</h3><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="font-size:12px;display:flex;gap:6px;align-items:center">Scroll speed (10 fast – 120 slow) <input class="sa-in" style="width:76px" type="number" min="10" max="120" data-g="topup" data-f="speed" value="'+esc(p.topup.speed)+'"></label><button class="btn btn-ghost btn-sm" type="button" data-a="add" data-l="topup">＋ Add item</button></div></div>'+
+      (p.topup.items.map(function(it,i){ return '<div class="sa-row" style="grid-template-columns:2fr 1.5fr auto auto auto auto">'+inp('topup',i,'text','Message / guideline',it.text,'maxlength="300"')+inp('topup',i,'url','Link (optional, https://…)',it.url)+live('topup',i,it.active)+rowTools('topup',i)+'</div>'; }).join('')||'<div style="font-size:12px;opacity:.7;padding:8px 0">No Top-Up items. Use “Add item”.</div>')+'</div>';
+    h += '<div class="sa-card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">▶ Video Guides (YouTube / Facebook)</h3><button class="btn btn-ghost btn-sm" type="button" data-a="add" data-l="videos">＋ Add video</button></div>'+
+      (p.videos.map(function(v,i){ return '<div class="sa-row" style="grid-template-columns:1.5fr 2fr auto auto auto auto auto">'+inp('videos',i,'title','Video title',v.title,'maxlength="120"')+inp('videos',i,'url','YouTube / Facebook link (https://…)',v.url)+'<span class="sa-chip" style="cursor:default">'+platform(v.url)+'</span>'+live('videos',i,v.active)+rowTools('videos',i)+'</div>'; }).join('')||'<div style="font-size:12px;opacity:.7;padding:8px 0">No videos yet. Use “Add video”.</div>')+'</div>';
+    h += '<div class="sa-card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">📄 Guidelines / Manuals</h3><button class="btn btn-ghost btn-sm" type="button" data-a="add" data-l="guides">＋ Add guideline</button></div>'+
+      (p.guides.map(function(g,i){ return '<div class="sa-row" style="grid-template-columns:1.4fr 1.6fr 1.6fr auto auto auto auto auto">'+inp('guides',i,'title','Title',g.title,'maxlength="120"')+inp('guides',i,'url','Link (optional, https://… or /file.pdf)',g.url)+inp('guides',i,'note','Short note (optional)',g.note,'maxlength="400"')+
+        '<select class="sa-in" style="width:auto" data-l="guides" data-i="'+i+'" data-f="type"><option value="view"'+(g.type==='view'?' selected':'')+'>View</option><option value="download"'+(g.type==='download'?' selected':'')+'>Download</option></select>'+live('guides',i,g.active)+rowTools('guides',i)+'</div>'; }).join('')||'<div style="font-size:12px;opacity:.7;padding:8px 0">No guidelines yet. Use “Add guideline”.</div>')+'</div>';
+    h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" type="button" onclick="PC.exportOne()">⬇ Export this portal only</button>'+(['invoice','agent','hrms'].indexOf(cur)<0?'<button class="btn btn-ghost btn-sm" type="button" data-a="delportal">🗑 Remove this portal</button>':'')+'</div>';
+    $('pc-body').innerHTML = h;
+  }
+  function onInput(e){
+    var t = e.target; if(!S || !t.dataset || !t.dataset.f) return; var p = P(), v = t.type==='checkbox' ? t.checked : t.value;
+    if(t.dataset.l){ var it = (t.dataset.l==='topup' ? p.topup.items : p[t.dataset.l])[+t.dataset.i]; if(!it) return; it[t.dataset.f] = v; if(t.dataset.f==='url' && t.dataset.l==='videos'){ var chip = t.closest('.sa-row').querySelector('.sa-chip'); if(chip) chip.textContent = platform(String(v).trim()); } }
+    else if(t.dataset.g==='features') p.features[t.dataset.f] = v;
+    else if(t.dataset.g==='topup') p.topup.speed = +v || 40;
+    else if(t.dataset.g==='meta') p[t.dataset.f] = v;
+    dirty = true;
+    if(t.dataset.g==='meta' && t.dataset.f==='label'){ var tab = document.querySelector('#pc-tabs .sa-tab.on'); if(tab) tab.textContent = v || cur; }
+  }
+  function onClick(e){
+    var b = e.target.closest('[data-a]'); if(!b || !S) return; var a = b.dataset.a, p = P(), l = b.dataset.l, i = +b.dataset.i;
+    if(a==='tab'){ cur = b.dataset.k; render(); return; }
+    if(a==='addportal'){ var id = (prompt('New portal ID (lowercase letters, digits, - or _), e.g. students') || '').trim().toLowerCase(); if(!id) return; if(!/^[a-z0-9_-]{2,30}$/.test(id)){ alert('Use 2–30 lowercase letters, digits, - or _ only.'); return; } if(S.portals[id]){ cur = id; render(); return; } S.portals[id] = blank(id); cur = id; dirty = true; render(); return; }
+    if(a==='delportal'){ if(confirm('Remove portal "'+p.label+'" and all its entries? (Applied when you press Save All.)')){ delete S.portals[cur]; cur = 'invoice'; dirty = true; render(); } return; }
+    var arr = l==='topup' ? p.topup.items : p[l];
+    if(a==='add'){ arr.push(l==='topup'?{text:'',url:'',active:true}:l==='videos'?{title:'',url:'',active:true}:{title:'',url:'',note:'',type:'view',active:true}); dirty = true; render(); return; }
+    if(a==='del'){ arr.splice(i,1); dirty = true; render(); return; }
+    if(a==='up' && i>0){ var t = arr[i-1]; arr[i-1] = arr[i]; arr[i] = t; dirty = true; render(); return; }
+    if(a==='down' && i<arr.length-1){ var t2 = arr[i+1]; arr[i+1] = arr[i]; arr[i] = t2; dirty = true; render(); }
+  }
+  function okUrl(u){ return !u || /^(https?:\/\/|\/)[^\s]*$/i.test(u); }
+  function validate(){
+    for(var k in S.portals){ var p = S.portals[k], n = p.label;
+      for(var a=0;a<p.topup.items.length;a++){ var it=p.topup.items[a]; if(!it.text.trim()) return n+' › Top-Up item '+(a+1)+': message is empty.'; if(!okUrl(it.url.trim())) return n+' › Top-Up item '+(a+1)+': link must start with https://'; }
+      for(var b=0;b<p.videos.length;b++){ var v=p.videos[b]; if(!v.title.trim()) return n+' › Video '+(b+1)+': title is empty.'; if(!okUrl(v.url.trim())) return n+' › Video '+(b+1)+': link must start with https://'; }
+      for(var c=0;c<p.guides.length;c++){ var g=p.guides[c]; if(!g.title.trim()) return n+' › Guideline '+(c+1)+': title is empty.'; if(!okUrl(g.url.trim())) return n+' › Guideline '+(c+1)+': link must start with https:// (or /path)'; }
+    }
+    return '';
+  }
+  function save(){
+    if(!S) return; var err = validate(); if(err){ msg(err); return; }
+    var btn = $('pc-save'); if(btn) btn.disabled = true; msg('Saving…',true);
+    api('PUT', S).then(function(d){ S = norm(d); dirty=false; msg('Saved. Changes are live on the portals ('+new Date(d.updatedAt).toLocaleString('en-IN')+').',true); if(typeof SHOW_TOAST==='function') SHOW_TOAST('Portal Control saved.'); render(); })
+      .catch(function(e){ msg(e.message||'Save failed.'); }).then(function(){ if(btn) btn.disabled=false; });
+  }
+  function dl(name, obj){ var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+  function exportAll(){ if(S) dl('portal-control.json', S); }
+  function exportOne(){ if(!S) return; var o = {version:1, portals:{}}; o.portals[cur] = S.portals[cur]; dl('portal-control-'+cur+'.json', o); }
+  function importPick(){ $('pc-file').value=''; $('pc-file').click(); }
+  function importFile(inp){
+    var f = inp.files && inp.files[0]; if(!f) return; var r = new FileReader();
+    r.onload = function(){
+      try{ var d = JSON.parse(r.result); if(!d || typeof d.portals!=='object') throw 0; var inc = norm(d), n = 0;
+        Object.keys(d.portals).forEach(function(k){ if(inc.portals[k]){ S.portals[k] = inc.portals[k]; n++; } });
+        dirty = true; render(); msg(n+' portal(s) imported into the editor. Review, then press Save All to publish.',true);
+      }catch(e){ msg('Invalid file — expected the Portal Control JSON format.'); }
+    };
+    r.readAsText(f);
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    var body = $('pc-body'), tabs = $('pc-tabs'); if(!body) return;
+    body.addEventListener('input', onInput); body.addEventListener('change', onInput); body.addEventListener('click', onClick); tabs.addEventListener('click', onClick);
+  });
+  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+  var _G = window.GOTO; window.GOTO = function(page){ var r = _G.apply(this, arguments); if(page==='portal-control') load(); return r; };
+  return { load:load, save:save, exportAll:exportAll, exportOne:exportOne, importPick:importPick, importFile:importFile };
+})();
+</script>
+
 </body>
 </html>
