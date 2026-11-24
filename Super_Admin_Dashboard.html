@@ -6731,8 +6731,53 @@ function DO_LOGIN(){
     });
 }
 
+/* ---- Official-portal "Log out" confirmation (replaces the browser confirm() box) ---- */
+window.anmolConfirmLogout = window.anmolConfirmLogout || function(onOk){
+  if(document.getElementById('anmol-logout-modal')) return;                       // already open
+  var prevFocus = document.activeElement;
+  if(!document.getElementById('anmol-logout-css')){
+    var st = document.createElement('style'); st.id = 'anmol-logout-css';
+    st.textContent =
+      '#anmol-logout-modal{position:fixed;inset:0;z-index:2147483000;background:rgba(11,37,69,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit}' +
+      '#anmol-logout-modal .alm-card{background:#fff;color:#1f2937;width:100%;max-width:380px;border-radius:6px;overflow:hidden;box-shadow:0 18px 50px rgba(11,37,69,.45);border-top:4px solid #ff9933;animation:almIn .16s ease-out}' +
+      '@keyframes almIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}' +
+      '#anmol-logout-modal .alm-head{background:#0b2545;color:#fff;padding:11px 16px;font-size:13px;font-weight:800;letter-spacing:.05em}' +
+      '#anmol-logout-modal .alm-body{padding:20px 18px 6px;text-align:center}' +
+      '#anmol-logout-modal .alm-ico{width:46px;height:46px;border-radius:50%;background:#eef3fb;color:#13315c;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px}' +
+      '#anmol-logout-modal .alm-msg{font-size:16px;font-weight:800;color:#0b2545;margin:0 0 4px}' +
+      '#anmol-logout-modal .alm-sub{font-size:12px;color:#6b7280;margin:0}' +
+      '#anmol-logout-modal .alm-btns{display:flex;gap:10px;padding:16px 18px 18px}' +
+      '#anmol-logout-modal button{flex:1;padding:10px 12px;border-radius:4px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}' +
+      '#anmol-logout-modal .alm-cancel{background:#fff;color:#13315c;border:1px solid #9fb0c8}' +
+      '#anmol-logout-modal .alm-cancel:hover{background:#eef3fb}' +
+      '#anmol-logout-modal .alm-ok{background:#b42318;color:#fff;border:1px solid #b42318}' +
+      '#anmol-logout-modal .alm-ok:hover{background:#912018}' +
+      '#anmol-logout-modal button:focus-visible{outline:2px solid #13315c;outline-offset:2px}' +
+      '@media print{#anmol-logout-modal{display:none!important}}';
+    document.head.appendChild(st);
+  }
+  var m = document.createElement('div'); m.id = 'anmol-logout-modal'; m.className = 'no-print';
+  m.setAttribute('role','alertdialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-labelledby','alm-title'); m.setAttribute('aria-describedby','alm-desc');
+  m.innerHTML = '<div class="alm-card"><div class="alm-head">CONFIRM LOGOUT</div>' +
+    '<div class="alm-body"><div class="alm-ico" aria-hidden="true">🚪</div><p class="alm-msg" id="alm-title">Do you want to log out?</p>' +
+    '<p class="alm-sub" id="alm-desc">You will need to sign in again to continue.</p></div>' +
+    '<div class="alm-btns"><button type="button" class="alm-cancel">Cancel</button><button type="button" class="alm-ok">Logout</button></div></div>';
+  function closeIt(){ document.removeEventListener('keydown', onKey, true); if(m.parentNode) m.parentNode.removeChild(m); try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){} }
+  function onKey(e){
+    if(e.key === 'Escape'){ e.preventDefault(); closeIt(); }
+    else if(e.key === 'Tab'){ var b = m.querySelectorAll('button'); if(e.shiftKey && document.activeElement === b[0]){ e.preventDefault(); b[b.length-1].focus(); } else if(!e.shiftKey && document.activeElement === b[b.length-1]){ e.preventDefault(); b[0].focus(); } }
+  }
+  m.addEventListener('mousedown', function(e){ if(e.target === m) closeIt(); });
+  m.querySelector('.alm-cancel').addEventListener('click', closeIt);
+  m.querySelector('.alm-ok').addEventListener('click', function(){ this.disabled = true; this.textContent = 'Logging out…'; document.removeEventListener('keydown', onKey, true); try{ onOk(); }catch(e){ closeIt(); throw e; } });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(m);
+  m.querySelector('.alm-ok').focus();
+};
+
 function DO_LOGOUT(){
-  if(!confirm('Do you want to log out?')) return;
+  if(window.__anmolLogoutOk !== true){ window.anmolConfirmLogout(function(){ window.__anmolLogoutOk = true; window.DO_LOGOUT(); }); return; }
+  window.__anmolLogoutOk = false;
   LOG_ACTIVITY('🚪 Admin logout: '+currentAdmin.name);
   currentAdmin = null;
   SHOW_TOAST('👋 Logout ho gaye!');
@@ -16446,7 +16491,8 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 
 /* logout → revoke every token, clear, index.html */
 window.DO_LOGOUT=function(){
-  if(!confirm('Do you want to log out?')) return;
+  if(window.__anmolLogoutOk !== true){ window.anmolConfirmLogout(function(){ window.__anmolLogoutOk = true; window.DO_LOGOUT(); }); return; }
+  window.__anmolLogoutOk = false;
   try{LOG_ACTIVITY('🚪 Admin logout: '+(currentAdmin&&currentAdmin.name));}catch(e){}
   try{AUTO_LOGOUT_ADMIN.stop();}catch(e){}
   currentAdmin=null; try{AUTH_TOKEN=null;}catch(e){}

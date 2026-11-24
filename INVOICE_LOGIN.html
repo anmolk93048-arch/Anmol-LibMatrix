@@ -1142,8 +1142,9 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
 </div>
 
 <!-- =====================================================================
-     TOP-UP / NOTICE STRIP  (reusable — copy this whole block, from this comment to its end,
-     into any other login page where the strip should appear. Edit only TU_CONFIG below.)
+     TOP-UP / NOTICE STRIP — VIEW-ONLY  (reusable — copy this whole block, from this comment to its end,
+     into any other login page where the strip should appear. Edit only TU_CONFIG below.
+     Notices are added / edited only in Super Admin Dashboard → Portal Control.)
      ===================================================================== -->
 <style>
   #tu-strip{position:relative;display:flex;align-items:stretch;background:#fff8e6;border-top:1px solid #ecd28a;border-bottom:1px solid #ecd28a;font-size:12.5px}
@@ -1162,57 +1163,32 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
   #tu-strip .tu-btns{flex:none;display:flex;align-items:center;gap:4px;padding:0 8px;background:#fff8e6}
   #tu-strip .tu-btns button{width:26px;height:26px;border-radius:4px;border:1px solid var(--gov-blue,#13315c);background:#fff;color:var(--gov-blue,#13315c);font-weight:800;font-size:15px;line-height:1;cursor:pointer}
   #tu-strip .tu-btns button:hover{background:#eaf1fb}
-  #tu-strip .tu-btns .tu-plus{background:var(--gov-blue,#13315c);color:#fff;font-size:18px}
-  #tu-strip .tu-btns .tu-plus:hover{opacity:.9;background:var(--gov-blue,#13315c)}
   @media (prefers-reduced-motion:reduce){#tu-strip .tu-track{animation:none}#tu-strip .tu-win{overflow-x:auto}}
-  #tu-panel{position:absolute;right:8px;top:100%;z-index:8000;width:min(420px,calc(100vw - 16px));background:#fff;border:1px solid #c9d2e0;border-top:3px solid var(--gov-navy,#0b2545);border-radius:0 0 4px 4px;box-shadow:0 8px 24px rgba(11,37,69,.25);display:none;font-size:12px}
-  #tu-panel.open{display:block}
-  #tu-panel .tu-ph{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#e9edf3;font-weight:800;font-size:11.5px;letter-spacing:.04em;color:var(--gov-navy,#0b2545)}
-  #tu-panel .tu-ph button{background:none;border:0;font-size:20px;line-height:1;cursor:pointer;color:var(--gov-navy,#0b2545)}
-  #tu-panel .tu-list{max-height:200px;overflow-y:auto}
-  #tu-panel .tu-row{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid #edf0f5}
-  #tu-panel .tu-row .tu-t{flex:1;min-width:0;font-weight:600;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #tu-panel .tu-row .tu-t em{display:block;font-style:normal;font-weight:500;font-size:10.5px;color:#6b7280;overflow:hidden;text-overflow:ellipsis}
-  #tu-panel .tu-form{padding:10px;background:#fffaf0;border-top:1px dashed #e0b25a}
-  #tu-panel .tu-form input{width:100%;border:1px solid #c5ccd8;border-radius:3px;padding:6px 8px;font-size:12px;margin-bottom:6px;background:#fff}
-  #tu-panel .tb{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:4px;border:1px solid var(--gov-blue,#13315c);background:#fff;color:var(--gov-blue,#13315c);cursor:pointer}
-  #tu-panel .tb.pri{background:var(--gov-blue,#13315c);color:#fff}
-  #tu-panel .tb.dng{border-color:#dc2626;color:#dc2626}
-  #tu-panel .tb.sm{padding:2px 7px}
-  #tu-panel .tu-foot{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid #edf0f5}
-  #tu-panel .tu-msg{font-size:11.5px;font-weight:700;color:#b42318;padding:0 10px 8px}
-  @media print{#tu-strip,#tu-panel{display:none !important}}
+  @media print{#tu-strip{display:none !important}}
 </style>
 <div id="tu-strip" class="no-print" role="region" aria-label="Top-Up and notices">
   <div class="tu-label">📢 TOP-UP / NOTICE</div>
   <div class="tu-win" id="tu-win" tabindex="-1"></div>
   <div class="tu-btns">
     <button type="button" id="tu-pause" title="Pause / resume scrolling" aria-label="Pause or resume scrolling">❚❚</button>
-    <button type="button" id="tu-add" class="tu-plus" title="Add / manage Top-Up notices" aria-label="Add or manage Top-Up notices" aria-expanded="false">+</button>
   </div>
-  <div id="tu-panel" role="dialog" aria-label="Manage Top-Up notices"></div>
 </div>
 <script>
 (function(){
   /* ---------- CONFIG: the only part to change when reusing this strip on another login ---------- */
   var TU_CONFIG = {
-    portalId:   'invoice',              // id of this portal in Super Admin → Portal Control (invoice / agent / hrms / …)
-    storageKey: 'tu_items_v1',          // localStorage key for the notices (one key per portal if they should differ)
-    pinKey:     'hg_admin_pin_v1',      // same Guide-Manager PIN hash as the Help & Guidelines panel (set once, shared)
-    requirePin: true,                   // true: adding / editing / removing needs the manager PIN · false: anyone may manage
-    speedPxPerSec: 55,                  // scrolling speed
-    maxItems: 30,
-    defaults: [
+    portalId: 'invoice',        // id of this portal in Super Admin → Portal Control (invoice / agent / hrms / …)
+    speedPxPerSec: 55,          // used until the Super Admin's scroll speed is loaded
+    defaults: [                 // shown only until the Super Admin has published notices for this portal
       { text: 'Welcome to the Anmol LibMatrix Invoice Portal — for any support, call the Helpline: 6202119756.', url: '' },
       { text: 'Please keep sufficient wallet credit before generating an invoice.', url: '' }
     ]
   };
   /* ------------------------------------------------------------------------------------------------ */
   var $ = function(id){ return document.getElementById(id); };
-  var items = load(), unlocked = !TU_CONFIG.requirePin, editing = null, userPaused = false, managed = false;
-
-  /* Super Admin → Portal Control: when the server has saved settings for this portal they take over (and local editing is switched off);
-     otherwise / if the server is unreachable the cached copy or the built-in defaults below are used. */
+  var items = TU_CONFIG.defaults.slice(), userPaused = false;
+  try{ localStorage.removeItem('tu_items_v1'); }catch(e){}     // old locally-edited notices are no longer used
+  /* Everything shown here is published from Super Admin Dashboard → Portal Control (view-only on this page). */
   function pcFetch(pid){
     if(window.__pcPromise && window.__pcPromise.pid===pid) return window.__pcPromise;
     var url = (window.SHDL_API_BASE || '/api') + '/portal-control/' + encodeURIComponent(pid);
@@ -1223,125 +1199,49 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
     pr.pid = pid; window.__pcPromise = pr; return pr;
   }
   function pcCached(pid){ try{ var d = JSON.parse(localStorage.getItem('pc_remote_'+pid+'_v1')||'null'); return d && d.configured ? d : null; }catch(e){ return null; } }
-  function clone(o){ return JSON.parse(JSON.stringify(o)); }
-  function load(){
-    try{ var s = JSON.parse(localStorage.getItem(TU_CONFIG.storageKey) || 'null'); if(Array.isArray(s)) return s; }catch(e){}
-    return clone(TU_CONFIG.defaults);
-  }
-  function save(){ try{ localStorage.setItem(TU_CONFIG.storageKey, JSON.stringify(items)); }catch(e){ alert('Could not save in this browser (storage blocked).'); } }
   function safeUrl(u){ u = String(u||'').trim(); return /^(https?:\/\/|\/(?!\/))\S*$/i.test(u) ? u : ''; }
   function el(tag, attrs, kids){
     var n = document.createElement(tag);
-    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else n.setAttribute(k, attrs[k]); });
+    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else if(attrs[k]!==null) n.setAttribute(k, attrs[k]); });
     (kids||[]).forEach(function(c){ if(c) n.appendChild(c); });
     return n;
   }
-  function btn(text, cls, fn){ return el('button',{type:'button',class:'tb '+(cls||''),text:text,onclick:fn}); }
-  function sha(s){ return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function(b){ return Array.from(new Uint8Array(b)).map(function(x){ return ('0'+x.toString(16)).slice(-2); }).join(''); }); }
 
-  /* ---------- strip ---------- */
   function itemNode(it){
     var u = safeUrl(it.url);
-    if(u){ var a = el('a',{class:'tu-item', href:u, target:'_blank', rel:'noopener noreferrer', title:'Opens in a new tab'},[ document.createTextNode(it.text) , el('span',{class:'tu-ext',text:'OPEN ↗'}) ]); return a; }
+    if(u) return el('a',{class:'tu-item', href:u, target:'_blank', rel:'noopener noreferrer', title:'Opens in a new tab'},[ document.createTextNode(it.text), el('span',{class:'tu-ext',text:'OPEN ↗'}) ]);
     return el('span',{class:'tu-item',text:it.text});
   }
   function renderStrip(){
     var win = $('tu-win'); win.innerHTML = '';
-    if(!items.length){ win.appendChild(el('span',{class:'tu-empty',text: managed ? 'No Top-Up notices at present.' : 'No Top-Up notices at present. Use + to add one.'})); return; }
+    if(!items.length){ win.appendChild(el('span',{class:'tu-empty',text:'No Top-Up notices at present.'})); return; }
     var track = el('div',{class:'tu-track'});
     var setA = el('div',{style:'display:inline-flex'}), setB = el('div',{style:'display:inline-flex','aria-hidden':'true'});
     items.forEach(function(it){ setA.appendChild(itemNode(it)); var n = itemNode(it); n.tabIndex = -1; setB.appendChild(n); });
     track.appendChild(setA); track.appendChild(setB); win.appendChild(track);
-    // seamless loop: each half must be at least as wide as the window
-    requestAnimationFrame(function(){
+    requestAnimationFrame(function(){      // seamless loop: each half must be at least as wide as the window
       var w = setA.getBoundingClientRect().width || 1, need = Math.ceil(win.clientWidth / w);
-      for(var i=1;i<need;i++){ items.forEach(function(it){ var a=itemNode(it); setA.appendChild(a); var b=itemNode(it); b.tabIndex=-1; setB.appendChild(b); }); }
+      for(var i=1;i<need;i++){ items.forEach(function(it){ setA.appendChild(itemNode(it)); var b = itemNode(it); b.tabIndex = -1; setB.appendChild(b); }); }
       var half = setA.getBoundingClientRect().width || w;
       track.style.setProperty('--tu-dur', Math.max(12, half / TU_CONFIG.speedPxPerSec) + 's');
     });
   }
-
-  /* ---------- manager panel ---------- */
-  function renderPanel(){
-    var p = $('tu-panel'); p.innerHTML = '';
-    p.appendChild(el('div',{class:'tu-ph'},[ el('span',{text:'MANAGE TOP-UP NOTICES'}), el('button',{type:'button','aria-label':'Close',text:'×',onclick:closePanel}) ]));
-    if(!unlocked){
-      p.appendChild(el('div',{class:'tu-form'},[
-        el('p',{style:'margin:0 0 8px;color:#475569',text:'Authorised administrators can add, edit or remove Top-Up notices.'}),
-        btn('🔐 Unlock with PIN','pri',unlock)
-      ]));
-      return;
-    }
-    var list = el('div',{class:'tu-list'});
-    if(!items.length) list.appendChild(el('div',{class:'tu-row'},[ el('span',{class:'tu-t',text:'No notices yet.'}) ]));
-    items.forEach(function(it,i){
-      list.appendChild(el('div',{class:'tu-row'},[
-        el('div',{class:'tu-t'},[ document.createTextNode(it.text), el('em',{text: safeUrl(it.url) || 'No link'}) ]),
-        btn('↑','sm',function(){ if(i>0){ var t=items[i-1]; items[i-1]=items[i]; items[i]=t; commit(); } }),
-        btn('↓','sm',function(){ if(i<items.length-1){ var t=items[i+1]; items[i+1]=items[i]; items[i]=t; commit(); } }),
-        btn('✎','sm',function(){ editing=i; renderPanel(); }),
-        btn('🗑','sm dng',function(){ if(confirm('Remove this notice?')){ items.splice(i,1); commit(); } })
-      ]));
-    });
-    p.appendChild(list);
-    var cur = editing!==null && items[editing] ? items[editing] : {text:'',url:''};
-    var t = el('input',{type:'text',placeholder:'Notice / guideline text',maxlength:'200',value:cur.text,'aria-label':'Notice text'});
-    var u = el('input',{type:'url',placeholder:'Optional link — video / guide / page (https://…)',value:cur.url,'aria-label':'Optional link'});
-    var err = el('div',{class:'tu-msg'});
-    var form = el('div',{class:'tu-form'},[ el('div',{style:'font-weight:800;margin-bottom:6px;color:#0b2545',text: editing!==null ? 'Edit notice' : '+ Add new notice'}), t, u,
-      el('div',{style:'display:flex;gap:6px'},[
-        btn(editing!==null?'Save Changes':'Add Notice','pri',function(){
-          var text=t.value.trim(), url=u.value.trim();
-          if(!text){ err.textContent='Notice text is required.'; return; }
-          if(url && !safeUrl(url)){ err.textContent='Link must start with http:// or https://'; return; }
-          if(editing===null && items.length>=TU_CONFIG.maxItems){ err.textContent='Maximum '+TU_CONFIG.maxItems+' notices allowed.'; return; }
-          var rec={text:text,url:url}; if(editing!==null) items[editing]=rec; else items.push(rec);
-          editing=null; commit();
-        }),
-        editing!==null ? btn('Cancel','',function(){ editing=null; renderPanel(); }) : null
-      ]) ]);
-    p.appendChild(form); p.appendChild(err);
-    p.appendChild(el('div',{class:'tu-foot'},[
-      btn('Export JSON','',function(){ var a=el('a',{href:URL.createObjectURL(new Blob([JSON.stringify(items,null,2)],{type:'application/json'})),download:'topup-notices.json'}); document.body.appendChild(a); a.click(); a.remove(); }),
-      btn('Import JSON','',function(){ var f=el('input',{type:'file',accept:'application/json'}); f.onchange=function(){ var r=new FileReader(); r.onload=function(){ try{ var d=JSON.parse(r.result); if(!Array.isArray(d)) throw 0; items=d.filter(function(x){return x&&typeof x.text==='string'&&x.text.trim();}).slice(0,TU_CONFIG.maxItems).map(function(x){return {text:x.text.trim().slice(0,200),url:safeUrl(x.url)};}); commit(); }catch(e){ err.textContent='Invalid file.'; } }; r.readAsText(f.files[0]); }; f.click(); }),
-      btn('Reset to Defaults','dng',function(){ if(confirm('Reset all notices to the defaults?')){ items=clone(TU_CONFIG.defaults); commit(); } }),
-      TU_CONFIG.requirePin ? btn('Lock','',function(){ unlocked=false; editing=null; renderPanel(); }) : null
-    ]));
-  }
-  function commit(){ save(); renderStrip(); renderPanel(); }
-  function unlock(){
-    var stored=null; try{ stored=localStorage.getItem(TU_CONFIG.pinKey); }catch(e){}
-    if(!(window.crypto && crypto.subtle)){ alert('Managing notices needs a secure (https) page.'); return; }
-    if(!stored){
-      var p1=prompt('First use: set a manager PIN (min. 4 characters). It is shared with the Help & Guidelines manager.'); if(!p1) return;
-      if(p1.length<4){ alert('PIN is too short.'); return; }
-      if(prompt('Re-enter the PIN to confirm.')!==p1){ alert('PINs did not match.'); return; }
-      sha(p1).then(function(h){ localStorage.setItem(TU_CONFIG.pinKey,h); unlocked=true; renderPanel(); });
-    } else {
-      var p=prompt('Enter manager PIN'); if(!p) return;
-      sha(p).then(function(h){ if(h===stored){ unlocked=true; renderPanel(); } else alert('Incorrect PIN.'); });
-    }
-  }
-  function openPanel(){ renderPanel(); $('tu-panel').classList.add('open'); $('tu-add').setAttribute('aria-expanded','true'); $('tu-strip').classList.add('tu-paused'); }
-  function closePanel(){ $('tu-panel').classList.remove('open'); $('tu-add').setAttribute('aria-expanded','false'); editing=null; if(TU_CONFIG.requirePin) unlocked=false; if(!userPaused) $('tu-strip').classList.remove('tu-paused'); }
-  $('tu-add').addEventListener('click', function(){ $('tu-panel').classList.contains('open') ? closePanel() : openPanel(); });
-  $('tu-pause').addEventListener('click', function(){ userPaused=!userPaused; $('tu-strip').classList.toggle('tu-paused', userPaused); this.textContent = userPaused ? '▶' : '❚❚'; });
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && $('tu-panel').classList.contains('open')) closePanel(); });
-  document.addEventListener('mousedown', function(e){ if($('tu-panel').classList.contains('open') && !$('tu-strip').contains(e.target)) closePanel(); });   // mousedown: the clicked button may be re-rendered away before 'click' fires
-  var rt; window.addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(renderStrip,250); });
   function applyRemote(d){
     if(!d || !d.configured || !d.topup) return false;
-    managed = true;
     $('tu-strip').style.display = (d.features && d.features.topupStrip === false) ? 'none' : '';
     items = (d.topup.items || []).map(function(i){ return { text:String(i.text||''), url:safeUrl(i.url) }; });
-    TU_CONFIG.speedPxPerSec = 2200 / (Number(d.topup.speed) || 40);     // Portal Control speed: 10 fast … 120 slow
-    $('tu-add').style.display = 'none'; closePanel();                    // notices are now managed by the Super Admin
+    TU_CONFIG.speedPxPerSec = 2200 / (Number(d.topup.speed) || 40);      // Portal Control speed: 10 fast … 120 slow
     renderStrip(); return true;
   }
+  $('tu-pause').addEventListener('click', function(){ userPaused = !userPaused; $('tu-strip').classList.toggle('tu-paused', userPaused); this.textContent = userPaused ? '▶' : '❚❚'; });
+  var rt; window.addEventListener('resize', function(){ clearTimeout(rt); rt = setTimeout(renderStrip, 250); });
   var _c = pcCached(TU_CONFIG.portalId);
   if(!(_c && applyRemote(_c))) renderStrip();
-  pcFetch(TU_CONFIG.portalId).then(function(d){ if(d && d.configured) applyRemote(d); else if(d && d.configured === false && managed){ managed=false; $('tu-strip').style.display=''; $('tu-add').style.display=''; items=load(); renderStrip(); } });
-  window.TopUpStrip = { open:openPanel, close:closePanel, refresh:function(){ items=load(); renderStrip(); } };
+  pcFetch(TU_CONFIG.portalId).then(function(d){
+    if(d && d.configured) applyRemote(d);
+    else if(d && d.configured === false){ items = TU_CONFIG.defaults.slice(); $('tu-strip').style.display = ''; renderStrip(); }
+  });
+  window.TopUpStrip = { refresh:function(){ pcFetch(TU_CONFIG.portalId); } };
 })();
 </script>
 <!-- ===================== END TOP-UP / NOTICE STRIP ===================== -->
@@ -3722,8 +3622,53 @@ const PORTAL_IDLE = (function(){
   return { start: start, stop: stop, staleReason: staleReason, wipe: wipe, NOTICE_KEY: NOTICE_KEY };
 })();
 
+/* ---- Official-portal "Log out" confirmation (replaces the browser confirm() box) ---- */
+window.anmolConfirmLogout = window.anmolConfirmLogout || function(onOk){
+  if(document.getElementById('anmol-logout-modal')) return;                       // already open
+  var prevFocus = document.activeElement;
+  if(!document.getElementById('anmol-logout-css')){
+    var st = document.createElement('style'); st.id = 'anmol-logout-css';
+    st.textContent =
+      '#anmol-logout-modal{position:fixed;inset:0;z-index:2147483000;background:rgba(11,37,69,.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit}' +
+      '#anmol-logout-modal .alm-card{background:#fff;color:#1f2937;width:100%;max-width:380px;border-radius:6px;overflow:hidden;box-shadow:0 18px 50px rgba(11,37,69,.45);border-top:4px solid #ff9933;animation:almIn .16s ease-out}' +
+      '@keyframes almIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}' +
+      '#anmol-logout-modal .alm-head{background:#0b2545;color:#fff;padding:11px 16px;font-size:13px;font-weight:800;letter-spacing:.05em}' +
+      '#anmol-logout-modal .alm-body{padding:20px 18px 6px;text-align:center}' +
+      '#anmol-logout-modal .alm-ico{width:46px;height:46px;border-radius:50%;background:#eef3fb;color:#13315c;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px}' +
+      '#anmol-logout-modal .alm-msg{font-size:16px;font-weight:800;color:#0b2545;margin:0 0 4px}' +
+      '#anmol-logout-modal .alm-sub{font-size:12px;color:#6b7280;margin:0}' +
+      '#anmol-logout-modal .alm-btns{display:flex;gap:10px;padding:16px 18px 18px}' +
+      '#anmol-logout-modal button{flex:1;padding:10px 12px;border-radius:4px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}' +
+      '#anmol-logout-modal .alm-cancel{background:#fff;color:#13315c;border:1px solid #9fb0c8}' +
+      '#anmol-logout-modal .alm-cancel:hover{background:#eef3fb}' +
+      '#anmol-logout-modal .alm-ok{background:#b42318;color:#fff;border:1px solid #b42318}' +
+      '#anmol-logout-modal .alm-ok:hover{background:#912018}' +
+      '#anmol-logout-modal button:focus-visible{outline:2px solid #13315c;outline-offset:2px}' +
+      '@media print{#anmol-logout-modal{display:none!important}}';
+    document.head.appendChild(st);
+  }
+  var m = document.createElement('div'); m.id = 'anmol-logout-modal'; m.className = 'no-print';
+  m.setAttribute('role','alertdialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-labelledby','alm-title'); m.setAttribute('aria-describedby','alm-desc');
+  m.innerHTML = '<div class="alm-card"><div class="alm-head">CONFIRM LOGOUT</div>' +
+    '<div class="alm-body"><div class="alm-ico" aria-hidden="true">🚪</div><p class="alm-msg" id="alm-title">Do you want to log out?</p>' +
+    '<p class="alm-sub" id="alm-desc">You will need to sign in again to continue.</p></div>' +
+    '<div class="alm-btns"><button type="button" class="alm-cancel">Cancel</button><button type="button" class="alm-ok">Logout</button></div></div>';
+  function closeIt(){ document.removeEventListener('keydown', onKey, true); if(m.parentNode) m.parentNode.removeChild(m); try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){} }
+  function onKey(e){
+    if(e.key === 'Escape'){ e.preventDefault(); closeIt(); }
+    else if(e.key === 'Tab'){ var b = m.querySelectorAll('button'); if(e.shiftKey && document.activeElement === b[0]){ e.preventDefault(); b[b.length-1].focus(); } else if(!e.shiftKey && document.activeElement === b[b.length-1]){ e.preventDefault(); b[0].focus(); } }
+  }
+  m.addEventListener('mousedown', function(e){ if(e.target === m) closeIt(); });
+  m.querySelector('.alm-cancel').addEventListener('click', closeIt);
+  m.querySelector('.alm-ok').addEventListener('click', function(){ this.disabled = true; this.textContent = 'Logging out…'; document.removeEventListener('keydown', onKey, true); try{ onOk(); }catch(e){ closeIt(); throw e; } });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(m);
+  m.querySelector('.alm-ok').focus();
+};
+
 function logoutPortal(){
-  if(!confirm('Do you want to log out?')) return;
+  if(window.__anmolLogoutOk !== true){ window.anmolConfirmLogout(function(){ window.__anmolLogoutOk = true; logoutPortal(); }); return; }
+  window.__anmolLogoutOk = false;
   try{AnmolPortal.notifyLogout();}catch(e){}
   // 🆕 FIX: यहाँ पहले `_billsUnsubscribe` नाम का एक ऐसा variable इस्तेमाल हो
   // रहा था जो पूरे कोड में कहीं भी declare नहीं था (पुराने legacy DB-आधारित
@@ -5157,8 +5102,9 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
 </script>
 
 <!-- =====================================================================
-     HELP & GUIDELINES PANEL  (reusable — copy this whole block, from this comment to its end,
-     into any other login page just before </body>. Edit only HG_CONFIG below.)
+     HELP & GUIDELINES PANEL — VIEW-ONLY  (reusable — copy this whole block, from this comment to its end,
+     into any other login page just before </body>. Edit only HG_CONFIG below.
+     Helpline, videos and guidelines are added / edited only in Super Admin Dashboard → Portal Control.)
      ===================================================================== -->
 <style>
   #hg-fab{position:fixed;left:14px;bottom:14px;z-index:9000;display:flex;align-items:center;gap:6px;background:var(--gov-navy,#0b2545);color:#fff;border:2px solid var(--gov-gold,#b8860b);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.02em;cursor:pointer;box-shadow:0 4px 14px rgba(11,37,69,.35)}
@@ -5180,7 +5126,6 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
   #hg-drawer .hg-btn:hover{background:#eaf1fb}
   #hg-drawer .hg-btn.pri{background:var(--gov-blue,#13315c);color:#fff}
   #hg-drawer .hg-btn.pri:hover{opacity:.9}
-  #hg-drawer .hg-btn.dng{border-color:#dc2626;color:#dc2626}
   #hg-drawer .hg-btn[disabled]{opacity:.45;cursor:not-allowed}
   #hg-drawer .hg-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #edf0f5}
   #hg-drawer .hg-item:last-child{border-bottom:0}
@@ -5188,8 +5133,6 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
   #hg-drawer .hg-t{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:#1f2937}
   #hg-drawer .hg-t em{display:block;font-style:normal;font-weight:500;font-size:10.5px;color:#6b7280}
   #hg-drawer .hg-empty{padding:10px;font-size:11.5px;color:#6b7280}
-  #hg-drawer .hg-form{padding:10px;background:#fffaf0;border-top:1px dashed #e0b25a}
-  #hg-drawer .hg-form input,#hg-drawer .hg-form select{width:100%;border:1px solid #c5ccd8;border-radius:3px;padding:5px 7px;font-size:12px;margin-bottom:6px;background:#fff}
   #hg-drawer .hg-note{font-size:10.5px;color:#6b7280;margin-top:6px}
   #hg-drawer .hg-player{aspect-ratio:16/9;width:100%;border:0;background:#000;display:block}
   #hg-drawer .hg-msg{font-size:11.5px;font-weight:700;margin-top:6px}
@@ -5205,31 +5148,15 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
 (function(){
   /* ---------- CONFIG: the only part to change when reusing this panel on another login ---------- */
   var HG_CONFIG = {
-    portalId:   'invoice',                  // id of this portal in Super Admin → Portal Control (invoice / agent / hrms / …)
-    storageKey: 'hg_guide_config_v1',       // localStorage key for the managed content (use one key per portal if they should differ)
-    pinKey:     'hg_admin_pin_v1',          // localStorage key for the Guide-Manager PIN (stored only as a SHA-256 hash)
-    defaults: {
-      helplineLabel: 'Helpline & Support',
-      helpline: '6202119756',
-      videos: [   // add real links via Guide Manager — YouTube / Facebook URLs
-        { title: 'Super Admin Login Video', url: '' },
-        { title: 'Agent Login Video',       url: '' },
-        { title: 'Session A Guide',         url: '' },
-        { title: 'Top-Up Video',            url: '' }
-      ],
-      guides: [   // type: 'view' or 'download'
-        { title: 'Invoice Generation Manual',     url: '', type: 'view' },
-        { title: 'GST Columns & HSN / SAC Rules', url: '', type: 'view' },
-        { title: 'User Manual (PDF)',             url: '', type: 'download' }
-      ]
-    }
+    portalId: 'invoice',                    // id of this portal in Super Admin → Portal Control (invoice / agent / hrms / …)
+    helplineLabel: 'Helpline & Support',
+    helpline: '6202119756'                  // shown until the Super Admin's helpline is loaded
   };
   /* ------------------------------------------------------------------------------------------------ */
   var $ = function(id){ return document.getElementById(id); };
-  var admin = false, editing = null, player = null, managed = false, cfg = load();
-
-  /* Super Admin → Portal Control: when the server has saved settings for this portal they take over (and local editing is switched off);
-     otherwise / if the server is unreachable the cached copy or the built-in defaults below are used. */
+  var cfg = { helpline: HG_CONFIG.helpline, videos: [], guides: [] };
+  try{ localStorage.removeItem('hg_guide_config_v1'); localStorage.removeItem('hg_admin_pin_v1'); localStorage.removeItem('tu_items_v1'); }catch(e){}   // old local editor data is no longer used
+  /* Everything shown here is published from Super Admin Dashboard → Portal Control (view-only on this page). */
   function pcFetch(pid){
     if(window.__pcPromise && window.__pcPromise.pid===pid) return window.__pcPromise;
     var url = (window.SHDL_API_BASE || '/api') + '/portal-control/' + encodeURIComponent(pid);
@@ -5240,88 +5167,46 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
     pr.pid = pid; window.__pcPromise = pr; return pr;
   }
   function pcCached(pid){ try{ var d = JSON.parse(localStorage.getItem('pc_remote_'+pid+'_v1')||'null'); return d && d.configured ? d : null; }catch(e){ return null; } }
-  function clone(o){ return JSON.parse(JSON.stringify(o)); }
-  function load(){
-    try{ var s = JSON.parse(localStorage.getItem(HG_CONFIG.storageKey) || 'null'); if(s && Array.isArray(s.videos) && Array.isArray(s.guides)) return Object.assign(clone(HG_CONFIG.defaults), s); }catch(e){}
-    return clone(HG_CONFIG.defaults);
-  }
-  function save(){ try{ localStorage.setItem(HG_CONFIG.storageKey, JSON.stringify(cfg)); }catch(e){ alert('Could not save in this browser (storage blocked).'); } }
   function safeUrl(u){ u = String(u||'').trim(); return /^(https?:\/\/|\/(?!\/))\S*$/i.test(u) ? u : ''; }
-  function ytId(u){ var m = String(u).match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/i); return m ? m[1] : ''; }
-  function isFb(u){ return /^https?:\/\/(?:[\w-]+\.)?(facebook\.com|fb\.watch)\//i.test(u); }
-  function embedUrl(u){ var y = ytId(u); if(y) return 'https://www.youtube-nocookie.com/embed/' + y + '?rel=0'; if(isFb(u)) return 'https://www.facebook.com/plugins/video.php?show_text=false&href=' + encodeURIComponent(u); return ''; }
   function el(tag, attrs, kids){
     var n = document.createElement(tag);
-    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else n.setAttribute(k, attrs[k]); });
+    Object.keys(attrs||{}).forEach(function(k){ if(k==='text') n.textContent = attrs[k]; else if(k==='class') n.className = attrs[k]; else if(k.slice(0,2)==='on') n.addEventListener(k.slice(2), attrs[k]); else if(attrs[k]!==null) n.setAttribute(k, attrs[k]); });
     (kids||[]).forEach(function(c){ if(c) n.appendChild(c); });
     return n;
   }
-  function btn(text, cls, fn, dis){ var b = el('button', { type:'button', class:'hg-btn ' + (cls||''), text:text, onclick:fn }); if(dis) b.disabled = true; return b; }
-  function sha(s){ return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function(b){ return Array.from(new Uint8Array(b)).map(function(x){ return ('0'+x.toString(16)).slice(-2); }).join(''); }); }
-  function msg(parent, text, ok){ var m = parent.querySelector('.hg-msg') || parent.appendChild(el('div',{class:'hg-msg'})); m.style.color = ok ? '#138808' : '#b42318'; m.textContent = text; }
 
-  /* ---------- sections ---------- */
+  function ytId(u){ var m = String(u).match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/i); return m ? m[1] : ''; }
+  function isFb(u){ return /^https?:\/\/(?:[\w-]+\.)?(facebook\.com|fb\.watch)\//i.test(u); }
+  function embedUrl(u){ var y = ytId(u); if(y) return 'https://www.youtube-nocookie.com/embed/' + y + '?rel=0'; if(isFb(u)) return 'https://www.facebook.com/plugins/video.php?show_text=false&href=' + encodeURIComponent(u); return ''; }
+  function btn(text, cls, fn){ return el('button', { type:'button', class:'hg-btn ' + (cls||''), text:text, onclick:fn }); }
+  function sec(title, body){ return el('div',{class:'hg-sec'},[ el('h3',{},[ el('span',{text:title}) ]), body ]); }
+
   function secContact(){
     var tel = String(cfg.helpline).replace(/[^\d+]/g,'');
-    var box = el('div',{class:'hg-pad'},[
+    return sec(HG_CONFIG.helplineLabel, el('div',{class:'hg-pad'},[
       el('a',{class:'hg-phone', href:'tel:'+tel, text:'📞 '+cfg.helpline}),
       el('div',{class:'hg-row'},[
         el('a',{class:'hg-btn pri', href:'tel:'+tel, text:'Call Now'}),
         btn('Copy Number','',function(e){ var b=e.currentTarget; (navigator.clipboard?navigator.clipboard.writeText(tel):Promise.reject()).then(function(){ b.textContent='Copied ✓'; setTimeout(function(){b.textContent='Copy Number';},1500); }).catch(function(){ window.prompt('Copy the number:', tel); }); })
       ]),
       el('p',{class:'hg-note',text:'For any billing, login or invoice problem, please call the helpline above.'})
-    ]);
-    if(admin){
-      var inp = el('input',{type:'text', value:cfg.helpline, maxlength:'15', 'aria-label':'Helpline number'});
-      box.appendChild(el('div',{class:'hg-form'},[ inp, btn('Update Helpline','pri',function(){ var v=inp.value.trim(); if(!/^[\d+\s-]{5,15}$/.test(v)) return msg(inp.parentNode,'Enter a valid number.'); cfg.helpline=v; save(); render(); }) ]));
-    }
-    return sec(cfg.helplineLabel, box);
+    ]));
   }
-  function sec(title, body, extra){ var h = el('h3',{},[ el('span',{text:title}) ]); if(extra) h.appendChild(extra); return el('div',{class:'hg-sec'},[h, body]); }
-
-  function listSec(key, title, icon, isVideo){
+  function listSec(key, title, isVideo){
     var items = cfg[key], wrap = el('div');
-    if(isVideo){ wrap.appendChild(el('div',{id:'hg-player-host'})); }
-    if(!items.length) wrap.appendChild(el('div',{class:'hg-empty',text:'No entries yet.'}));
-    items.forEach(function(it, i){
-      var u = safeUrl(it.url);
+    if(isVideo) wrap.appendChild(el('div',{id:'hg-player-host'}));
+    if(!items.length) wrap.appendChild(el('div',{class:'hg-empty',text:'No entries available yet.'}));
+    items.forEach(function(it){
+      var u = safeUrl(it.url), sub;
+      if(isVideo) sub = ytId(u) ? 'YouTube' : isFb(u) ? 'Facebook' : 'Video link';
+      else sub = it.note || (it.type==='download' ? 'Download' : 'View');
       var row = el('div',{class:'hg-item'},[ el('div',{class:'hg-ico',text:isVideo ? '▶' : (it.type==='download' ? '⬇' : '📄')}),
-        el('div',{class:'hg-t'},[ document.createTextNode(it.title), el('em',{text: (!isVideo && it.note) ? it.note : (u ? (isVideo ? (ytId(u)?'YouTube':isFb(u)?'Facebook':'Video link') : (it.type==='download'?'Download':'View')) : (!isVideo && it.note ? '' : 'Link not added yet'))}) ]) ]);
-      if(isVideo){
-        row.appendChild(btn('Watch','pri',function(){ watch(it); }, !u));
-      } else if(u){
-        row.appendChild(el('a',{class:'hg-btn pri', href:u, target:'_blank', rel:'noopener noreferrer', text: it.type==='download'?'Download':'View', download: it.type==='download' ? '' : null}));
-        if(it.type!=='download') {} 
-      } else if(!(it.note)) row.appendChild(btn('View','pri',function(){}, true));
-      if(admin){
-        row.appendChild(btn('✎','',function(){ editing = {key:key, i:i}; render(); }));
-        row.appendChild(btn('🗑','dng',function(){ if(confirm('Remove "'+it.title+'"?')){ cfg[key].splice(i,1); save(); render(); } }));
-      }
+        el('div',{class:'hg-t'},[ document.createTextNode(it.title), el('em',{text:sub}) ]) ]);
+      if(isVideo){ if(u) row.appendChild(btn('Watch','pri',function(){ watch(it); })); }
+      else if(u) row.appendChild(el('a',{class:'hg-btn pri', href:u, target:'_blank', rel:'noopener noreferrer', text: it.type==='download'?'Download':'View', download: it.type==='download' ? '' : null}));
       wrap.appendChild(row);
     });
-    if(admin) wrap.appendChild(form(key, isVideo));
-    return sec(title, wrap, admin ? btn('+ Add','',function(){ editing = {key:key, i:-1}; render(); }) : null);
-  }
-  function form(key, isVideo){
-    if(!editing || editing.key !== key) return el('div');
-    var cur = editing.i >= 0 ? cfg[key][editing.i] : {title:'',url:'',type:'view'};
-    var t = el('input',{type:'text', placeholder:'Title', maxlength:'80', value:cur.title});
-    var u = el('input',{type:'url', placeholder: isVideo ? 'YouTube / Facebook link (https://…)' : 'Link to PDF / page (https://…)', value:cur.url});
-    var ty = isVideo ? null : el('select',{},[ el('option',{value:'view',text:'View online'}), el('option',{value:'download',text:'Download'}) ]);
-    if(ty) ty.value = cur.type || 'view';
-    var f = el('div',{class:'hg-form'},[ t, u, ty ]);
-    f.appendChild(el('div',{class:'hg-row'},[
-      btn(editing.i>=0?'Save Changes':'Add Entry','pri',function(){
-        var title=t.value.trim(), url=u.value.trim();
-        if(!title) return msg(f,'Title is required.');
-        if(url && !safeUrl(url)) return msg(f,'Link must start with http:// or https://');
-        var rec = isVideo ? {title:title,url:url} : {title:title,url:url,type:ty.value};
-        if(editing.i>=0) cfg[key][editing.i]=rec; else cfg[key].push(rec);
-        editing=null; save(); render();
-      }),
-      btn('Cancel','',function(){ editing=null; render(); })
-    ]));
-    return f;
+    return sec(title, wrap);
   }
   function watch(it){
     var host = $('hg-player-host'); if(!host) return;
@@ -5332,68 +5217,34 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ const 
     box.appendChild(el('div',{class:'hg-row'},[ el('a',{class:'hg-btn', href:u, target:'_blank', rel:'noopener noreferrer', text:'Open in new tab ↗'}), btn('Close Player','',function(){ host.innerHTML=''; }) ]));
     host.appendChild(box); host.scrollIntoView({block:'nearest'});
   }
-  function secManager(){
-    var b = el('div',{class:'hg-pad'});
-    if(!admin){
-      b.appendChild(el('p',{class:'hg-note',text:'Authorised administrators can add, edit or remove video links, guidelines and the helpline number.'}));
-      b.appendChild(btn('🔐 Open Guide Manager','pri',unlock));
-    } else {
-      b.appendChild(el('p',{class:'hg-note',text:'Manager mode is ON. Use + Add, ✎ and 🗑 in the sections above. Changes are saved in this browser; use Export / Import to move them to another login or device.'}));
-      b.appendChild(el('div',{class:'hg-row'},[
-        btn('Export JSON','',function(){ var a=el('a',{href:URL.createObjectURL(new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'})), download:'help-guidelines-config.json'}); document.body.appendChild(a); a.click(); a.remove(); }),
-        btn('Import JSON','',function(){ var f=el('input',{type:'file',accept:'application/json'}); f.onchange=function(){ var r=new FileReader(); r.onload=function(){ try{ var d=JSON.parse(r.result); if(!Array.isArray(d.videos)||!Array.isArray(d.guides)) throw 0; cfg=Object.assign(clone(HG_CONFIG.defaults),d); save(); render(); }catch(e){ msg(b,'Invalid configuration file.'); } }; r.readAsText(f.files[0]); }; f.click(); }),
-        btn('Reset to Defaults','dng',function(){ if(confirm('Reset all entries to the defaults?')){ cfg=clone(HG_CONFIG.defaults); save(); render(); } }),
-        btn('Change PIN','',changePin),
-        btn('Exit Manager','',function(){ admin=false; editing=null; render(); })
-      ]));
-    }
-    return sec('Super Admin Guide Manager', b);
-  }
-  function unlock(){
-    var stored = null; try{ stored = localStorage.getItem(HG_CONFIG.pinKey); }catch(e){}
-    if(!(window.crypto && crypto.subtle)){ alert('Guide Manager needs a secure (https) page.'); return; }
-    if(!stored){
-      var p1 = prompt('First use: set a Guide Manager PIN (min. 4 characters).'); if(!p1) return;
-      if(p1.length < 4){ alert('PIN is too short.'); return; }
-      var p2 = prompt('Re-enter the PIN to confirm.'); if(p1 !== p2){ alert('PINs did not match.'); return; }
-      sha(p1).then(function(h){ localStorage.setItem(HG_CONFIG.pinKey,h); admin=true; render(); });
-    } else {
-      var p = prompt('Enter Guide Manager PIN'); if(!p) return;
-      sha(p).then(function(h){ if(h===stored){ admin=true; render(); } else alert('Incorrect PIN.'); });
-    }
-  }
-  function changePin(){
-    var p = prompt('Enter a new Guide Manager PIN (min. 4 characters).'); if(!p) return;
-    if(p.length<4) return alert('PIN is too short.');
-    sha(p).then(function(h){ localStorage.setItem(HG_CONFIG.pinKey,h); alert('PIN updated.'); });
+  function render(){
+    var b = $('hg-body'); b.innerHTML = '';
+    b.appendChild(secContact());
+    b.appendChild(listSec('videos','Video Guides',true));
+    b.appendChild(listSec('guides','Guidelines & Manuals',false));
   }
   function applyRemote(d){
     if(!d || !d.configured) return false;
-    managed = true; admin = false; editing = null;
     var on = !(d.features && d.features.helpPanel === false);
     $('hg-fab').style.display = on ? '' : 'none';
     Array.prototype.forEach.call(document.querySelectorAll('#devCredit a[onclick*="HelpGuidelines"]'), function(a){ a.style.display = on ? '' : 'none'; });
-    cfg = { helplineLabel: cfg.helplineLabel, helpline: d.helpline || cfg.helpline,
+    cfg = { helpline: d.helpline || HG_CONFIG.helpline,
       videos: (d.videos||[]).map(function(v){ return {title:v.title, url:v.url}; }),
       guides: (d.guides||[]).map(function(g){ return {title:g.title, url:g.url, note:g.note||'', type:g.type==='download'?'download':'view'}; }) };
     if($('hg-drawer').classList.contains('open')) render();
     return true;
   }
-  function render(){
-    var b = $('hg-body'); b.innerHTML = '';
-    b.appendChild(secContact());
-    b.appendChild(listSec('videos','Video Guides','▶',true));
-    b.appendChild(listSec('guides','Guidelines & Manuals','📄',false));
-    if(!managed) b.appendChild(secManager());
-  }
   function open(){ render(); $('hg-overlay').style.display='block'; $('hg-drawer').classList.add('open'); $('hg-drawer').setAttribute('aria-hidden','false'); }
-  function close(){ $('hg-overlay').style.display='none'; $('hg-drawer').classList.remove('open'); $('hg-drawer').setAttribute('aria-hidden','true'); var h=$('hg-player-host'); if(h) h.innerHTML=''; admin=false; editing=null; }
+  function close(){ $('hg-overlay').style.display='none'; $('hg-drawer').classList.remove('open'); $('hg-drawer').setAttribute('aria-hidden','true'); var h=$('hg-player-host'); if(h) h.innerHTML=''; }
   $('hg-fab').addEventListener('click', open);
   $('hg-close').addEventListener('click', close);
   $('hg-overlay').addEventListener('click', close);
   document.addEventListener('keydown', function(e){ if(e.key==='Escape' && $('hg-drawer').classList.contains('open')) close(); });
   var _c = pcCached(HG_CONFIG.portalId); if(_c) applyRemote(_c);
-  pcFetch(HG_CONFIG.portalId).then(function(d){ if(d && d.configured) applyRemote(d); });
+  pcFetch(HG_CONFIG.portalId).then(function(d){
+    if(d && d.configured) applyRemote(d);
+    else if(d && d.configured === false){ cfg = { helpline: HG_CONFIG.helpline, videos: [], guides: [] }; }
+  });
   window.HelpGuidelines = { open:open, close:close };   // other pages/buttons can call HelpGuidelines.open()
 })();
 </script>
