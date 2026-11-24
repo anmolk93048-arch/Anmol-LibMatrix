@@ -1328,8 +1328,12 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
       <label class="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer" title="Checked: the HSN / SAC column is printed on the tax invoice. Unchecked: HSN values become 00 and the column is hidden.">
         <input type="checkbox" id="includeHsn" checked onchange="_hsnToggled()"> Include HSN / SAC on invoice
       </label>
+      <label class="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer" title="Checked: the CGST, CGST Amount, SGST and SGST Amount columns are printed on the tax invoice. Unchecked: these four columns are hidden.">
+        <input type="checkbox" id="includeGstCols" checked onchange="_gstColsToggled()"> Include CGST / SGST columns on invoice
+      </label>
       <button onclick="addRow()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-2.5 py-1 rounded hover:bg-blue-50">+ ADD MATERIAL ROW</button>
     </div>
+    <div class="px-4 pt-2 text-[11px] italic text-gray-600" id="gstColsNote">*Note: Checking this option includes the CGST, CGST Amount, SGST and SGST Amount columns on the generated invoice; unchecking it hides these four columns. All totals and calculations remain unchanged.</div>
     <div class="p-3 overflow-x-auto">
       <table class="mat-table w-full text-sm border-collapse min-w-[900px]">
         <thead>
@@ -1572,10 +1576,10 @@ html[data-theme="dark"] .otp-link{color:#9ec5ff}
       <tr class="inv-bold">
         <td id="inv-total-label" colspan="5" class="inv-right">Total :-</td>
         <td id="inv-totalTaxable" class="inv-num"></td>
-        <td></td>
-        <td id="inv-cgst" class="inv-num"></td>
-        <td></td>
-        <td id="inv-sgst" class="inv-num"></td>
+        <td class="inv-gst-col"></td>
+        <td id="inv-cgst" class="inv-num inv-gst-col"></td>
+        <td class="inv-gst-col"></td>
+        <td id="inv-sgst" class="inv-num inv-gst-col"></td>
         <td id="inv-grandTotal" class="inv-num"></td>
       </tr>
     </tfoot>
@@ -2050,6 +2054,7 @@ function _syncRowHsn(tr, m){
 }
 function _hsnTyped(el){ const tr = el.closest('tr'); if(!tr) return; if(el.value.trim()) tr.dataset.hsnManual = '1'; else delete tr.dataset.hsnManual; calculateAll(); }
 function _hsnToggled(){ calculateAll(); loadMaterialCategories(); }
+function _gstColsToggled(){ /* display-only option: read when the invoice is generated; no calculation is touched */ }
 /* ---- Keyboard type-ahead for the material dropdowns (no extra UI) ----
    With a material <select> focused or open, typing jumps the blue highlight to the best match:
    1) label / name / code STARTS with the typed text, 2) a WORD in the name starts with it, 3) it appears anywhere.
@@ -2384,6 +2389,7 @@ function _doResetForm(){
   document.getElementById('branchName').value = '';
   document.getElementById('confirmCheck').checked = false;
   const _ih2 = document.getElementById('includeHsn'); if(_ih2) _ih2.checked = true;
+  const _ig2 = document.getElementById('includeGstCols'); if(_ig2) _ig2.checked = true;
   document.getElementById('materialBody').innerHTML = '';
   rowCounter = 0;
   addRow();
@@ -2669,16 +2675,20 @@ function printInvoiceNow(){
    Checkbox OFF → every row is "00" and the column is hidden completely (the table re-flows, no blank gap). */
 function _hsnIsValid(v){ v = _normHsn(v); return /^[0-9]{2,8}$/.test(v) && !/^0+$/.test(v); }
 function _hsnOn(){ const c = document.getElementById('includeHsn'); return !c || c.checked; }
+function _gstColsOn(){ const c = document.getElementById('includeGstCols'); return !c || c.checked; }
 function _effHsn(v){ if(!_hsnOn()) return '00'; v = _normHsn(v); return v || '00'; }
 
 /* Rebuilds colgroup / header / total-label of the printed items table for the chosen column set */
-function _buildInvoiceItemsHead(showHsn){
+function _buildInvoiceItemsHead(showHsn, showGst){
+  if(showGst === undefined) showGst = true;
   const W_H = [4,17,9,8,5,8,9,6,9,6,9,10], W_N = [5,19,9,6,8,11,7,9,7,9,10];
-  const w = showHsn ? W_H : W_N;
+  const W_H_NG = [5,28,12,10,8,11,14,12], W_N_NG = [5,32,12,9,12,16,14];   // CGST / SGST columns hidden
+  const w = showGst ? (showHsn ? W_H : W_N) : (showHsn ? W_H_NG : W_N_NG);
   document.getElementById('inv-colgroup').innerHTML = w.map(function(x){ return '<col style="width:' + x + '%">'; }).join('');
-  const heads = ['Sl.<br>No.', 'Particulars / Description'].concat(showHsn ? ['HSN / SAC'] : [], ['Quantity','Unit','Rate','Taxable<br>Amount','CGST','CGST<br>Amount','SGST','SGST<br>Amount','Total<br>Amount']);
+  const heads = ['Sl.<br>No.', 'Particulars / Description'].concat(showHsn ? ['HSN / SAC'] : [], ['Quantity','Unit','Rate','Taxable<br>Amount'], showGst ? ['CGST','CGST<br>Amount','SGST','SGST<br>Amount'] : [], ['Total<br>Amount']);
   document.getElementById('inv-head-row').innerHTML = heads.map(function(h){ return '<th>' + h + '</th>'; }).join('');
   document.getElementById('inv-total-label').colSpan = showHsn ? 6 : 5;
+  Array.prototype.forEach.call(document.querySelectorAll('#invoiceArea .inv-gst-col'), function(td){ td.style.display = showGst ? '' : 'none'; });
 }
 
 /* ---- Save PDF: the exact on-screen / print invoice → A4 PDF "Anmol_LibMatrix_Invoice_<BillNo>.pdf" ---- */
@@ -2826,7 +2836,8 @@ function _fillInvoiceFromForm(){
   const invBody = document.getElementById('inv-materialRows');
   invBody.innerHTML = '';
   const _showHsn = _hsnOn() && Array.prototype.some.call(document.querySelectorAll('#materialBody .hsn-field'), function(e){ return _hsnIsValid(e.value); });
-  _buildInvoiceItemsHead(_showHsn);
+  const _showGst = _gstColsOn();
+  _buildInvoiceItemsHead(_showHsn, _showGst);
   document.querySelectorAll('#materialBody tr').forEach((tr,i)=>{
     const matName = _escHtmlLite(_rowMatName(tr));
     const hsnTxt = _effHsn(tr.querySelector('.hsn-field') ? tr.querySelector('.hsn-field').value : '');
@@ -2848,10 +2859,10 @@ function _fillInvoiceFromForm(){
       <td>${_unitAttr(unit)}</td>
       <td class="inv-num">${fmtPlain(price)}</td>
       <td class="inv-num">${fmtPlain(amount)}</td>
-      <td>${halfPct}%</td>
+      ${_showGst ? `<td>${halfPct}%</td>
       <td class="inv-num">${fmtPlain(cgstAmt)}</td>
       <td>${halfPct}%</td>
-      <td class="inv-num">${fmtPlain(sgstAmt)}</td>
+      <td class="inv-num">${fmtPlain(sgstAmt)}</td>` : ''}
       <td class="inv-num">${fmtPlain(rowTotal)}</td>
     `;
     invBody.appendChild(row);
@@ -3009,6 +3020,7 @@ function collectFormData(){
     vehicleNo: document.getElementById('vehicleNo').value,
     taxMode: document.getElementById('taxMode').value,
     includeHsn: _hsnOn(),
+    includeGstCols: _gstColsOn(),
     tdsApplicable: document.querySelector('input[name="tdsApplicable"]:checked').value,
     royaltyInput: document.getElementById('royaltyInput').value,
     payMode: document.querySelector('input[name="payMode"]:checked').value,
@@ -3079,6 +3091,7 @@ function applyFormData(data){
   document.getElementById('vehicleNo').value = data.vehicleNo || '';
   document.getElementById('taxMode').value = data.taxMode || 'Regular (GST Invoice)';
   const _ih = document.getElementById('includeHsn'); if(_ih) _ih.checked = data.includeHsn !== false;
+  const _ig = document.getElementById('includeGstCols'); if(_ig) _ig.checked = data.includeGstCols !== false;
   document.querySelector(`input[name="tdsApplicable"][value="${data.tdsApplicable||'no'}"]`).checked = true;
   document.getElementById('royaltyInput').value = data.royaltyInput || 0;
   const payModeEl = document.querySelector(`input[name="payMode"][value="${data.payMode}"]`);
