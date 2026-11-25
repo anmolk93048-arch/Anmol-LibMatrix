@@ -97,7 +97,47 @@ const SCHEMA_SQL = [
     // The standard ₹199 / 30-day VIP plan — created once, only while NO plan exists yet (the Super Admin can edit / replace it later)
     `INSERT INTO dv_plans (name, description, days, price, active)
         SELECT 'VIP Plan', '30 Days VIP — unlimited invoices, bills & PDFs for ₹199', 30, 199, TRUE
-        WHERE NOT EXISTS (SELECT 1 FROM dv_plans)`
+        WHERE NOT EXISTS (SELECT 1 FROM dv_plans)`,
+    // (6) Business categories + master item catalog (Super Admin) and each user's own rates (Session B)
+    "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS dv_category_id INTEGER",
+    `CREATE TABLE IF NOT EXISTS dv_categories (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_dv_cat_name ON dv_categories (LOWER(name))",
+    `CREATE TABLE IF NOT EXISTS dv_cat_items (
+        id SERIAL PRIMARY KEY,
+        category_id INTEGER NOT NULL REFERENCES dv_categories(id) ON DELETE CASCADE,
+        name VARCHAR(120) NOT NULL,
+        unit VARCHAR(20) NOT NULL DEFAULT 'Pcs',
+        gst NUMERIC(5,2) NOT NULL DEFAULT 0
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_dv_cat_item_name ON dv_cat_items (category_id, LOWER(name))",
+    `CREATE TABLE IF NOT EXISTS dv_user_rates (
+        user_id VARCHAR(50) NOT NULL,
+        item_id INTEGER NOT NULL REFERENCES dv_cat_items(id) ON DELETE CASCADE,
+        price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
+        unit VARCHAR(20),
+        qty NUMERIC(12,3) NOT NULL DEFAULT 1,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, item_id)
+    )`,
+    // (7) How each bill was paid: 'cash' or 'online' (PhonePe / UPI)
+    "ALTER TABLE dv_invoices ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(10) NOT NULL DEFAULT 'cash'",
+    "CREATE INDEX IF NOT EXISTS idx_dv_inv_owner_pay ON dv_invoices (owner_user_id, invoice_date, payment_mode)",
+    // (8) One-time starter catalog for the "Medical" category (guarded by a marker row, so items you delete later never come back; edit freely in Super Admin)
+    `INSERT INTO dv_categories (name)
+        SELECT 'Medical' WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_medical_v1')
+          AND NOT EXISTS (SELECT 1 FROM dv_categories WHERE LOWER(name) IN ('medical', 'medical store'))`,
+    `INSERT INTO dv_cat_items (category_id, name, unit, gst)
+        SELECT c.id, v.name, v.unit, v.gst
+        FROM (SELECT id FROM dv_categories WHERE LOWER(name) IN ('medical', 'medical store') ORDER BY id LIMIT 1) c,
+             (VALUES ('Paracetamol 500mg Tablet','Strip',5),('Paracetamol 650mg Tablet','Strip',5),('Ibuprofen 400mg Tablet','Strip',5),('Diclofenac 50mg Tablet','Strip',5),('Aceclofenac + Paracetamol Tablet','Strip',5),('Cetirizine 10mg Tablet','Strip',5),('Levocetirizine 5mg Tablet','Strip',5),('Montelukast + Levocetirizine Tablet','Strip',5),('Azithromycin 500mg Tablet','Strip',5),('Amoxicillin + Clavulanic Acid Tablet','Strip',5),('Cefixime 200mg Tablet','Strip',5),('Ciprofloxacin 500mg Tablet','Strip',5),('Metronidazole 400mg Tablet','Strip',5),('Ofloxacin + Ornidazole Tablet','Strip',5),('Pantoprazole 40mg Tablet','Strip',5),('Rabeprazole 20mg Tablet','Strip',5),('Domperidone 10mg Tablet','Strip',5),('Ondansetron 4mg Tablet','Strip',5),('Metformin 500mg Tablet','Strip',5),('Amlodipine 5mg Tablet','Strip',5),('Atenolol 50mg Tablet','Strip',5),('Telmisartan 40mg Tablet','Strip',5),('Atorvastatin 10mg Tablet','Strip',5),('Aspirin 75mg Tablet','Strip',5),('Loperamide 2mg Tablet','Strip',5),('Dicyclomine + Paracetamol Tablet','Strip',5),('Albendazole 400mg Tablet','Strip',5),('Folic Acid 5mg Tablet','Strip',5),('Calcium + Vitamin D3 Tablet','Strip',5),('Vitamin B-Complex Tablet','Strip',5),('Vitamin C 500mg Tablet','Strip',5),('Zinc 50mg Tablet','Strip',5),('Multivitamin Tablet','Strip',5),('Iron + Folic Acid Tablet','Strip',5),('Antacid Chewable Tablet','Strip',5),('Pantoprazole + Domperidone Capsule','Strip',5),('Omeprazole 20mg Capsule','Strip',5),('Amoxicillin 500mg Capsule','Strip',5),('Doxycycline 100mg Capsule','Strip',5),('Vitamin B12 Capsule','Strip',5),('Vitamin E 400mg Capsule','Strip',5),('Omega-3 Fish Oil Capsule','Strip',5),('Probiotic Capsule','Strip',5),('Itraconazole 100mg Capsule','Strip',5),('Fluconazole 150mg Tablet','Strip',5),('Paracetamol Syrup 60ml','Bottle',5),('Paracetamol Suspension 125mg/5ml','Bottle',5),('Cough Syrup (Dry) 100ml','Bottle',5),('Cough Syrup (Expectorant) 100ml','Bottle',5),('Cetirizine Syrup 60ml','Bottle',5),('Amoxicillin Dry Syrup','Bottle',5),('Azithromycin Dry Syrup','Bottle',5),('Antacid Liquid 170ml','Bottle',5),('Antacid Gel Suspension 200ml','Bottle',5),('Lactulose Solution 200ml','Bottle',5),('Digestive Enzyme Syrup 200ml','Bottle',5),('Multivitamin Syrup 200ml','Bottle',5),('Iron Syrup 200ml','Bottle',5),('Calcium Syrup 200ml','Bottle',5),('Ondansetron Syrup 30ml','Bottle',5),('Ambroxol Syrup 100ml','Bottle',5),('Zinc Syrup 100ml','Bottle',5),('Nasal Drops 10ml','Bottle',5),('Eye Drops 10ml','Bottle',5),('Ear Drops 10ml','Bottle',5),('Glycerin 100ml','Bottle',5),('Povidone Iodine Solution 100ml','Bottle',5),('Dettol Type Antiseptic Liquid 250ml','Bottle',5),('Surgical Spirit 100ml','Bottle',5),('Hydrogen Peroxide 100ml','Bottle',5),('ORS Powder Sachet (WHO) 21g','Sachet',5),('ORS Electrolyte Powder Sachet','Sachet',5),('Glucose Powder Sachet','Sachet',5),('Antacid Powder Sachet','Sachet',5),('Povidone Iodine Ointment 15g','Tube',5),('Antiseptic Cream 20g','Tube',5),('Antifungal Cream 15g','Tube',5),('Diclofenac Pain Relief Gel 30g','Tube',5),('Burn Cream 20g','Tube',5),('Antibiotic Ointment 10g','Tube',5),('Petroleum Jelly 25g','Tube',5),('Moisturising Cream 50g','Tube',5),('Adhesive Bandage (Band-Aid)','Pcs',5),('Crepe Bandage 6cm','Pcs',5),('Crepe Bandage 10cm','Pcs',5),('Roller Bandage 10cm','Pcs',5),('Elastic Knee Support','Pcs',5),('Surgical Tape 1 inch','Pcs',5),('Digital Thermometer','Pcs',5),('Mercury-free Thermometer','Pcs',5),('Syringe 2ml','Pcs',5),('Syringe 5ml','Pcs',5),('Syringe 10ml','Pcs',5),('Disposable Needle','Pcs',5),('IV Cannula 20G','Pcs',5),('Hot Water Bag','Pcs',5),('Nebulizer Mask','Pcs',5),('Blood Glucose Test Strip (50)','Pcs',5),('BP Monitor Digital','Pcs',5),('Pulse Oximeter','Pcs',5),('Cotton Roll 100g','Pcs',5),('Cotton Roll 500g','Pcs',5),('Gauze Swab Pack','Pcs',5),('Sterile Gauze Roll','Pcs',5),('Disposable Gloves (100 pcs)','Box',5),('Surgical Gloves (Sterile) Pair','Box',5),('Face Mask 3-Ply (50 pcs)','Box',5),('First Aid Kit','Box',5),('Pregnancy Test Kit','Box',5),('Cotton Buds Box','Box',5),('Hand Sanitizer 100ml','Pcs',18),('Hand Sanitizer 500ml','Pcs',18),('N95 Mask','Pcs',18),('Glucometer','Pcs',18)) AS v(name, unit, gst)
+        WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_medical_v1')
+        ON CONFLICT DO NOTHING`,
+    `INSERT INTO dv_settings (skey, data) VALUES ('seed_medical_v1', 'done') ON CONFLICT (skey) DO NOTHING`
 ];
 
 /* ───────── plan / expiry date helpers (all in IST, whole days; a plan is valid THROUGH its expiry date) ───────── */
@@ -256,6 +296,8 @@ function parseInvoiceBody(b, settings) {
         items.push(item);
     }
     if (!items.length) return { error: 'Add at least one material row.' };
+    const pm = String(b.paymentMode == null ? '' : b.paymentMode).trim().toLowerCase();
+    const paymentMode = (pm === 'online' || pm === 'phonepe' || pm === 'upi') ? 'online' : 'cash';
     // Company / bank / tax-rate fields ALWAYS come from the Super-Admin "Session B Presets". Anything a client sends in b.company is ignored.
     const company = settings;
     const c = calc(items, company.cgstPct, company.sgstPct, company.roundOff);
@@ -264,7 +306,7 @@ function parseInvoiceBody(b, settings) {
         value: {
             billNo: billNo, date: date,
             customer: cleanText(b.customer, 255), block: cleanText(b.block, 120), district: cleanText(b.district, 120),
-            transport: cleanText(b.transport, 120), vehicle: cleanText(b.vehicle, 60),
+            transport: cleanText(b.transport, 120), vehicle: cleanText(b.vehicle, 60), paymentMode: paymentMode,
             company: company, calc: c, words: amountInWords(c.grandTotal)
         }
     };
@@ -273,7 +315,7 @@ function parseInvoiceBody(b, settings) {
 function rowOut(r, full) {
     const o = {
         id: r.id, billNo: r.bill_no, date: r.invoiceDate, customer: r.customer_name || '',
-        grandTotal: Number(r.grand_total), createdAt: r.created_at, updatedAt: r.updated_at
+        grandTotal: Number(r.grand_total), paymentMode: r.payment_mode === 'online' ? 'online' : 'cash', createdAt: r.created_at, updatedAt: r.updated_at
     };
     if (full) {
         let items = [], company = null;
@@ -288,7 +330,7 @@ function rowOut(r, full) {
     return o;
 }
 
-const SEL_LIST = `id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS "invoiceDate", customer_name, grand_total, created_at, updated_at`;
+const SEL_LIST = `id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS "invoiceDate", customer_name, grand_total, payment_mode, created_at, updated_at`;
 const SEL_FULL = SEL_LIST + `, block_name, district_name, transport_mode, vehicle_no, items, taxable_total, cgst_total, sgst_total, round_off, amount_words, company_snapshot`;
 
 /* ───────────────────────────── 5. ROUTES ────────────────────────────────── */
@@ -401,7 +443,8 @@ function install(app, ctx) {
 
     // ── Who am I + MY company profile (read-only for the user) + my plan status + plans I can buy
     app.get('/api/dv/me', noStore, dvUser, asyncRoute(async (req, res) => {
-        res.json({ user: req.dvUser, settings: await loadSettings(req.dvUser.userId), sub: subState(await loadSub(req.dvUser.userId)), plans: await plansForUser() });
+        const cu = (await dbq('SELECT c.id, c.name FROM material_users u JOIN dv_categories c ON c.id = u.dv_category_id WHERE u.userid = ?', [req.dvUser.userId]))[0];
+        res.json({ user: req.dvUser, category: cu ? { id: cu.id, name: cu.name } : null, settings: await loadSettings(req.dvUser.userId), sub: subState(await loadSub(req.dvUser.userId)), plans: await plansForUser() });
     }));
 
     // ── Plan purchase through Razorpay (amount is fixed server-side from the plan; one-time-use order)
@@ -544,10 +587,10 @@ function install(app, ctx) {
 
     const isDup = (e) => e && (e.code === '23505' || /duplicate key|unique constraint/i.test(e.message || ''));
     const insertSql = `INSERT INTO dv_invoices (owner_user_id, bill_no, invoice_date, customer_name, block_name, district_name, transport_mode, vehicle_no,
-                       items, taxable_total, cgst_total, sgst_total, round_off, grand_total, amount_words, company_snapshot)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`;
+                       items, taxable_total, cgst_total, sgst_total, round_off, grand_total, amount_words, company_snapshot, payment_mode)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`;
     const insertParams = (owner, v) => [owner, v.billNo, v.date, v.customer, v.block, v.district, v.transport, v.vehicle,
-        JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal, v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company)];
+        JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal, v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company), v.paymentMode];
 
     // ── SAVE (new). Never overwrites: a Bill No. that already exists is refused with 409.
     app.post('/api/dv/invoices', dvUser, dvActive, asyncRoute(async (req, res) => {
@@ -584,10 +627,10 @@ function install(app, ctx) {
             }
             const v = p.value;
             await dbq(`UPDATE dv_invoices SET bill_no=?, invoice_date=?, customer_name=?, block_name=?, district_name=?, transport_mode=?, vehicle_no=?,
-                       items=?, taxable_total=?, cgst_total=?, sgst_total=?, round_off=?, grand_total=?, amount_words=?, company_snapshot=?, updated_at=CURRENT_TIMESTAMP
+                       items=?, taxable_total=?, cgst_total=?, sgst_total=?, round_off=?, grand_total=?, amount_words=?, company_snapshot=?, payment_mode=?, updated_at=CURRENT_TIMESTAMP
                        WHERE id=? AND owner_user_id=?`,
                 [v.billNo, v.date, v.customer, v.block, v.district, v.transport, v.vehicle, JSON.stringify(v.calc.rows), v.calc.taxableTotal, v.calc.cgstTotal,
-                 v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company), id, req.dvUser.userId]);
+                 v.calc.sgstTotal, v.calc.roundOff, v.calc.grandTotal, v.words, JSON.stringify(v.company), v.paymentMode, id, req.dvUser.userId]);
             return res.json({ success: true, mode: 'updated', id: id, billNo: v.billNo });
         } catch (e) {
             if (isDup(e)) return res.status(409).json({ error: 'Bill No. ' + p.value.billNo + ' is already saved. Choose a different Bill No. — the original bill ' + cur[0].bill_no + ' is untouched.', code: 'DUPLICATE_BILL' });
@@ -604,7 +647,7 @@ function install(app, ctx) {
 
     // ── Super Admin: Session A / Session B mapping (list + bulk map by User ID)
     app.get('/api/admin/dv-mapping', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-        const users = await dbq("SELECT userid, name, village, mobile, status, invoice_version FROM material_users ORDER BY id DESC", []);
+        const users = await dbq("SELECT userid, name, village, mobile, status, invoice_version, dv_category_id FROM material_users ORDER BY id DESC", []);
         const counts = await dbq("SELECT owner_user_id, COUNT(*) AS n FROM dv_invoices GROUP BY owner_user_id", []);
         const cnt = {}; counts.forEach(r => { cnt[String(r.owner_user_id).toLowerCase()] = Number(r.n); });
         const profs = {}; (await dbq('SELECT user_id, data FROM dv_profiles', [])).forEach(r => { let d = {}; try { d = JSON.parse(r.data) || {}; } catch (e) {} profs[String(r.user_id).toLowerCase()] = d.companyName || '(saved)'; });
@@ -613,7 +656,7 @@ function install(app, ctx) {
             const k = String(u.userid).toLowerCase();
             return {
                 userId: u.userid, name: u.name || '', village: u.village || '', mobile: u.mobile || '', status: u.status || 'active',
-                session: normVersion(u.invoice_version), invoices: cnt[k] || 0,
+                session: normVersion(u.invoice_version), categoryId: u.dv_category_id || null, invoices: cnt[k] || 0,
                 profile: profs[k] || '', plan: subs[k] || subState(null)
             };
         }));
@@ -626,18 +669,23 @@ function install(app, ctx) {
         const ids = Array.from(new Set(raw.map(x => cleanText(x, 50)).filter(Boolean)));
         if (!ids.length) return res.status(400).json({ error: 'Enter at least one User ID.' });
         if (ids.length > 500) return res.status(400).json({ error: 'You can map at most 500 User IDs at a time.' });
+        // optional: assign (or clear, with '') the Business Category together with the mapping — only meaningful for Session B
+        const hasCat = Object.prototype.hasOwnProperty.call(b, 'categoryId');
+        const catId = hasCat ? (parseInt(b.categoryId, 10) || null) : null;
+        if (catId && !(await dbq('SELECT 1 FROM dv_categories WHERE id = ?', [catId])).length) return res.status(400).json({ error: 'That Business Category no longer exists.' });
         const updated = [], notFound = [];
         for (const id of ids) {
             const r = await dbq('UPDATE material_users SET invoice_version = ? WHERE LOWER(userid) = LOWER(?) RETURNING userid', [session, id]);
             if (r.length) {
                 updated.push(r[0].userid);
+                if (hasCat && session === 'B') await dbq('UPDATE material_users SET dv_category_id = ? WHERE LOWER(userid) = LOWER(?)', [catId, r[0].userid]);
                 // Mapping to B gives the user THEIR OWN copy of the default template, so later changes to the template or to any other user never affect them
                 if (session === 'B') {
                     await dbq('INSERT INTO dv_profiles (user_id, data) VALUES (?, ?) ON CONFLICT (user_id) DO NOTHING', [r[0].userid, JSON.stringify(await loadDefaults())]);
                 }
             } else notFound.push(id);
         }
-        audit(req, 'dv_mapping_set', 'dv_mapping', 'session=' + session + ' count=' + updated.length);
+        audit(req, 'dv_mapping_set', 'dv_mapping', 'session=' + session + ' count=' + updated.length + (hasCat ? ' category=' + (catId || 'none') : ''));
         res.json({ success: true, session: session, updated: updated, notFound: notFound });
     }));
 
@@ -750,6 +798,171 @@ function install(app, ctx) {
         }
         audit(req, 'dv_subscription_set', 'dv_subscriptions', 'mode=' + mode + ' count=' + done.length);
         res.json({ success: true, mode: mode, updated: done, notFound: notFound });
+    }));
+
+    /* ═════════ CATEGORY CATALOG · RATES · BILL NUMBER · DAILY WALLET ═════════ */
+    const money2 = (v) => Math.round(Number(v) * 100) / 100;
+
+    // ── Super Admin: Business Categories
+    app.get('/api/admin/dv-categories', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+        const rows = await dbq(`SELECT c.id, c.name,
+            (SELECT COUNT(*) FROM dv_cat_items i WHERE i.category_id = c.id) AS items,
+            (SELECT COUNT(*) FROM material_users u WHERE u.dv_category_id = c.id) AS users
+            FROM dv_categories c ORDER BY LOWER(c.name)`, []);
+        res.json(rows.map(r => ({ id: r.id, name: r.name, items: Number(r.items), users: Number(r.users) })));
+    }));
+    app.put('/api/admin/dv-categories', requireRole('admin'), asyncRoute(async (req, res) => {
+        const b = req.body || {}, name = cleanText(b.name, 80), id = parseInt(b.id, 10) || 0;
+        if (!name) return res.status(400).json({ error: 'Category name is required.' });
+        try {
+            const r = id ? await dbq('UPDATE dv_categories SET name = ? WHERE id = ? RETURNING id, name', [name, id])
+                         : await dbq('INSERT INTO dv_categories (name) VALUES (?) RETURNING id, name', [name]);
+            if (!r.length) return res.status(404).json({ error: 'Category not found.' });
+            audit(req, 'dv_category_set', 'dv_categories', 'name=' + name);
+            res.json({ id: r[0].id, name: r[0].name });
+        } catch (e) {
+            if (isDup(e)) return res.status(409).json({ error: 'A category named "' + name + '" already exists.' });
+            throw e;
+        }
+    }));
+    app.delete('/api/admin/dv-categories/:id', requireRole('admin'), asyncRoute(async (req, res) => {
+        const id = parseInt(req.params.id, 10) || 0;
+        const n = Number(((await dbq('SELECT COUNT(*) AS n FROM material_users WHERE dv_category_id = ?', [id]))[0] || {}).n) || 0;
+        if (n) return res.status(409).json({ error: n + ' user(s) are still assigned to this category. Move them to another category first.' });
+        await dbq('DELETE FROM dv_categories WHERE id = ?', [id]);
+        audit(req, 'dv_category_delete', 'dv_categories', 'id=' + id);
+        res.json({ success: true });
+    }));
+    const itemOut = (i) => ({ id: i.id, name: i.name, unit: i.unit, gst: Number(i.gst) });
+    app.get('/api/admin/dv-categories/:id/items', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+        const id = parseInt(req.params.id, 10) || 0;
+        res.json((await dbq('SELECT id, name, unit, gst FROM dv_cat_items WHERE category_id = ? ORDER BY LOWER(name)', [id])).map(itemOut));
+    }));
+    // body: { items: [{ id?, name, unit, gst }] } — rows with an id are updated, rows without one are added, saved rows missing from the list are removed
+    app.put('/api/admin/dv-categories/:id/items', requireRole('admin'), asyncRoute(async (req, res) => {
+        const cid = parseInt(req.params.id, 10) || 0;
+        if (!(await dbq('SELECT 1 FROM dv_categories WHERE id = ?', [cid])).length) return res.status(404).json({ error: 'Category not found.' });
+        const list = Array.isArray(req.body && req.body.items) ? req.body.items : null;
+        if (!list) return res.status(400).json({ error: 'Item list is required.' });
+        if (list.length > 2000) return res.status(400).json({ error: 'A category can hold at most 2000 items.' });
+        const clean = [], seen = {};
+        for (let i = 0; i < list.length; i++) {
+            const r = list[i] || {}, name = cleanText(r.name, 120);
+            if (!name) continue;
+            const gst = r.gst === '' || r.gst == null ? 0 : Number(r.gst);
+            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: 'Item "' + name + '": GST % must be between 0 and 100.' });
+            if (seen[name.toLowerCase()]) return res.status(400).json({ error: 'Item "' + name + '" is listed twice.' });
+            seen[name.toLowerCase()] = 1;
+            clean.push({ id: parseInt(r.id, 10) || 0, name: name, unit: cleanText(r.unit, 20) || 'Pcs', gst: money2(gst) });
+        }
+        const have = (await dbq('SELECT id FROM dv_cat_items WHERE category_id = ?', [cid])).map(r => r.id);
+        const keep = {}; clean.forEach(c => { if (c.id && have.indexOf(c.id) >= 0) keep[c.id] = 1; });
+        try {
+            for (const id of have) if (!keep[id]) await dbq('DELETE FROM dv_cat_items WHERE id = ? AND category_id = ?', [id, cid]);
+            for (const c of clean) {
+                if (c.id && keep[c.id]) await dbq('UPDATE dv_cat_items SET name = ?, unit = ?, gst = ? WHERE id = ? AND category_id = ?', [c.name, c.unit, c.gst, c.id, cid]);
+                else await dbq('INSERT INTO dv_cat_items (category_id, name, unit, gst) VALUES (?,?,?,?)', [cid, c.name, c.unit, c.gst]);
+            }
+        } catch (e) {
+            if (isDup(e)) return res.status(409).json({ error: 'Two items ended up with the same name. Please make every item name unique.' });
+            throw e;
+        }
+        audit(req, 'dv_catalog_set', 'dv_categories', 'category=' + cid + ' items=' + clean.length);
+        res.json((await dbq('SELECT id, name, unit, gst FROM dv_cat_items WHERE category_id = ? ORDER BY LOWER(name)', [cid])).map(itemOut));
+    }));
+
+    // ── Session B user: the master items of MY category merged with MY saved rates
+    async function myCatalog(uid) {
+        const u = (await dbq('SELECT dv_category_id FROM material_users WHERE userid = ?', [uid]))[0];
+        if (!u || !u.dv_category_id) return { category: null, items: [] };
+        const cat = (await dbq('SELECT id, name FROM dv_categories WHERE id = ?', [u.dv_category_id]))[0];
+        if (!cat) return { category: null, items: [] };
+        const rows = await dbq(`SELECT i.id, i.name, i.unit, i.gst, r.price, r.gst AS ugst, r.unit AS uunit, r.qty AS uqty
+            FROM dv_cat_items i LEFT JOIN dv_user_rates r ON r.item_id = i.id AND LOWER(r.user_id) = LOWER(?)
+            WHERE i.category_id = ? ORDER BY LOWER(i.name)`, [uid, cat.id]);
+        return { category: { id: cat.id, name: cat.name }, items: rows.map(r => ({
+            id: r.id, name: r.name, masterUnit: r.unit, masterGst: Number(r.gst),
+            saved: r.price != null, price: r.price != null ? Number(r.price) : null,
+            gst: r.ugst != null ? Number(r.ugst) : Number(r.gst), unit: r.uunit || r.unit, qty: r.uqty != null ? Number(r.uqty) : 1
+        })) };
+    }
+    app.get('/api/dv/catalog', noStore, dvUser, dvActive, asyncRoute(async (req, res) => { res.json(await myCatalog(req.dvUser.userId)); }));
+    // body: { rates: [{ itemId, price, gst, unit, qty }] } — a blank price removes the user's saved rate for that item
+    app.put('/api/dv/catalog/rates', dvUser, dvActive, asyncRoute(async (req, res) => {
+        const uid = req.dvUser.userId, list = Array.isArray(req.body && req.body.rates) ? req.body.rates : null;
+        if (!list) return res.status(400).json({ error: 'Nothing to save.' });
+        if (list.length > 2000) return res.status(400).json({ error: 'Too many items in one save.' });
+        const cat = await myCatalog(uid);
+        if (!cat.category) return res.status(403).json({ error: 'No Business Category is assigned to your account yet. Please contact the administrator.' });
+        const ok = {}; cat.items.forEach(i => { ok[i.id] = i; });
+        const todo = [];
+        for (const r0 of list) {
+            const r = r0 || {}, id = parseInt(r.itemId, 10) || 0, m = ok[id];
+            if (!m) return res.status(400).json({ error: 'An item in your list does not belong to your category. Please reload the page.' });
+            if (r.price === '' || r.price == null) { todo.push({ id: id, del: true }); continue; }
+            const price = Number(r.price), gst = r.gst === '' || r.gst == null ? m.masterGst : Number(r.gst), qty = r.qty === '' || r.qty == null ? 1 : Number(r.qty);
+            if (!isFinite(price) || price < 0 || price > 1e8) return res.status(400).json({ error: '"' + m.name + '": selling price must be 0 or more.' });
+            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: '"' + m.name + '": GST % must be between 0 and 100.' });
+            if (!isFinite(qty) || qty <= 0 || qty > 1e7) return res.status(400).json({ error: '"' + m.name + '": default pieces must be greater than 0.' });
+            todo.push({ id: id, price: money2(price), gst: money2(gst), qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20) || m.masterUnit });
+        }
+        for (const t of todo) {
+            if (t.del) await dbq('DELETE FROM dv_user_rates WHERE LOWER(user_id) = LOWER(?) AND item_id = ?', [uid, t.id]);
+            else await dbq(`INSERT INTO dv_user_rates (user_id, item_id, price, gst, unit, qty, updated_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, item_id) DO UPDATE SET price = EXCLUDED.price, gst = EXCLUDED.gst, unit = EXCLUDED.unit, qty = EXCLUDED.qty, updated_at = CURRENT_TIMESTAMP`,
+                [uid, t.id, t.price, t.gst, t.unit, t.qty]);
+        }
+        res.json(await myCatalog(uid));
+    }));
+
+    // ── Next sequential Bill No. (keeps a text prefix and zero-padding:  1, 2, 3 …  or  INV-009 → INV-010)
+    app.get('/api/dv/next-bill-no', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
+        const uid = req.dvUser.userId;
+        const rows = await dbq('SELECT bill_no FROM dv_invoices WHERE owner_user_id = ? ORDER BY id DESC LIMIT 300', [uid]);
+        let prefix = '', width = 0, max = 0;
+        const used = {}; rows.forEach(r => { used[String(r.bill_no).toLowerCase()] = 1; });
+        for (let i = 0; i < rows.length; i++) {
+            const m = /^(.*?)(\d{1,12})$/.exec(String(rows[i].bill_no));
+            if (!m) continue;
+            if (i === 0 || (!prefix && !width)) { prefix = m[1]; width = m[2].length > 1 && m[2][0] === '0' ? m[2].length : 0; }
+            if (m[1] === prefix) max = Math.max(max, parseInt(m[2], 10));
+        }
+        let n = max + 1, no;
+        do { no = prefix + (width ? String(n).padStart(width, '0') : String(n)); n++; } while (used[no.toLowerCase()]);
+        res.json({ billNo: no });
+    }));
+
+    // ── Daily Wallet & stock-sales summary for a date range (default: today, IST). Everything is summed in integer paise.
+    app.get('/api/dv/wallet', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
+        const okDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
+        let from = String(req.query.from || '').slice(0, 10), to = String(req.query.to || '').slice(0, 10);
+        if (!okDate(from) && !okDate(to)) from = to = istToday();
+        else if (!okDate(from)) from = to; else if (!okDate(to)) to = from;
+        if (from > to) { const t = from; from = to; to = t; }
+        if (dayNum(to) - dayNum(from) > 366) return res.status(400).json({ error: 'Please choose a period of at most one year.' });
+        const rows = await dbq(`SELECT id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS d, to_char(created_at AT TIME ZONE 'Asia/Kolkata','HH24:MI') AS t,
+                customer_name, payment_mode, grand_total, items
+            FROM dv_invoices WHERE owner_user_id = ? AND invoice_date BETWEEN ? AND ? ORDER BY invoice_date DESC, id DESC LIMIT 5001`, [req.dvUser.userId, from, to]);
+        const truncated = rows.length > 5000; if (truncated) rows.length = 5000;
+        let totP = 0, onP = 0, caP = 0, qty = 0;
+        const agg = {}, tx = [];
+        rows.forEach(r => {
+            const gp = toPaise(Number(r.grand_total)), online = r.payment_mode === 'online';
+            totP += gp; if (online) onP += gp; else caP += gp;
+            let its = []; try { its = JSON.parse(r.items) || []; } catch (e) { its = []; }
+            its.forEach(it => {
+                const key = String(it.name || '').toLowerCase() + '|' + String(it.unit || '').toLowerCase();
+                const a = agg[key] || (agg[key] = { name: it.name || '', unit: it.unit || '', qty: 0, amountP: 0 });
+                a.qty += Number(it.qty) || 0; a.amountP += toPaise(Number(it.total) || 0); qty += Number(it.qty) || 0;
+            });
+            tx.push({ id: r.id, billNo: r.bill_no, date: r.d, time: r.t, customer: r.customer_name || '', mode: online ? 'online' : 'cash', total: Number(r.grand_total), lines: its.length });
+        });
+        res.json({
+            from: from, to: to, truncated: truncated,
+            totals: { sales: fromPaise(totP), online: fromPaise(onP), cash: fromPaise(caP), bills: rows.length, qty: Math.round(qty * 1000) / 1000, itemKinds: Object.keys(agg).length },
+            items: Object.keys(agg).map(k => ({ name: agg[k].name, unit: agg[k].unit, qty: Math.round(agg[k].qty * 1000) / 1000, amount: fromPaise(agg[k].amountP) })).sort((a, b) => b.amount - a.amount),
+            transactions: tx
+        });
     }));
 }
 

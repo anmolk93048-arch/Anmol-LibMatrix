@@ -39,7 +39,7 @@
   #planBanner.warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
   #planBanner.bad{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
   #planBanner button{margin-left:auto;padding:7px 14px;border-radius:6px;border:none;background:#0b2545;color:#fff;font-weight:800;font-size:12px;cursor:pointer}
-  body.plan-locked main > section:not(.act-bar){pointer-events:none;opacity:.55;filter:grayscale(.35)}
+  body.plan-locked main section:not(.act-bar){pointer-events:none;opacity:.55;filter:grayscale(.35)}
   body.plan-locked #saveBtn, body.plan-locked #genBtn{opacity:.45;cursor:not-allowed}
   /* expired plan: full lock — nothing behind the overlay can be reached by mouse, touch or keyboard */
   #planLockOv{position:fixed;inset:0;z-index:99990;background:rgba(13,30,61,.78);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;padding:16px}
@@ -440,6 +440,20 @@
 .inp{width:100%;border:1px solid #d1d5db;border-radius:4px;padding:.375rem .5rem;font-size:.875rem;background:#fff}
 .mat-table .inp{padding:.25rem .4rem}
 .hidden{display:none}
+.tabbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-bottom:2px solid var(--gov-navy);padding-bottom:0}
+.tabbtn{border:1px solid #cbd3de;border-bottom:none;background:#f1f5fb;color:var(--gov-navy);font-weight:800;font-size:12.5px;padding:8px 14px;border-radius:8px 8px 0 0;cursor:pointer}
+.tabbtn.on{background:var(--gov-navy);color:#fff;border-color:var(--gov-navy)}
+.cat-pill{margin-left:auto;font-size:11px;font-weight:800;color:var(--gov-navy);background:#fff8e6;border:1px solid #ecd28a;border-radius:9999px;padding:3px 10px}
+.item-drop{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid #9fb0c8;border-radius:6px;box-shadow:0 10px 26px rgba(11,37,69,.22);max-height:280px;overflow:auto}
+.item-drop button{display:flex;width:100%;justify-content:space-between;gap:10px;text-align:left;padding:7px 10px;font-size:13px;border-bottom:1px solid #eef2f7;background:#fff;cursor:pointer}
+.item-drop button:hover,.item-drop button.act{background:#eaf1fb}
+.item-drop small{color:#475569;white-space:nowrap}
+.w-card{border:1px solid #d6deea;border-top:3px solid var(--gov-navy);border-radius:6px;background:#fff;padding:10px 12px}
+.w-card b{display:block;font-size:19px;color:var(--gov-navy)}
+.w-card span{font-size:11px;font-weight:700;color:#475569;letter-spacing:.03em}
+.pm-badge{display:inline-block;font-size:10.5px;font-weight:800;border-radius:9999px;padding:1px 8px}
+.pm-online{background:#e0e7ff;color:#3730a3}.pm-cash{background:#dcfce7;color:#166534}
+.rt-tbl input{width:100%}
 .sess-pill{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;letter-spacing:.06em;color:#fff;background:var(--gov-blue);border-radius:9999px;padding:2px 8px}
 .bar-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1;border:1px solid #cbd3de;background:#fff;color:var(--gov-navy);font-size:12px;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer}
 .bar-btn.danger{color:#b91c1c;border-color:#f3b4b4}
@@ -603,6 +617,15 @@
   <div id="planBanner"></div>
   <div id="pageError" class="login-error"></div>
 
+  <nav class="tabbar" aria-label="Session B sections">
+    <button type="button" class="tabbtn on" id="tabBtn-invoice" onclick="showTab('invoice')">🧾 Invoice Generator</button>
+    <button type="button" class="tabbtn" id="tabBtn-rates" onclick="showTab('rates')">💰 Item Rate &amp; GST Settings</button>
+    <button type="button" class="tabbtn" id="tabBtn-wallet" onclick="showTab('wallet')">👛 Daily Wallet &amp; Sales</button>
+    <span class="cat-pill" id="catPill" style="display:none"></span>
+  </nav>
+
+<div id="tab-invoice" class="space-y-6">
+
   <section class="gov-card bg-white rounded-sm overflow-hidden">
     <div class="section-title px-4 py-2">Section A — Company Details</div>
     <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -628,13 +651,14 @@
   <section class="gov-card bg-white rounded-sm overflow-hidden">
     <div class="section-title px-4 py-2">Section C — Bill Details</div>
     <div class="p-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <div><label class="lbl">Bill No. <span class="text-red-600">*</span></label><input id="billNo" class="inp" maxlength="40" placeholder="Bill / Invoice No."></div>
+      <div><label class="lbl">Bill No. <span class="text-red-600">*</span> <span class="text-[10px] font-normal text-gray-500">(auto)</span></label><input id="billNo" class="inp" maxlength="40" placeholder="Bill / Invoice No."></div>
       <div><label class="lbl">Bill Date <span class="text-red-600">*</span></label><input id="billDate" type="date" class="inp"></div>
       <div class="col-span-2"><label class="lbl">Customer Name</label><input id="customer" class="inp" maxlength="255"></div>
       <div><label class="lbl">Block</label><input id="block" class="inp" maxlength="120"></div>
       <div><label class="lbl">District</label><input id="district" class="inp" maxlength="120"></div>
       <div><label class="lbl">Transportation Mode</label><input id="transport" class="inp" maxlength="120"></div>
       <div><label class="lbl">Vehicle No.</label><input id="vehicle" class="inp uppercase" maxlength="60"></div>
+      <div><label class="lbl">Payment Mode <span class="text-red-600">*</span></label><select id="payMode" class="inp"><option value="cash">💵 Cash</option><option value="online">📱 Online / PhonePe</option></select></div>
     </div>
   </section>
 
@@ -643,15 +667,23 @@
       <span>Section D — Material Entry</span>
       <button onclick="addRow()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-2.5 py-1 rounded hover:bg-blue-50">+ ADD MATERIAL ROW</button>
     </div>
+    <div class="px-3 pt-3">
+      <label class="lbl">🔎 Item Search <span class="text-[10px] font-normal text-gray-500" id="itemSearchHint">— pick an item to add it with your saved Rate, GST % and Unit</span></label>
+      <div style="position:relative;max-width:560px">
+        <input id="itemSearch" class="inp" type="search" autocomplete="off" placeholder="Type item name…" oninput="itemSearchInput()" onfocus="itemSearchInput()" onkeydown="itemSearchKey(event)">
+        <div id="itemDrop" class="item-drop hidden"></div>
+      </div>
+      <datalist id="catNames"></datalist>
+    </div>
     <div class="p-3 overflow-x-auto">
-      <table class="mat-table w-full text-sm border-collapse min-w-[980px]">
+      <table class="mat-table w-full text-sm border-collapse min-w-[1040px]">
         <thead><tr>
-          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">Quantity</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
+          <th class="w-10">S.No.</th><th class="min-w-[200px]">Material Name</th><th class="w-24">Quantity</th><th class="w-20">Unit</th><th class="w-28">Rate (₹)</th><th class="w-24">GST %</th>
           <th class="w-28">Taxable (₹)</th><th class="w-28">Total (₹)</th><th class="w-10"></th>
         </tr></thead>
         <tbody id="rows"></tbody>
         <tfoot><tr class="bg-blue-50 font-bold">
-          <td colspan="5" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
+          <td colspan="6" class="text-right">Total</td><td id="tfTax" class="text-right">0.00</td><td id="tfTotal" class="text-right">0.00</td><td></td>
         </tr></tfoot>
       </table>
     </div>
@@ -687,6 +719,46 @@
     <button type="button" id="saveBtn" onclick="submitBill('save')" class="act-btn border border-[var(--gov-blue)] text-[var(--gov-blue)] hover:bg-blue-50">☁️ Save / Update Invoice</button>
     <button type="button" id="genBtn" onclick="submitBill('generate')" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700">🖨️ Generate Invoice &amp; Print</button>
   </section>
+</div><!-- /tab-invoice -->
+
+<div id="tab-rates" class="hidden space-y-4">
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2 flex items-center justify-between flex-wrap gap-2"><span>Item Rate &amp; GST Settings <span id="ratesCat" class="font-normal text-[11px] opacity-80"></span></span>
+      <button type="button" id="ratesSaveBtn" onclick="saveRates()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-3 py-1 rounded hover:bg-blue-50">💾 SAVE ALL RATES</button></div>
+    <div class="p-3 space-y-3">
+      <div id="ratesMsg" class="text-xs"></div>
+      <input id="ratesFilter" class="inp max-w-md" type="search" placeholder="🔍 Filter items…" oninput="filterRates()" autocomplete="off">
+      <div class="overflow-x-auto"><table class="mat-table rt-tbl w-full text-sm border-collapse min-w-[760px]">
+        <thead><tr><th class="w-10">#</th><th>Item (from your category)</th><th class="w-24">Unit</th><th class="w-32">Selling Price (₹)</th><th class="w-24">GST %</th><th class="w-36">Default Unit / Pieces</th></tr></thead>
+        <tbody id="ratesBody"></tbody>
+      </table></div>
+      <datalist id="qtyPresets"><option value="1"><option value="10"><option value="50"><option value="100"></datalist>
+      <p class="text-[11px] text-gray-600">Leave the price blank to remove your saved rate. Master item names and the item list are managed by the administrator for your category.</p>
+    </div>
+  </section>
+</div>
+
+<div id="tab-wallet" class="hidden space-y-4">
+  <section class="gov-card bg-white rounded-sm overflow-hidden">
+    <div class="section-title px-4 py-2">Daily Wallet &amp; Stock Sales Summary</div>
+    <div class="p-3 space-y-3">
+      <div class="flex flex-wrap gap-2 items-end">
+        <div><label class="lbl">From</label><input id="wFrom" type="date" class="inp" onchange="loadWallet()"></div>
+        <div><label class="lbl">To</label><input id="wTo" type="date" class="inp" onchange="loadWallet()"></div>
+        <button type="button" class="sb-btn" onclick="walletRange('today')">Today</button>
+        <button type="button" class="sb-btn" onclick="walletRange('yesterday')">Yesterday</button>
+        <button type="button" class="sb-btn" onclick="walletRange('month')">This Month</button>
+        <button type="button" class="act-btn border border-[var(--gov-green)] bg-[var(--gov-green)] text-white hover:bg-green-700 ml-auto" id="hisabBtn" onclick="exportHisab(this)" style="padding:7px 14px">⬇️ Daily Hisab PDF</button>
+      </div>
+      <div id="walletMsg" class="text-xs"></div>
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3" id="walletCards"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Items / Qty Sold</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Item</th><th class="w-24">Qty</th><th class="w-28">Amount (₹)</th></tr></thead><tbody id="walletItems"></tbody></table></div></div>
+        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Transaction History</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Bill</th><th>Date / Time</th><th>Customer</th><th>Mode</th><th class="w-24">Total (₹)</th></tr></thead><tbody id="walletTx"></tbody></table></div></div>
+      </div>
+    </div>
+  </section>
+</div>
   <style>
   #devCredit .dev-foot{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 14px;background:#fff;border:1px solid #d6deea;border-top:3px solid var(--gov-navy,#0b2545);border-radius:3px;padding:8px 16px;font-size:12px;color:#334155}
   #devCredit .dev-foot b{color:var(--gov-navy,#0b2545)}
@@ -755,6 +827,7 @@
       <tr><td>Invoice Date :- <span id="i-date"></span></td></tr>
       <tr><td>Transportation Mode :- <span id="i-transport"></span></td></tr>
       <tr><td>Vehicle No :- <span id="i-vehicle"></span></td></tr>
+      <tr><td>Payment Mode :- <span id="i-pay"></span></td></tr>
     </table></td>
   </tr></table>
   <table class="inv-block"><tr><td style="font-size:11px;">Customer Name :- <span id="i-customer"></span></td></tr></table>
@@ -923,8 +996,9 @@ function words(amount){
 /* ───────── form ───────── */
 function rowHtml(){
   return '<tr><td class="text-center sn"></td>'
-    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" autocomplete="off"><input type="hidden" class="r-hsn"><input type="hidden" class="r-unit"></td>'
+    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" autocomplete="off" list="catNames" onchange="rowNamePicked(this)"><input type="hidden" class="r-hsn"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
+    + '<td><input class="inp r-unit" maxlength="20" placeholder="Pcs" autocomplete="off"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-gst text-right" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="GST %" oninput="recalc()"></td>'
     + '<td class="text-right r-tax">0.00</td><td class="text-right font-semibold r-total">0.00</td>'
@@ -977,7 +1051,7 @@ function backBtn(){ if (planBlocked()) return; newBill(); }
 function newBill(){
   closeInvoiceViewer(); editingId = null; origBillNo = ''; showErr('');
   ['billNo','customer','block','district','transport','vehicle'].forEach(function(id){ $(id).value = ''; });
-  $('billDate').value = today();
+  $('billDate').value = today(); $('payMode').value = 'cash'; $('itemSearch').value = ''; hideItemDrop(); fillNextBillNo();
   if (SETTINGS) { fillCompany(SETTINGS); $('customer').value = SETTINGS.defaultCustomer || ''; $('block').value = SETTINGS.defaultBlock || ''; $('district').value = SETTINGS.defaultDistrict || ''; }
   $('rows').innerHTML = ''; addRow(); applyLock(); window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1028,7 +1102,7 @@ function askPassword(action, warn){
 function payload(){
   var items = readItems().map(function(i){ return { name: i.name, hsn: i.hsn, unit: i.unit, qty: i.qty, rate: i.rate, gst: i.gst }; });
   return { billNo: $('billNo').value, date: $('billDate').value, customer: $('customer').value, block: $('block').value, district: $('district').value,
-           transport: $('transport').value, vehicle: $('vehicle').value, items: items, company: readCompany() };
+           transport: $('transport').value, vehicle: $('vehicle').value, paymentMode: $('payMode').value, items: items, company: readCompany() };
 }
 function validate(){
   var c = readCompany();
@@ -1069,7 +1143,7 @@ var LOADED = {}, _loadSeq = 0, _svPage = 1, _svPages = 1, _svCache = {};
 var SV_SIZE = 5;   // 5 bills per page — the database returns only these 5 rows
 function svRow(r) {
   return '<div class="border border-gray-200 rounded p-2.5 bg-slate-50"><div class="flex justify-between gap-2"><b class="text-[var(--gov-navy)]">Bill ' + esc(r.billNo) + '</b><span class="font-bold">₹' + money(r.grandTotal) + '</span></div>'
-    + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + '</div>'
+    + '<div class="text-xs text-gray-600">' + fmtDate(r.date) + (r.customer ? ' • ' + esc(r.customer) : '') + ' • <span class="pm-badge ' + (r.paymentMode === 'online' ? 'pm-online">Online' : 'pm-cash">Cash') + '</span></div>'
     + '<div class="sb-actions"><button class="a-edit" title="Edit this bill" onclick="openBill(' + r.id + ',false)">✏️ Edit</button><button class="a-print" title="Print this bill" onclick="openBill(' + r.id + ',true)">🖨️ Print</button><button class="a-pdf" title="Download as PDF" onclick="pdfBill(' + r.id + ')">⬇️ PDF</button><button class="a-del" title="Delete this bill" onclick="delBill(' + r.id + ',\'' + esc(r.billNo).replace(/'/g, '') + '\')">🗑️ Delete</button></div></div>';
 }
 function svPager() {
@@ -1111,7 +1185,8 @@ function openBill(id, print){
     if (print) return showInvoice(inv);
     editingId = inv.id; origBillNo = inv.billNo; showErr('');
     $('billNo').value = inv.billNo; $('billDate').value = inv.date; $('customer').value = inv.customer; $('block').value = inv.block; $('district').value = inv.district;
-    $('transport').value = inv.transport; $('vehicle').value = inv.vehicle;
+    $('transport').value = inv.transport; $('vehicle').value = inv.vehicle; $('payMode').value = inv.paymentMode === 'online' ? 'online' : 'cash';
+    showTab('invoice');
     if (SETTINGS) fillCompany(SETTINGS);   // company / bank / tax are always the locked presets
     $('rows').innerHTML = ''; (inv.items || []).forEach(function(it){ addRow({ name: it.name, unit: it.unit, qty: it.qty, rate: it.rate, gst: (it.cgstPct != null ? Number(it.cgstPct) + Number(it.sgstPct) : null) }); });
     if (!$('rows').children.length) addRow();
@@ -1131,7 +1206,7 @@ function showInvoice(inv){
   var c = inv.company || readCompany(), set = function(id, v){ $(id).textContent = v == null ? '' : v; };
   set('i-company', c.companyName); set('i-company2', c.companyName); set('i-company3', c.companyName); set('i-address', c.address);
   set('i-gstin', c.gstin); set('i-mobile', c.mobile); set('i-bank', c.bankName); set('i-branch', c.branch); set('i-ifsc', c.ifsc); set('i-acc', c.accountNo);
-  set('i-billNo', inv.billNo); set('i-date', fmtDate(inv.date)); set('i-transport', inv.transport); set('i-vehicle', inv.vehicle);
+  set('i-billNo', inv.billNo); set('i-date', fmtDate(inv.date)); set('i-transport', inv.transport); set('i-vehicle', inv.vehicle); set('i-pay', inv.paymentMode === 'online' ? 'Online / PhonePe' : 'Cash');
   set('i-customer', inv.customer); set('i-block', inv.block); set('i-district', inv.district);
   /* HSN/SAC and Unit are no longer entered in Session B; the printed invoice only shows those columns for older bills that carry values */
   var showH = (inv.items || []).some(function(r){ return String(r.hsn || '').trim(); }), showU = (inv.items || []).some(function(r){ return String(r.unit || '').trim(); });
@@ -1202,6 +1277,7 @@ function applyPlanLock(on){
     // close anything that shows saved data and wipe it from the screen (it stays safe in the database)
     try { var sb = $('savedSidebar'); if (sb) sb.classList.add('translate-x-full'); var so = $('sidebarOverlay'); if (so) so.classList.add('hidden'); } catch (e) {}
     try { closeInvoiceViewer(); } catch (e) {}
+    try { ['ratesBody','walletItems','walletTx','walletCards'].forEach(function(i){ var n = $(i); if (n) n.innerHTML = ''; }); } catch (e) {}
     try { var sl = $('savedList'); if (sl) sl.innerHTML = ''; var sc = $('savedCount'); if (sc) sc.textContent = '–'; } catch (e) {}
     var m = $('planLockMsg'); if (m && SUB) m.textContent = 'Your ' + (SUB.planName || 'Invoice Plan') + ' expired on ' + fmtDate(SUB.expires) + '. All your saved bills and data are safe and will reappear instantly once you activate a plan.';
   } else if (_wasLocked) { try { loadSaved(); } catch (e) {} }
@@ -1322,6 +1398,182 @@ function savePdfInvoiceNow(btn){
 }
 function pdfBill(id){ if (planBlocked()) return; (LOADED[id] ? Promise.resolve(LOADED[id]) : api('/dv/invoices/' + id)).then(function(inv){ showInvoice(inv); return savePdfInvoiceNow(); }).catch(function(e){ showErr(e.message); }); }
 
+
+/* ───────── tabs ───────── */
+function showTab(name){
+  ['invoice', 'rates', 'wallet'].forEach(function(t){ $('tab-' + t).classList.toggle('hidden', t !== name); $('tabBtn-' + t).classList.toggle('on', t === name); });
+  if (name !== 'invoice') { closeInvoiceViewer(); hideItemDrop(); }
+  if (name === 'rates') loadCatalog();
+  if (name === 'wallet') { if (!$('wFrom').value) walletRange('today'); else loadWallet(); }
+}
+
+/* ───────── automatic Bill No. (server keeps the sequence: 1, 2, 3 … or INV-009 → INV-010) ───────── */
+function fillNextBillNo(){
+  if (editingId) return;
+  api('/dv/next-bill-no').then(function(r){ if (!editingId && !$('billNo').value && r && r.billNo) $('billNo').value = r.billNo; }).catch(function(){});
+}
+
+/* ───────── category catalog (master items of MY category + MY saved rates) ───────── */
+var CAT = { category: null, items: [], byId: {} }, dropIdx = -1, dropList = [];
+function loadCatalog(){
+  return api('/dv/catalog').then(function(r){
+    CAT.category = r.category; CAT.items = r.items || []; CAT.byId = {}; CAT.items.forEach(function(i){ CAT.byId[i.id] = i; });
+    var pill = $('catPill'); pill.style.display = CAT.category ? '' : 'none'; pill.textContent = CAT.category ? '🏷️ Category: ' + CAT.category.name : '';
+    $('catNames').innerHTML = CAT.items.filter(function(i){ return i.saved; }).map(function(i){ return '<option value="' + esc(i.name) + '">'; }).join('');
+    $('itemSearch').placeholder = CAT.category ? 'Type item name… (' + CAT.items.length + ' items in ' + CAT.category.name + ')' : 'No Business Category assigned yet — type materials manually';
+    renderRates();
+  }).catch(function(e){ if (!e || e.code !== 'PLAN_EXPIRED') $('ratesMsg').textContent = e && e.message || ''; });
+}
+function itemMatches(q){
+  q = String(q || '').toLowerCase().trim();
+  return CAT.items.filter(function(i){ return !q || i.name.toLowerCase().indexOf(q) >= 0; }).sort(function(a, b){ return (b.saved ? 1 : 0) - (a.saved ? 1 : 0) || a.name.localeCompare(b.name); }).slice(0, 40);
+}
+function itemSearchInput(){
+  var d = $('itemDrop'); dropList = itemMatches($('itemSearch').value); dropIdx = dropList.length ? 0 : -1;
+  if (!CAT.category) { d.innerHTML = '<div class="p-3 text-xs text-gray-600">No Business Category is assigned to your account yet.</div>'; d.classList.remove('hidden'); return; }
+  if (!dropList.length) { d.innerHTML = '<div class="p-3 text-xs text-gray-600">No matching item.</div>'; d.classList.remove('hidden'); return; }
+  d.innerHTML = dropList.map(function(i, k){
+    return '<button type="button" class="' + (k === dropIdx ? 'act' : '') + '" onmousedown="event.preventDefault()" onclick="pickItem(' + i.id + ')"><span>' + esc(i.name) + '</span><small>' + (i.saved ? '₹' + money(i.price) + ' • GST ' + i.gst + '% • ' + esc(i.qty) + ' ' + esc(i.unit) : 'rate not set') + '</small></button>';
+  }).join('');
+  d.classList.remove('hidden');
+}
+function hideItemDrop(){ var d = $('itemDrop'); if (d) d.classList.add('hidden'); }
+function itemSearchKey(e){
+  if (e.key === 'Escape') return hideItemDrop();
+  if (!dropList.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); dropIdx = (dropIdx + (e.key === 'ArrowDown' ? 1 : -1) + dropList.length) % dropList.length;
+    Array.prototype.forEach.call($('itemDrop').children, function(b, k){ b.classList.toggle('act', k === dropIdx); if (k === dropIdx && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); });
+  } else if (e.key === 'Enter') { e.preventDefault(); if (dropIdx >= 0) pickItem(dropList[dropIdx].id); }
+}
+document.addEventListener('click', function(e){ if (!e.target.closest || !e.target.closest('#itemSearch, #itemDrop')) hideItemDrop(); });
+/* picking an item adds a row pre-filled with MY saved Rate, GST % and Unit / default pieces — every cell stays editable */
+function pickItem(id){
+  var it = CAT.byId[id]; if (!it) return;
+  var last = $('rows').lastElementChild, reuse = last && !last.querySelector('.r-name').value.trim() && last.querySelector('.r-qty').value === '' && last.querySelector('.r-rate').value === '';
+  if (reuse) last.parentNode.removeChild(last);
+  addRow({ name: it.name, unit: it.unit, qty: it.qty, rate: it.saved ? it.price : '', gst: it.gst });
+  $('itemSearch').value = ''; hideItemDrop(); $('itemSearch').focus();
+  if (!it.saved) toast('"' + it.name + '": set its rate in Item Rate & GST Settings — or type the rate on the bill.');
+}
+function rowNamePicked(inp){
+  var v = inp.value.trim().toLowerCase(), it = CAT.items.filter(function(i){ return i.name.toLowerCase() === v; })[0];
+  if (!it) return;
+  var tr = inp.closest('tr');
+  if (tr.querySelector('.r-rate').value === '' && tr.querySelector('.r-qty').value === '') {
+    inp.value = it.name; tr.querySelector('.r-unit').value = it.unit; tr.querySelector('.r-qty').value = it.qty;
+    if (it.saved) tr.querySelector('.r-rate').value = it.price; tr.querySelector('.r-gst').value = it.gst; recalc();
+  }
+}
+
+/* ───────── Item Rate & GST Settings tab ───────── */
+function renderRates(){
+  var b = $('ratesBody'); if (!b) return;
+  $('ratesCat').textContent = CAT.category ? '— ' + CAT.category.name : '';
+  if (!CAT.category) { b.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-600">No Business Category is assigned to your account yet. Please contact the administrator.</td></tr>'; $('ratesSaveBtn').disabled = true; return; }
+  $('ratesSaveBtn').disabled = false;
+  b.innerHTML = CAT.items.length ? CAT.items.map(function(i, k){
+    return '<tr data-id="' + i.id + '" data-n="' + esc(i.name.toLowerCase()) + '"><td class="text-center">' + (k + 1) + '</td><td class="font-semibold">' + esc(i.name) + (i.saved ? '' : ' <span class="text-[10px] text-amber-700">(not set)</span>') + '</td>'
+      + '<td><input class="inp rt-unit" maxlength="20" value="' + esc(i.unit) + '"></td>'
+      + '<td><input class="inp rt-price text-right" type="number" min="0" step="any" inputmode="decimal" value="' + (i.saved ? esc(i.price) : '') + '" placeholder="0.00"></td>'
+      + '<td><input class="inp rt-gst text-right" type="number" min="0" max="100" step="any" inputmode="decimal" value="' + esc(i.gst) + '"></td>'
+      + '<td><input class="inp rt-qty text-right" type="number" min="0" step="any" inputmode="decimal" list="qtyPresets" value="' + esc(i.qty) + '"></td></tr>';
+  }).join('') : '<tr><td colspan="6" class="text-center p-4 text-gray-600">The administrator has not added any items to your category yet.</td></tr>';
+  filterRates();
+}
+function filterRates(){
+  var q = $('ratesFilter').value.toLowerCase().trim();
+  Array.prototype.forEach.call($('ratesBody').children, function(tr){ tr.style.display = !q || (tr.getAttribute('data-n') || '').indexOf(q) >= 0 ? '' : 'none'; });
+}
+function saveRates(){
+  if (planBlocked()) return;
+  var rates = [], bad = '';
+  Array.prototype.forEach.call($('ratesBody').children, function(tr){
+    if (!tr.getAttribute('data-id')) return;
+    var price = tr.querySelector('.rt-price').value, name = tr.children[1].textContent.replace(/\(not set\)/, '').trim();
+    if (price !== '' && !(Number(price) >= 0)) bad = bad || '"' + name + '": enter a valid selling price.';
+    rates.push({ itemId: Number(tr.getAttribute('data-id')), price: price, gst: tr.querySelector('.rt-gst').value, unit: tr.querySelector('.rt-unit').value, qty: tr.querySelector('.rt-qty').value });
+  });
+  var m = $('ratesMsg'); m.style.color = '#b42318';
+  if (bad) { m.textContent = bad; return; }
+  var btn = $('ratesSaveBtn'); btn.disabled = true; m.textContent = '';
+  api('/dv/catalog/rates', { method: 'PUT', body: JSON.stringify({ rates: rates }) }).then(function(r){
+    CAT.category = r.category; CAT.items = r.items || []; CAT.byId = {}; CAT.items.forEach(function(i){ CAT.byId[i.id] = i; });
+    $('catNames').innerHTML = CAT.items.filter(function(i){ return i.saved; }).map(function(i){ return '<option value="' + esc(i.name) + '">'; }).join('');
+    renderRates(); m.style.color = '#166534'; m.textContent = '✅ Rates saved. They will auto-fill on your bills.'; toast('✅ Rates saved.');
+  }).catch(function(e){ m.textContent = e.message; if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); }).then(function(){ btn.disabled = false; });
+}
+
+/* ───────── Daily Wallet & Stock Sales ───────── */
+var WAL = null;
+function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function walletRange(k){
+  var n = new Date(), a = new Date(n.getFullYear(), n.getMonth(), n.getDate()), b = a;
+  if (k === 'yesterday') { a = b = new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1); }
+  else if (k === 'month') a = new Date(a.getFullYear(), a.getMonth(), 1);
+  $('wFrom').value = ymd(a); $('wTo').value = ymd(b); loadWallet();
+}
+function qtyFmt(n){ return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 }); }
+function loadWallet(){
+  if (planBlocked()) return;
+  var f = $('wFrom').value, t = $('wTo').value, m = $('walletMsg'); m.style.color = '#b42318'; m.textContent = '';
+  return api('/dv/wallet?from=' + encodeURIComponent(f || t) + '&to=' + encodeURIComponent(t || f)).then(function(w){
+    WAL = w; $('wFrom').value = w.from; $('wTo').value = w.to;
+    var T = w.totals;
+    $('walletCards').innerHTML = [['TOTAL SALES', '₹' + money(T.sales)], ['ONLINE / PHONEPE', '₹' + money(T.online)], ['CASH', '₹' + money(T.cash)], ['BILLS', T.bills], ['ITEMS / QTY SOLD', T.itemKinds + ' items / ' + qtyFmt(T.qty)]]
+      .map(function(c){ return '<div class="w-card"><span>' + c[0] + '</span><b>' + esc(c[1]) + '</b></div>'; }).join('');
+    $('walletItems').innerHTML = w.items.length ? w.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td class="text-right">' + qtyFmt(i.qty) + (i.unit ? ' ' + esc(i.unit) : '') + '</td><td class="text-right">' + money(i.amount) + '</td></tr>'; }).join('') : '<tr><td colspan="3" class="text-center p-3 text-gray-500">No sales in this period.</td></tr>';
+    $('walletTx').innerHTML = w.transactions.length ? w.transactions.map(function(x){
+      return '<tr><td>' + esc(x.billNo) + '</td><td>' + fmtDate(x.date) + ' ' + esc(x.time) + '</td><td>' + esc(x.customer) + '</td><td><span class="pm-badge ' + (x.mode === 'online' ? 'pm-online">Online' : 'pm-cash">Cash') + '</span></td><td class="text-right">' + money(x.total) + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="text-center p-3 text-gray-500">No transactions in this period.</td></tr>';
+    if (w.truncated) { m.textContent = 'Showing the latest 5000 bills of this period — choose a shorter period for the complete list.'; }
+  }).catch(function(e){ m.textContent = e.message; if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
+}
+/* 1-click Daily Hisab PDF: the report is drawn in blocks (so any number of bills works) and placed on A4 pages */
+function exportHisab(btn){
+  if (planBlocked() || !WAL) return;
+  var w = WAL, T = w.totals, co = (SETTINGS && SETTINGS.companyName) || '', old = btn.textContent;
+  var period = w.from === w.to ? fmtDate(w.from) : fmtDate(w.from) + ' to ' + fmtDate(w.to);
+  var CSS = 'font-family:Arial,Helvetica,sans-serif;color:#0b2545;font-size:12px;width:760px;background:#fff;padding:6px 10px;box-sizing:border-box';
+  var th = 'border:1px solid #94a3b8;background:#e8eef7;padding:4px 6px;text-align:left', td = 'border:1px solid #cbd5e1;padding:3px 6px';
+  var blocks = [];
+  blocks.push('<div style="' + CSS + '"><div style="text-align:center;font-size:18px;font-weight:800">' + esc(co) + '</div><div style="text-align:center;font-weight:700;margin:2px 0 8px">DAILY HISAB — ' + esc(period) + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><td style="' + td + '">Total Sales</td><td style="' + td + ';text-align:right;font-weight:800">₹' + money(T.sales) + '</td></tr>'
+    + '<tr><td style="' + td + '">Online / PhonePe</td><td style="' + td + ';text-align:right">₹' + money(T.online) + '</td></tr>'
+    + '<tr><td style="' + td + '">Cash</td><td style="' + td + ';text-align:right">₹' + money(T.cash) + '</td></tr>'
+    + '<tr><td style="' + td + '">Bills / Items sold (qty)</td><td style="' + td + ';text-align:right">' + T.bills + ' / ' + T.itemKinds + ' items (' + qtyFmt(T.qty) + ')</td></tr></table></div>');
+  function chunk(rows, size){ var o = []; for (var i = 0; i < rows.length; i += size) o.push(rows.slice(i, i + size)); return o; }
+  chunk(w.items, 40).forEach(function(part, k){
+    blocks.push('<div style="' + CSS + '">' + (k ? '' : '<div style="font-weight:800;margin:6px 0 3px">Items / Qty Sold</div>') + '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">Item</th><th style="' + th + ';text-align:right">Qty</th><th style="' + th + ';text-align:right">Amount (₹)</th></tr></thead><tbody>'
+      + part.map(function(i){ return '<tr><td style="' + td + '">' + esc(i.name) + '</td><td style="' + td + ';text-align:right">' + qtyFmt(i.qty) + (i.unit ? ' ' + esc(i.unit) : '') + '</td><td style="' + td + ';text-align:right">' + money(i.amount) + '</td></tr>'; }).join('') + '</tbody></table></div>');
+  });
+  chunk(w.transactions, 40).forEach(function(part, k){
+    blocks.push('<div style="' + CSS + '">' + (k ? '' : '<div style="font-weight:800;margin:8px 0 3px">Transaction History</div>') + '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">Bill</th><th style="' + th + '">Date / Time</th><th style="' + th + '">Customer</th><th style="' + th + '">Mode</th><th style="' + th + ';text-align:right">Total (₹)</th></tr></thead><tbody>'
+      + part.map(function(x){ return '<tr><td style="' + td + '">' + esc(x.billNo) + '</td><td style="' + td + '">' + fmtDate(x.date) + ' ' + esc(x.time) + '</td><td style="' + td + '">' + esc(x.customer) + '</td><td style="' + td + '">' + (x.mode === 'online' ? 'Online/PhonePe' : 'Cash') + '</td><td style="' + td + ';text-align:right">' + money(x.total) + '</td></tr>'; }).join('') + '</tbody></table></div>');
+  });
+  btn.disabled = true; btn.textContent = '⏳ Preparing PDF…';
+  var host = document.createElement('div'); host.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff'; document.body.appendChild(host);
+  loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', function(){ return !!window.html2canvas; })
+    .then(function(){ return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', function(){ return !!(window.jspdf && window.jspdf.jsPDF); }); })
+    .then(function(){
+      var pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true }), PW = 210, PH = 297, M = 10, y = M, chain = Promise.resolve();
+      pdf.setProperties({ title: 'Daily Hisab ' + period, subject: 'Daily Wallet & Sales', creator: 'Anmol LibMatrix' });
+      blocks.forEach(function(html){
+        chain = chain.then(function(){
+          host.innerHTML = html;
+          return window.html2canvas(host.firstChild, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+        }).then(function(cv){
+          var bw = PW - 2 * M, h = bw * cv.height / cv.width;
+          if (y + h > PH - M && y > M) { pdf.addPage(); y = M; }
+          pdf.addImage(cv.toDataURL('image/jpeg', 0.95), 'JPEG', M, y, bw, Math.min(h, PH - 2 * M)); y += h + 2;
+        });
+      });
+      return chain.then(function(){ pdf.save('Daily_Hisab_' + (w.from === w.to ? w.from : w.from + '_to_' + w.to) + '.pdf'); });
+    })
+    .catch(function(e){ alert('❌ PDF could not be created: ' + (e && e.message ? e.message : e)); })
+    .then(function(){ host.remove(); btn.disabled = false; btn.textContent = old; });
+}
+
 /* ───────── start ───────── */
 (function init(){
   if (!TOKEN) return toLogin();
@@ -1331,7 +1583,7 @@ function pdfBill(id){ if (planBlocked()) return; (LOADED[id] ? Promise.resolve(L
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
-    newBill(); loadSaved(); renderPlan();
+    newBill(); loadSaved(); renderPlan(); loadCatalog();
   }).catch(function(e){ if (e && !/expired/i.test(e.message)) showErr(e.message); });
 })();
 
