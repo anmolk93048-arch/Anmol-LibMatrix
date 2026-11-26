@@ -883,6 +883,24 @@ function changeSlide(n){showSlide(current+n);restart()} function goSlide(n){show
 // CORS. Pointing every fetch at the SAME absolute backend URL fixes the
 // sync. If the backend URL ever changes, update it in ONE place here.
 const SHDL_API_BASE = window.SHDL_API_BASE || '/api';
+/* One shared, cacheable request for every homepage block (replaces ~9 separate /site-data calls).
+   Concurrent callers share the same in-flight call; results are reused for 30 s. The browser HTTP cache (max-age / 304) is NOT bypassed. */
+window.SiteData=(function(){
+  var KEYS=['apps','footer','index_theme','login_options','index_overrides','live_dashboard','home_banners','index_gallery','latest_updates','notices','kyc_performance_mode'];
+  var cache=null,inflight=null,last=0;
+  function load(){
+    if(inflight) return inflight;
+    if(cache && Date.now()-last<30000) return Promise.resolve(cache);
+    inflight=fetch(SHDL_API_BASE+'/site-data?keys='+KEYS.join(',')).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&typeof d==='object'){cache=d;last=Date.now();} return cache;
+    }).catch(function(){return cache;}).then(function(d){inflight=null;return d;});
+    return inflight;
+  }
+  function get(key){return load().then(function(d){return d?d[key]:undefined;});}
+  /* legacy {value:...} shape used by the per-key blocks below */
+  function wrap(key){return get(key).then(function(v){return v==null?null:{value:v};});}
+  return {load:load,get:get,wrap:wrap};
+})();
 const LOGIN_FEATURES = [
   {icon:'🛡', name:'Admin Login', desc:'Full control & system management', href:'/admin-login'},
   {icon:'♟', name:'Agent Login', desc:'Book distribution & services', href:'/agent-login'},
@@ -1018,7 +1036,7 @@ renderUpdates();
     }catch(e){}
   }
   function syncLoginAppFooter(){
-    fetch(SHDL_API_BASE+'/site-data',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(d){
+    SiteData.load().then(function(d){
       if(!d) return; // backend abhi unreachable/empty response — jo screen par hai wahi rahega
       // 🆕 CRITICAL SYNC FIX: pehle yahan '&& d.login_options.length' bhi check hota tha —
       // matlab agar Admin Panel se saare login options delete karke ek EXPLICITLY khaali
@@ -1044,7 +1062,6 @@ renderUpdates();
   }
   syncLoginAppFooter();
   __onRevisit(syncLoginAppFooter);
-  document.addEventListener('visibilitychange',function(){ if(!document.hidden) syncLoginAppFooter(); });
 })();
 /* Live Command rotation disabled: keep first message stable. */
 window.addEventListener('resize',()=>{});
@@ -1072,10 +1089,7 @@ refreshMetrics();__onRevisit(refreshMetrics);
 (function(){
   async function syncIndexOverrides(){
     try{
-      const r=await fetch(SHDL_API_BASE+'/site-data/index_overrides',{cache:'no-store'});
-      if(!r.ok)return;
-      const d=await r.json();
-      const o=d&&d.value;
+      const o=await SiteData.get('index_overrides');
       if(!o||typeof o!=='object')return;
       Object.entries(o).forEach(([selector,text])=>{
         try{const el=document.querySelector(selector);if(el&&typeof text==='string'&&el.textContent!==text)el.textContent=text;}catch(e){}
@@ -1110,7 +1124,7 @@ refreshMetrics();__onRevisit(refreshMetrics);
       if(c.trend!=null&&tr) tr.textContent=c.trend;
     });
   }
-  function load(){ fetch(SHDL_API_BASE+'/site-data/live_dashboard',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){ if(x&&x.value) applyLiveDashboard(x.value); }).catch(function(){}); }
+  function load(){ SiteData.wrap('live_dashboard').then(function(x){ if(x&&x.value) applyLiveDashboard(x.value); }).catch(function(){}); }
   setTimeout(load,300); __onRevisit(load);
 })();
 </script>
@@ -1170,19 +1184,18 @@ refreshMetrics();__onRevisit(refreshMetrics);
     setHero(norm(v.hero)); setKyc(norm(v.ekyc)); setFeats(v.features);
   }
   function load(){
-    fetch(BASE+'/site-data/home_banners',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(x){
+    SiteData.wrap('home_banners').then(function(x){
       var v=x&&x.value?x.value:null, sig=JSON.stringify(v||null);
       if(sig===last)return; last=sig; apply(v);
     }).catch(function(){});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load);else load();
   __onRevisit(load);
-  document.addEventListener('visibilitychange',function(){if(!document.hidden)load();});
 })();
 </script>
 <script id="index-gallery-admin-sync">
 (function(){
-  function load(){ fetch(SHDL_API_BASE+'/site-data/index_gallery',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
+  function load(){ SiteData.wrap('index_gallery').then(function(x){
     var list=x&&x.value&&Array.isArray(x.value.photos)?x.value.photos:[]; if(!list.length) return;
     var slider=document.querySelector('.hero-slider'); if(!slider) return;
     list.slice(0,12).forEach(function(ph,i){
@@ -1245,7 +1258,7 @@ refreshMetrics();__onRevisit(refreshMetrics);
     renderTicker(items);
   }
   function load(){
-    fetch(SHDL_API_BASE+'/site-data/latest_updates',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
+    SiteData.wrap('latest_updates').then(function(x){
       if(x && x.value) applyLatestUpdates(x.value);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
@@ -1277,7 +1290,7 @@ refreshMetrics();__onRevisit(refreshMetrics);
     }).join('');
   }
   function load(){
-    fetch(SHDL_API_BASE+'/site-data/notices',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(x){
+    SiteData.wrap('notices').then(function(x){
       if(x && x.value) renderNoticeBoard(x.value);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });
   }
@@ -1337,14 +1350,21 @@ refreshMetrics();__onRevisit(refreshMetrics);
     // set hai, to seedha wahi typed values dikhao (DB se koi lena-dena
     // nahi). Agar Real Data hai (ya kabhi set hi nahi kiya gaya), to
     // /api/dashboard/live-stats se asli DB numbers khinchte hain.
-    fetch(SHDL_API_BASE+'/site-data/kyc_performance_mode',{cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(x){
+    SiteData.wrap('kyc_performance_mode').then(function(x){
       var cfg = x && x.value;
       if (cfg && cfg.mode === 'manual' && cfg.manual) {
         var m = Object.assign({}, cfg.manual, { __manual: true });
         applyValues(m);
         return null; // handled — live-stats fetch ki zaroorat nahi
       }
-      return fetch(SHDL_API_BASE+'/dashboard/live-stats',{cache:'no-store'}).then(function(r2){ return r2.ok ? r2.json() : null; });
+      /* live-stats is fetched only once the KYC stats block is actually on screen (not on every page load) */
+      return new Promise(function(res){
+        var go=function(){ fetch(SHDL_API_BASE+'/dashboard/live-stats').then(function(r2){ return r2.ok ? r2.json() : null; }).then(res,function(){res(null);}); };
+        var el=document.getElementById('kyc-stat-records')||document.getElementById('kyc-stat-verified');
+        if(!el||!('IntersectionObserver' in window)) return go();
+        var io=new IntersectionObserver(function(en){ if(en.some(function(e){return e.isIntersecting;})){ io.disconnect(); go(); } },{rootMargin:'200px'});
+        io.observe(el);
+      });
     }).then(function(s){
       if (s) applyValues(s);
     }).catch(function(){ /* backend down ho to bhi purane defaults dikhte rehte hain */ });

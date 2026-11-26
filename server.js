@@ -4337,7 +4337,10 @@ app.get('/api/site-data/:key', (req, res) => {
 //   kaam nahi karna padta.
 app.get('/api/site-data', (req, res) => {
     res.set('Cache-Control', 'public, max-age=30');
-    cachedDbQuery('SELECT `key`, value FROM kv_site_data', [], (err, rows) => {
+    // Optional ?keys=a,b,c -> only those keys are read/returned (small, cacheable payload for the landing page).
+    const wanted = String(req.query.keys || '').split(',').map(k => k.trim()).filter(k => /^[A-Za-z0-9_-]{1,60}$/.test(k)).slice(0, 30);
+    const sql = wanted.length ? 'SELECT `key`, value FROM kv_site_data WHERE `key` IN (' + wanted.map(() => '?').join(',') + ')' : 'SELECT `key`, value FROM kv_site_data';
+    cachedDbQuery(sql, wanted, (err, rows) => {
         if (err) return res.status(500).json({ error: 'DB error: ' + err.message });
         const out = {};
         (rows || []).forEach(r => {

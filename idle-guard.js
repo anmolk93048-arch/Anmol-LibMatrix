@@ -9,8 +9,8 @@
 (function () {
   if (window.__anmolIdleGuard) return; window.__anmolIdleGuard = true;
   var CFG = window.ANMOL_CONFIG || {};
-  var IDLE = (Number(CFG.IDLE_MIN) || 15) * 60 * 1000, WARN = 60 * 1000, PING_EVERY = 60 * 1000, THROTTLE = 4000;
-  var K_ACT = 'anmol_last_active', K_OUT = 'anmol_logout_signal';
+  var IDLE = (Number(CFG.IDLE_MIN) || 15) * 60 * 1000, WARN = 60 * 1000, PING_EVERY = 5 * 60 * 1000, THROTTLE = 4000;   // heartbeat every 5 min (server idle limit is 15 min), never from a hidden tab
+  var K_ACT = 'anmol_last_active', K_OUT = 'anmol_logout_signal', K_PING = 'anmol_last_ping';
   var TOKEN_KEYS = ['shdl_auth_token', 'pfms_auth_token', 'anmol_auth_token', 'anmolPortalUser', 'anmol_session', 'anmol_location', 'anmol_gate'];
   var lastWrite = 0, lastPing = 0, expiring = false, warnEl = null;
 
@@ -51,6 +51,7 @@
   };
 
   function clearLocal() {
+    ls(K_PING, null);
     TOKEN_KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} try { sessionStorage.removeItem(k); } catch (e) {} });
     ls(K_ACT, null);
   }
@@ -86,8 +87,12 @@
   }
   function hideWarn() { if (warnEl && warnEl.parentNode) warnEl.parentNode.removeChild(warnEl); warnEl = null; }
 
-  function ping() {
+  function ping(force) {
     var t = tokens()[0]; if (!t) return;
+    // one heartbeat per window across ALL open tabs (shared timestamp) — extra tabs don't add requests
+    var now = Date.now(), shared = Number(ls(K_PING)) || 0;
+    if (now - shared < (force ? 30000 : PING_EVERY - 5000)) return;
+    ls(K_PING, String(now)); lastPing = now;
     var h = { 'Content-Type': 'application/json', 'X-Anmol-Idle': '1', 'Authorization': 'Bearer ' + t };
     _fetch(api() + '/auth/ping', { method: 'POST', headers: h, body: '{}', keepalive: true }).then(function (r) {
       if (r.status === 401) return r.json().catch(function () { return {}; }).then(function (d) { expire(d.error || 'Your session has ended. Please log in again.', true); });
@@ -99,14 +104,15 @@
     var n = Date.now(), idleFor = n - (lastActive() || n);
     if (idleFor >= IDLE) return expire('You were signed out because of inactivity. Please log in again.');
     if (idleFor >= IDLE - WARN) showWarn(Math.max(1, Math.ceil((IDLE - idleFor) / 1000))); else hideWarn();
-    if (idleFor < PING_EVERY * 2 && n - lastPing >= PING_EVERY) { lastPing = n; ping(); }
+    // heartbeat only while the user is genuinely active (activity within the last interval) and the tab is visible
+    if (!document.hidden && idleFor < PING_EVERY && n - lastPing >= PING_EVERY) ping();
   }
 
   // ── start-up: a re-opened tab must not resume a stale session ──
   if (hasSession()) {
     var la = lastActive();
     if (la && Date.now() - la >= IDLE) { setTimeout(function () { expire('Your previous session expired. Please log in again.', false); }, 0); }
-    else { touch(true); setTimeout(ping, 1500); }                            // 1st ping also validates the token server-side (password changed elsewhere?)
+    else { touch(true); setTimeout(function () { ping(true); }, 1500); }                            // 1st ping also validates the token server-side (password changed elsewhere?)
   }
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll', 'click'].forEach(function (ev) { window.addEventListener(ev, function () { if (!expiring && hasSession()) touch(); }, { passive: true, capture: true }); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });

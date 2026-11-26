@@ -138,7 +138,18 @@ const API_BASE = window.SHDL_API_BASE || 'https://anmol-backend-851351972760.asi
 let AUTH_TOKEN = null;
 try { AUTH_TOKEN = localStorage.getItem('shdl_auth_token') || null; } catch (e) {}
 
-async function apiFetch(path, options) {
+/* Egress guard: identical GETs fired back-to-back (users, requests, requests?status=pending, counts, announcements, cms, site-data)
+   share ONE network call; their JSON is reused for 4 s. Any write (POST/PUT/DELETE) clears this cache so lists never go stale. */
+var __GET_SHARE = {}, __GET_SHARE_RE = /^\/(material\/(users|requests)|admin\/(announcements|cms)|site-data|blob\/|admin-entities\/)/;
+function apiFetch(path, options) {
+  var m = String((options && options.method) || 'GET').toUpperCase();
+  if (m !== 'GET') { __GET_SHARE = {}; return apiFetchRaw(path, options); }
+  if (!__GET_SHARE_RE.test(String(path)) || (options && options.cache)) return apiFetchRaw(path, options);
+  var hit = __GET_SHARE[path], now = Date.now();
+  if (!hit || now - hit.t > 4000) { hit = __GET_SHARE[path] = { t: now, p: apiFetchRaw(path, options) }; hit.p.catch(function () { if (__GET_SHARE[path] === hit) delete __GET_SHARE[path]; }); }
+  return hit.p.then(function (d) { return d == null ? d : JSON.parse(JSON.stringify(d)); });
+}
+async function apiFetchRaw(path, options) {
   options = options || {};
   var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
@@ -311,17 +322,24 @@ window.__onRevisit(_pollCloudStatus);
 // Ye helper localStorage ke saath legacy DB ko sync karta hai
 // localStorage = instant (UI ke liye), legacy DB = persistent (cloud backup)
 const CloudSync = {
+  _pulled: {}, _busy: {}, _ts: {},
   // Data load karo (naya backend ya legacy DB, key ke hisaab se) aur localStorage update karo
+  // (same key already in flight -> share that single request; no duplicate back-to-back calls)
   pull: function(key, cb) {
     if (BACKEND_ENTITY_KEYS.includes(key) || BACKEND_BLOB_KEYS.includes(key)) {
+      var q = CloudSync._busy[key];
+      if (q) { if (cb) q.push(cb); return; }
+      q = CloudSync._busy[key] = cb ? [cb] : [];
+      var fin = function(val) { delete CloudSync._busy[key]; q.forEach(function(f){ try { f(val); } catch(e){ console.error(e); } }); };
       var path = BACKEND_ENTITY_KEYS.includes(key) ? ('/admin-entities/' + key) : ('/blob/' + key);
       API.get(path).then(function(val) {
         try { localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch(e){}
-        if (cb) cb(val);
+        CloudSync._pulled[key] = true; CloudSync._ts[key] = Date.now();
+        fin(val);
       }).catch(function(err) {
         console.warn('Backend read error for', key, ':', err.message);
-        try { cb(JSON.parse(localStorage.getItem('shdl_' + key))); }
-        catch(e) { if (cb) cb(null); }
+        var c = null; try { c = JSON.parse(localStorage.getItem('shdl_' + key)); } catch(e) {}
+        fin(c);
       });
       return;
     }
@@ -329,8 +347,31 @@ const CloudSync = {
     try { var local = JSON.parse(localStorage.getItem('shdl_' + key)); if (cb) cb(local); }
     catch(e) { if (cb) cb(null); }
   },
+  /* Lazy-load support: pull only the keys a screen needs, once per session (re-pull only when older than `maxAge` ms
+     or `force`). cb(changed) fires when every key is ready; `changed` is true if any key was fetched from the server. */
+  ensure: function(keys, cb, force, maxAge) {
+    keys = (keys || []).filter(function(k){ return BACKEND_ENTITY_KEYS.includes(k) || BACKEND_BLOB_KEYS.includes(k); });
+    var age = maxAge == null ? 600000 : maxAge, now = Date.now();
+    var need = keys.filter(function(k){ return force || !CloudSync._pulled[k] || (now - (CloudSync._ts[k] || 0)) > age; });
+    if (!need.length) { if (cb) cb(false); return; }
+    var left = need.length;
+    need.forEach(function(k){ CloudSync.pull(k, function(){ if (--left === 0 && cb) cb(true); }); });
+  },
+  // Keys whose cache has NOT been refreshed from the server this session. A whole-array write from such a stale/empty
+  // cache would wipe server data, so it is merged into the server copy first (see push).
+  _guarded: function(key) { return !CloudSync._pulled[key] && !CloudSync._busy[key] && (BACKEND_ENTITY_KEYS.includes(key) || BACKEND_BLOB_KEYS.includes(key)) && key !== 'settings'; },
   // Data save karo (naya backend ya legacy DB, key ke hisaab se)
   push: function(key, val) {
+    if (CloudSync._guarded(key)) {
+      try { localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch(e){}
+      var local = val;
+      CloudSync.pull(key, function(server) {
+        var merged = CloudSync._merge(server, local);
+        try { localStorage.setItem('shdl_' + key, JSON.stringify(merged)); } catch(e){}
+        CloudSync.push(key, merged);
+      });
+      return;
+    }
     try { localStorage.setItem('shdl_' + key, JSON.stringify(val)); } catch(e){}
     if(key === 'att_records') { try { localStorage.setItem('shri_hari_mob_att', JSON.stringify(val)); } catch(e){} }
     if(key === 'fee_records') {
@@ -350,6 +391,17 @@ const CloudSync = {
 
     // No backend store for this key: local cache only (already saved above)
   },
+  _merge: function(server, local) {
+    if (server == null) return local;
+    if (Array.isArray(server) && Array.isArray(local)) {
+      var seen = {}; server.forEach(function(x){ seen[x && x.id != null ? 'i' + x.id : JSON.stringify(x)] = 1; });
+      var out = server.slice();
+      local.forEach(function(x){ var k = x && x.id != null ? 'i' + x.id : JSON.stringify(x); if (!seen[k]) { seen[k] = 1; out.push(x); } });
+      return out;
+    }
+    if (server && local && typeof server === 'object' && typeof local === 'object' && !Array.isArray(server) && !Array.isArray(local)) return Object.assign({}, local, server);
+    return server;
+  },
   del: function(key) {
     try { localStorage.removeItem('shdl_' + key); } catch(e){}
     if (BACKEND_ENTITY_KEYS.includes(key)) {
@@ -363,7 +415,8 @@ const CloudSync = {
   },
   // Saari important data legacy DB se pull karo (page load pe)
   pullAll: function(cb) {
-    var keys = ['admins','staff','agents','students','settings','activity','att_records','fee_records','notices','mem_plans','members','salary_claims','hrms_registrations','staff_att','leave_requests','agent_plans','agent_payments','razorpay_config','transactions'];
+    // Core only (branding/settings). Every other section loads when its own tab opens (see GOTO / PAGE_KEYS).
+    var keys = ['settings'];
     var done = 0;
     keys.forEach(function(k){
       CloudSync.pull(k, function(){
@@ -6546,16 +6599,19 @@ function SCRUB_LOCAL_ADMIN_PASSWORDS(){
 SCRUB_LOCAL_ADMIN_PASSWORDS();
 
 // ─── INIT DEFAULT DATA ───
-function INIT_DATA(){
+var __SEED_ONLY=null;
+function SEED_LOCAL(k,v){ if(__SEED_ONLY && __SEED_ONLY.indexOf(k)<0) return; try{ localStorage.setItem('shdl_'+k, JSON.stringify(v)); }catch(e){} }  /* default rows are cached locally only; never pushed to the server */
+function INIT_DATA(keys){ __SEED_ONLY = Array.isArray(keys)?keys:null; try{ INIT_DATA_BODY(); } finally { __SEED_ONLY=null; } }
+function INIT_DATA_BODY(){
   // 🔒 No default admin account is created in the browser any more (it used to carry a plain-text password).
   //    Super Admin accounts exist only on the server, where passwords are bcrypt-hashed.
   SCRUB_LOCAL_ADMIN_PASSWORDS();
-  if(!DB.get('staff')) DB.set('staff',[]);
-  if(!DB.get('salary_claims')) DB.set('salary_claims',[]);
-  if(!DB.get('hrms_registrations')) DB.set('hrms_registrations',[]);
-  if(!DB.get('staff_att')) DB.set('staff_att',[]);
-  if(!DB.get('leave_requests')) DB.set('leave_requests',[]);
-  if(!DB.get('students')) DB.set('students',[
+  if(!DB.get('staff')) SEED_LOCAL('staff',[]);
+  if(!DB.get('salary_claims')) SEED_LOCAL('salary_claims',[]);
+  if(!DB.get('hrms_registrations')) SEED_LOCAL('hrms_registrations',[]);
+  if(!DB.get('staff_att')) SEED_LOCAL('staff_att',[]);
+  if(!DB.get('leave_requests')) SEED_LOCAL('leave_requests',[]);
+  if(!DB.get('students')) SEED_LOCAL('students',[
     {id:'stu1',studentId:'SHL-001',name:'Rahul Kumar',mobile:'9123456789',batch:'1',seat:'A-01',fee:500,joinDate:'2024-01-01',addr:'Manjhaul',status:'active',created:NOW()},
     {id:'stu2',studentId:'SHL-002',name:'Priya Devi',mobile:'9123456790',batch:'2',seat:'B-01',fee:600,joinDate:'2024-01-05',addr:'Patna',status:'active',created:NOW()},
     {id:'stu3',studentId:'SHL-003',name:'Amit Sharma',mobile:'9123456791',batch:'1',seat:'A-02',fee:500,joinDate:'2024-02-01',addr:'Hajipur',status:'active',created:NOW()}
@@ -6574,9 +6630,9 @@ function INIT_DATA(){
     bankBank:'UCO Bank',
     bankBranch:''
   });
-  if(!DB.get('activity')) DB.set('activity',[]);
-  if(!DB.get('att_records')) DB.set('att_records',[]);
-  if(!DB.get('fee_records')) DB.set('fee_records',[
+  if(!DB.get('activity')) SEED_LOCAL('activity',[]);
+  if(!DB.get('att_records')) SEED_LOCAL('att_records',[]);
+  if(!DB.get('fee_records')) SEED_LOCAL('fee_records',[
     {id:'f1',studentId:'SHL-001',studentName:'Rahul Kumar',month:'March 2025',amount:500,mode:'Cash',status:'paid',date:'2025-03-01'},
     {id:'f2',studentId:'SHL-002',studentName:'Priya Devi',month:'March 2025',amount:600,mode:'UPI',status:'paid',date:'2025-03-02'},
     {id:'f3',studentId:'SHL-003',studentName:'Amit Sharma',month:'March 2025',amount:500,mode:'Cash',status:'pending',date:'—'},
@@ -6994,6 +7050,43 @@ function GOTO(page){
   // Scroll to top
   document.querySelector('.content-area').scrollTop=0;
 }
+
+/* ── LAZY TAB LOADING ──────────────────────────────────────────────────────────────
+   page id -> server keys it reads. Fetched once per session on first open (10 min freshness), shared if already
+   in flight, then the page re-renders from the fresh data. Pages not listed fetch nothing extra. */
+var PAGE_KEYS = {
+  'dashboard':['agents','staff','students','activity','agent_payments'],
+  'staff-users':['staff'], 'staff-verify':['staff','pending_staff'], 'salary-approvals':['salary_claims','staff'],
+  'agents':['agents'], 'hr-panel':['staff','hrms_registrations','staff_att','leave_requests'],
+  'students':['students'], 'admin-users':['admins'], 'attendance':['students','att_records','selfies','attendance_locations'],
+  'agent-performance':['agents','agent_payments'], 'fees':['students','fee_records'], 'withdrawals':['agents'],
+  'direct-payments':['agents','agent_payments'], 'delete-data':['agents','staff','students'],
+  'activity':['activity'], 'membership':['agent_plans','agent_payments','agents','mem_plans','members','fee_records'],
+  'control-access':['agents','staff'], 'settings':['settings'],
+  'hrms-registrations':['hrms_registrations']
+};
+var PAGE_LISTENERS = {
+  'students':['listenStudents'], 'attendance':['listenAttendance','listenSelfies','listenLocations'],
+  'hr-panel':['listenStaffSelfies','listenStaffLocations'], 'agent-performance':['listenTransactions'],
+  'dashboard':['listenTransactions'], 'salary-approvals':['listenSalary'], 'staff-verify':['listenPendingStaff'],
+  'fees':['listenFeeMembers'], 'membership':['listenFeeMembers']
+};
+var __GOTO_BASE = GOTO, __LISTENING = {};
+GOTO = function(page){
+  __GOTO_BASE(page);
+  var keys = PAGE_KEYS[page]; if(!keys && String(page).indexOf('config-')===0) keys = ['settings'];
+  (PAGE_LISTENERS[page]||[]).forEach(function(fn){ if(!__LISTENING[fn]){ __LISTENING[fn]=1; try{ CloudSync[fn](); }catch(e){} } });
+  if(!keys) return;
+  CloudSync.ensure(keys, function(changed){
+    if(!changed) return;
+    try{ INIT_DATA(keys); }catch(e){}
+    var pg = document.getElementById('page-'+page);
+    if(!pg || !pg.classList.contains('active')) return;
+    var ca = document.querySelector('.content-area'), top = ca ? ca.scrollTop : 0;
+    __GOTO_BASE(page);
+    if(ca) ca.scrollTop = top;
+  });
+};
 
 function TOGGLE_SIDEBAR(){
   var sb = document.getElementById('sidebar');
@@ -8167,7 +8260,7 @@ function ADMIN_REJECT_SAL(id){
 }
 
 // Real-time: Agent Login se koi naya claim ya verification aane par turant update
-(function INIT_SALARY_SYNC(){
+CloudSync.listenSalary = function(){
   CloudDB.ref(CLOUD_ROOT + '/salary_claims').on('value', function(snap){
     var val = snap.val();
     var claims = Array.isArray(val) ? val : (val ? Object.values(val) : []);
@@ -8178,7 +8271,7 @@ function ADMIN_REJECT_SAL(id){
       if(activePage && activePage.classList.contains('active')) RENDER_SALARY_APPROVALS();
     } catch(e2){}
   });
-})();
+};  /* started when the Salary Approvals tab opens (PAGE_LISTENERS) */
 
 // ════════════════════════════════════════════════════
 //  🧾 STAFF VERIFICATION — from Agent Login registrations
@@ -8414,7 +8507,7 @@ function ADMIN_REJECT_STAFF(id){
   RENDER_STAFF_VERIFY();
 }
 // Real-time: Agent Login se koi naya staff registration aane par turant update
-(function INIT_PENDING_STAFF_SYNC_ADMIN(){
+CloudSync.listenPendingStaff = function(){
   CloudDB.ref(CLOUD_ROOT + '/pending_staff').on('value', function(snap){
     var val = snap.val();
     var list = Array.isArray(val) ? val : (val ? Object.values(val) : []);
@@ -8425,7 +8518,7 @@ function ADMIN_REJECT_STAFF(id){
       if(activePage && activePage.classList.contains('active')) RENDER_STAFF_VERIFY();
     } catch(e2){}
   });
-})();
+};  /* started when the Staff Verify tab opens (PAGE_LISTENERS) */
 
 // ── 🖨️ Individual Salary Slip Print (sirf Approved claims ke liye) ──
 function PRINT_SALARY_SLIP(id){
@@ -12808,17 +12901,10 @@ window.addEventListener('storage', function(e){
 document.addEventListener('DOMContentLoaded',function(){
   // ── legacy DB se data pull karo, phir initialize karo ──
   CloudSync.pullAll(function(){
-    INIT_DATA();
+    INIT_DATA(['settings']);
     APPLY_SETTINGS();
     try{ ADMIN_PHOTO_RESTORE(); }catch(e){}
-    // Real-time listeners start karo
-    CloudSync.listenStudents();
-    CloudSync.listenAttendance();
-    CloudSync.listenSelfies();
-    CloudSync.listenLocations();
-    CloudSync.listenStaffSelfies();
-    CloudSync.listenStaffLocations();
-    CloudSync.listenTransactions();
+    // Live listeners are started lazily by the tab that needs them (see PAGE_LISTENERS) - nothing polls at login.
   });
   CREATE_PARTICLES();
   GEN_CAPTCHA();
@@ -13076,12 +13162,12 @@ var _selPlanColor = '#0F6E56';
 var _memPhotoData = '';
 
 function INIT_MEMBERSHIP(){
-  if(!DB.get('mem_plans')) DB.set('mem_plans',[
+  if(!DB.get('mem_plans')) SEED_LOCAL('mem_plans',[
     {id:'p1',name:'Monthly',days:30,price:300,desc:'Monthly access',color:'#0F6E56'},
     {id:'p2',name:'Quarterly',days:90,price:800,desc:'3 mahine ka access',color:'#534AB7'},
     {id:'p3',name:'Annual',days:365,price:2500,desc:'Poore saal ka access',color:'#c9a227'}
   ]);
-  if(!DB.get('members')) DB.set('members',[]);
+  if(!DB.get('members')) SEED_LOCAL('members',[]);
 }
 
 // ════════════════════════════════════════════════════
@@ -14303,15 +14389,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
 // On page load: pending registrations badge update karo
 (function INIT_PREG_BADGE() {
-  CloudDB.ref('shdl/pending_registrations').once('value', function(snap) {
-    var val = snap.val();
-    if (val) {
-      var pending = Object.values(val).filter(function(r){ return r.status==='pending'; }).length;
-      var badge = document.getElementById('nb-pending-regs');
-      if (badge) { badge.textContent = pending; badge.style.display = pending > 0 ? '' : 'none'; }
-    }
-  });
-  // Real-time listener bhi lagao
+  /* one read only: on() already reads immediately and re-checks when the tab is revisited (no duplicate once()+on() pair) */
   CloudDB.ref('shdl/pending_registrations').on('value', function(snap) {
     var val = snap.val();
     if (val) {
@@ -14329,19 +14407,7 @@ document.addEventListener('DOMContentLoaded', function(){
 //  mein yeh listener login/session dono band karta hai.
 //  In the Admin panel yeh sirf activity log karta hai.
 // ════════════════════════════════════════════════════
-(function INIT_BLOCK_ENFORCER(){
-  CloudDB.ref(CLOUD_ROOT + '/agents').on('value', function(snap){
-    var raw = snap.val();
-    if(!raw) return;
-    // legacy DB kabhi kabhi array ki jagah object bhejta hai (jab beech se
-    // koi agent delete hua ho) — dono cases handle karo
-    var agents = Array.isArray(raw) ? raw : Object.keys(raw).sort(function(a,b){return a-b;}).map(function(k){ return raw[k]; });
-    // Sync to localStorage so Agent Login file ka fallback bhi updated rahe
-    try {
-      localStorage.setItem('shdl_agents', JSON.stringify(agents));
-    } catch(e){}
-  });
-})();
+/* INIT_BLOCK_ENFORCER removed: it only mirrored 'agents' into the local cache, which the Dashboard/Agents tabs already pull on demand. */
 
 // ════════════════════════════════════════════════════
 //  💳 REAL-TIME FEE / MEMBERSHIP SYNC
@@ -14350,7 +14416,7 @@ document.addEventListener('DOMContentLoaded', function(){
 //  Panel ke Fee Payment aur Membership page ko update
 //  kar deta hai — bina reload/refresh kiye.
 // ════════════════════════════════════════════════════
-(function INIT_FEE_MEMBER_SYNC(){
+CloudSync.listenFeeMembers = function(){
   CloudDB.ref(CLOUD_ROOT + '/fee_records').on('value', function(snap){
     var val = snap.val();
     var records = Array.isArray(val) ? val : (val ? Object.values(val) : []);
@@ -14372,7 +14438,7 @@ document.addEventListener('DOMContentLoaded', function(){
       if (typeof RENDER_MEMBERS === 'function') RENDER_MEMBERS();
     } catch(e2){}
   });
-})();
+};  /* started when the Fees / Membership tab opens (PAGE_LISTENERS) */
 
 // ════════════════════════════════════════════════════
 //  ⏰ AUTO-LOGOUT ON INACTIVITY (15 min idle → logout)
@@ -17299,8 +17365,8 @@ window.GLOBAL_SEARCH=function(value){
   window.HDR_ANN_ADD=function(){items.push({text:'',url:'',active:true});render();};
   window.HDR_ANN_DEL=function(i){items.splice(i,1);render();};
   window.HDR_ANN_LOAD=function(){
-    fetch(API_BASE+'/admin/announcements',{headers:{Authorization:'Bearer '+AUTH_TOKEN}}).then(function(r){return r.json();})
-    .then(function(d){items=(d.items||[]).map(function(x){return {text:x.text||'',url:x.url||'',active:x.active!==false};});var s=$('hdr-ann-speed');if(s)s.value=d.speed||40;render();})
+    apiFetch('/admin/announcements')
+    .then(function(d){d=d||{};items=(d.items||[]).map(function(x){return {text:x.text||'',url:x.url||'',active:x.active!==false};});var s=$('hdr-ann-speed');if(s)s.value=d.speed||40;render();})
     .catch(function(){render();});
   };
   window.HDR_ANN_SAVE=function(){
