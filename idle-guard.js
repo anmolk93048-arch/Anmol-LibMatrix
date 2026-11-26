@@ -115,8 +115,11 @@
     else { touch(true); setTimeout(function () { ping(true); }, 1500); }                            // 1st ping also validates the token server-side (password changed elsewhere?)
   }
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll', 'click'].forEach(function (ev) { window.addEventListener(ev, function () { if (!expiring && hasSession()) touch(); }, { passive: true, capture: true }); });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
-  window.addEventListener('focus', tick);
+  // returning to a tab re-checks the session at once (shared 30 s throttle), so a session replaced on another device ends here immediately
+  function back() { tick(); if (!expiring && hasSession()) ping(true); }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) back(); });
+  window.addEventListener('focus', back);
+  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });   // right-click menu disabled; clicks, typing and inputs are unaffected
   window.addEventListener('storage', function (e) { if (e.key === K_OUT && e.newValue && !expiring) expire('You were signed out in another tab.', true); });
   setInterval(tick, 5000);
   window.AnmolIdle = { touch: function () { touch(true); }, expire: expire };

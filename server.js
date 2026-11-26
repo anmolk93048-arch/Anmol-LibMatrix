@@ -603,6 +603,100 @@ app.use(function (req, res, next) { return isSafeRootStaticPath(req.path) ? root
 
 // 🆕 Supabase layer: login/logout logging, form+registration mirroring and /api/portal/* routes.
 //    Mounted BEFORE the portal routes so it can observe them; the 404 handlers come last.
+// ══════════════════════════════════════════════════════════════════
+// 🔐 CENTRAL LOGIN RULES (authCore) — one place for EVERY login, current and future
+//   Mounted on /api BEFORE all routes, so any POST whose last path segment contains "login"
+//   (/auth/login, /material/login, /auth/admin-login-otp, a future /xyz/login ...) inherits the rules with no per-route code:
+//   1) IP block   : more than LOGIN_IP_MAX_FAILS (default 2) failed attempts from one IP -> that IP is blocked from every
+//                   login route for LOGIN_IP_BLOCK_MINUTES (default 15) with HTTP 429 / code IP_BLOCKED. A successful login clears the count.
+//   2) One session: a successful login returns {token}; the token's ID (username / userId) is stamped "newest session" (persisted in
+//                   auth_sessions, shared by all instances). getAuthUser() then rejects every OLDER token of that ID (other device,
+//                   other login screen) with 401 code SESSION_REVOKED — idle-guard.js shows "Session ended" and signs that tab out.
+//   A route that issues sessions on a path without "login" can call authCore.registerSession(jwtPayload) itself.
+// ══════════════════════════════════════════════════════════════════
+const authCore = (function () {
+    const MAX_FAILS = Math.max(1, parseInt(process.env.LOGIN_IP_MAX_FAILS, 10) || 2);
+    const BLOCK_MS = Math.max(1, parseInt(process.env.LOGIN_IP_BLOCK_MINUTES, 10) || 15) * 60 * 1000;
+    const WINDOW_MS = 15 * 60 * 1000, SKEW_MS = 3000, KEEP_MS = 8 * 24 * 3600 * 1000;
+    const ipFails = new Map();                 // ip -> { n, first, until }
+    const newest = new Map();                  // principal -> ms of the latest login
+    let since = Date.now() - KEEP_MS, lastLoad = 0, loading = false;
+
+    const LOGIN_RE = /^\/api\/(?:[a-z0-9_-]+\/)*[a-z0-9_-]*login[a-z0-9_-]*\/?$/i, NOT_LOGIN_RE = /(setting|config|option|apps?|page)s?\/?$/i;
+    const isLoginReq = (req) => req.method === 'POST' && LOGIN_RE.test(req.originalUrl.split('?')[0]) && !NOT_LOGIN_RE.test(req.originalUrl.split('?')[0].replace(/login/ig, ''));
+    const principalOf = (dec) => {
+        const id = dec && (dec.username || dec.userId || dec.u);
+        return id ? String(id).trim().toLowerCase().slice(0, 120) : '';
+    };
+    const ipOf = (req) => String(req.ip || (req.connection && req.connection.remoteAddress) || 'unknown-ip');
+    const blockedFor = (ip) => { const s = ipFails.get(ip); return s && s.until > Date.now() ? s.until - Date.now() : 0; };
+    function registerFail(ip) {
+        const now = Date.now();
+        let s = ipFails.get(ip);
+        if (!s || (s.until && s.until <= now) || (!s.until && now - s.first > WINDOW_MS)) s = { n: 0, first: now, until: 0 };
+        s.n++;
+        if (s.n > MAX_FAILS) { s.until = now + BLOCK_MS; console.warn('🔒 IP blocked from login for ' + Math.round(BLOCK_MS / 60000) + ' min after ' + s.n + ' failed attempts: ' + ip); }
+        ipFails.set(ip, s);
+    }
+    function load() {
+        if (loading) return; loading = true; lastLoad = Date.now();
+        dbq('SELECT principal, at_ms FROM auth_sessions WHERE at_ms > ?', [since - 5000]).then(function (rows) {
+            rows.forEach(function (r) { const at = Number(r.at_ms) || 0; if (at > (newest.get(r.principal) || 0)) newest.set(r.principal, at); if (at > since) since = at; });
+        }).catch(function () { /* table not created yet / DB hiccup: keep the in-memory view */ }).then(function () { loading = false; });
+    }
+    function registerSession(dec) {
+        const p = principalOf(dec); if (!p) return;
+        const at = Date.now(); newest.set(p, at); if (at > since) since = at;
+        dbq('INSERT INTO auth_sessions (principal, at_ms) VALUES (?, ?) ON CONFLICT (principal) DO UPDATE SET at_ms = EXCLUDED.at_ms', [p, at])
+            .catch(function (e) { console.warn('⚠️ auth_sessions write failed:', e.message); });
+    }
+    function isSuperseded(dec) {
+        if (Date.now() - lastLoad > 20000) load();                       // cheap incremental refresh, only while requests arrive
+        const p = principalOf(dec), at = p && newest.get(p);
+        return !!(at && dec && dec.iat && dec.iat * 1000 + SKEW_MS <= at);
+    }
+    function middleware(req, res, next) {
+        const login = isLoginReq(req), ip = ipOf(req);
+        if (login) {
+            const wait = blockedFor(ip);
+            if (wait > 0) {
+                const sec = Math.ceil(wait / 1000), mins = Math.ceil(wait / 60000);
+                res.set('Retry-After', String(sec));
+                return res.status(429).json({ error: 'Too many wrong attempts from this network. Login is blocked for ' + mins + ' minute' + (mins > 1 ? 's' : '') + '.', code: 'IP_BLOCKED', retryAfterSec: sec });
+            }
+        }
+        const origJson = res.json.bind(res);
+        res.json = function (body) {
+            try {
+                const code = body && body.code, st = res.statusCode;
+                if (st === 401 && req._sessionRevoked && body && !code) {
+                    body = Object.assign({}, body, { error: 'You were signed out because this ID logged in on another device or login screen.', code: 'SESSION_REVOKED' });
+                }
+                if (login) {
+                    if ((st === 401 && code !== 'OTP_REQUIRED' && !/^SESSION_/.test(code || '')) || (st === 404 && code === 'USER_NOT_FOUND')) registerFail(ip);
+                    else if (st >= 200 && st < 300 && body && typeof body.token === 'string') {
+                        ipFails.delete(ip);
+                        const dec = jwt.decode(body.token);
+                        if (dec && !dec.purpose) registerSession(dec);
+                    }
+                }
+            } catch (e) { /* never let this layer break a response */ }
+            return origJson(body);
+        };
+        next();
+    }
+    setInterval(function () { const n = Date.now(); ipFails.forEach(function (s, k) { if ((s.until && s.until <= n) || (!s.until && n - s.first > WINDOW_MS)) ipFails.delete(k); }); }, 5 * 60 * 1000).unref();
+    setTimeout(function () { load(); dbq('DELETE FROM auth_sessions WHERE at_ms < ?', [Date.now() - KEEP_MS]).catch(function () {}); }, 5000).unref();
+    return { middleware: middleware, isSuperseded: isSuperseded, registerSession: registerSession };
+})();
+app.use('/api', authCore.middleware);
+// Heartbeat used by idle-guard.js: 200 while this session is still the active one, 401 (SESSION_REVOKED / invalid) otherwise.
+app.post('/api/auth/ping', noStore, (req, res) => {
+    const auth = getAuthUser(req);
+    if (!auth) return res.status(401).json({ error: 'Your session has ended. Please log in again.' });
+    res.json({ ok: true });
+});
+
 supabasePortals.mount(app, { getAuthUser: getAuthUser, requireRole: requireRole });
 
 
@@ -621,6 +715,7 @@ function getAuthUser(req) {
         if (supabasePortals.isRevoked(token)) return null; // 🆕 logged-out token (Supabase revoked_tokens)
         const dec = jwt.verify(token, JWT_SECRET);
         if (accountSecurity.isStale(dec)) return null;   // 🔐 password changed after this token was issued
+        if (authCore.isSuperseded(dec)) { req._sessionRevoked = true; return null; }   // 🔐 same ID logged in again elsewhere -> this session is over
         // 🔒 A Super Admin password login only yields a short-lived PRE-GATE token. It is accepted solely by the
         //    role/location endpoints below, so the dashboard and every admin API stay locked until a role AND a
         //    location have been chosen (POST /api/portal/route issues the real session token).
@@ -1747,6 +1842,7 @@ db.getConnection((err, connection) => {
     // ko catch karo" pattern se kaafi seedha/saaf hai, koi error-message
     // pattern-matching ki zaroorat nahi.
     const COLUMN_FIXES = [
+        "CREATE TABLE IF NOT EXISTS auth_sessions (principal VARCHAR(120) PRIMARY KEY, at_ms BIGINT NOT NULL)",   // 🔐 newest login per ID (single active session)
         ...require('./dv-invoice-module').SCHEMA_SQL,   // 🧾 Option B tables + material_users.invoice_version
         "ALTER TABLE material_users ADD COLUMN IF NOT EXISTS address VARCHAR(500)",
         // 🆕 Structured registration: First / Middle / Last name + State, District, Block, Village, PIN. `name`, `village` and `address`
