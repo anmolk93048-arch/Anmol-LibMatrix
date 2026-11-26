@@ -30,6 +30,29 @@
 <title>Admin Control Panel — Anmol LibMatrix</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>
+const SA_PAGE = 5;   // rows per page in every list (Material Master, Invoice Material List, Session B lists)
+/* numbered pager: Prev · 1 2 3 … · Next — `fn` is the global function called with the page number */
+function SA_PAGER(page, pages, fn){
+  if(pages<=1) return '';
+  var set={}; [1,pages,page-2,page-1,page,page+1,page+2].forEach(function(n){ if(n>=1&&n<=pages) set[n]=1; });
+  var nums=Object.keys(set).map(Number).sort(function(a,b){return a-b;});
+  function bt(l,n,on,dis){ return '<button type="button" '+(dis?'disabled ':'')+'onclick="'+fn+'('+n+')" class="sa-pg'+(on?' on':'')+'">'+l+'</button>'; }
+  var h=bt('‹ Prev',page-1,false,page<=1),prev=0;
+  nums.forEach(function(n){ if(prev&&n-prev>1) h+='<span class="sa-pg-gap">…</span>'; h+=bt(n,n,n===page,false); prev=n; });
+  return h+bt('Next ›',page+1,false,page>=pages);
+}
+/* type-ahead for a user picker: asks the server only after 2+ typed characters (max 10 rows come back) */
+function SA_USER_TYPEAHEAD(inputId, listId, extra){
+  var el=document.getElementById(inputId); if(!el||el._ta) return; el._ta=true; var t;
+  el.addEventListener('input',function(){
+    clearTimeout(t); var q=el.value.trim(); if(q.length<2) return;
+    t=setTimeout(function(){
+      apiFetch('/admin/dv-users?q='+encodeURIComponent(q)+(extra||'')).then(function(r){
+        document.getElementById(listId).innerHTML=(r||[]).map(function(u){ return '<option value="'+String(u.userId).replace(/"/g,'&quot;')+'">'+String(u.name+(u.village?' ('+u.village+')':'')).replace(/[<&]/g,' ')+'</option>'; }).join('');
+      }).catch(function(){});
+    },300);
+  });
+}
 let materialUsersCache = [];
 let materialRequestsCache = [];
 
@@ -2691,6 +2714,9 @@ html,body,#admin-app{width:100%;min-width:0;}
 .sa-card{background:var(--card-bg,#fff);border:1px solid var(--border,#dce6f1);border-radius:12px;padding:16px;margin-top:14px}
 .sa-card h3{margin:0 0 10px;font-size:14px}
 .sa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.sa-pager{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center;padding:10px 0 4px}
+.sa-pg{min-width:32px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;color:inherit;font-weight:700;cursor:pointer}
+.sa-pg.on{background:#c9a227;border-color:#c9a227;color:#1a1a1a}.sa-pg:disabled{opacity:.4;cursor:not-allowed}.sa-pg-gap{padding:0 4px;opacity:.6}
 .sa-row{display:grid;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border,#dce6f1)}
 .sa-row:last-child{border-bottom:0}
 .sa-in{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#cfd9e6);border-radius:8px;background:var(--input-bg,#fff);color:inherit;font:inherit;font-size:12.5px}
@@ -3595,7 +3621,7 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="card" style="padding:14px">
             <div id="mm-tabs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-              <div class="search-bar"><span style="color:var(--text-muted);font-size:13px">🔍</span><input type="text" id="mm-search" placeholder="Search material name or code..." oninput="MM_RENDER()"></div>
+              <div class="search-bar"><span style="color:var(--text-muted);font-size:13px">🔍</span><input type="text" id="mm-search" placeholder="Search material name or code..." oninput="MM_PAGE=1;MM_RENDER()"></div>
               <button class="btn btn-ghost btn-sm" onclick="MM_ADD_ITEM()">+ Add Material</button>
               <button class="btn btn-ghost btn-sm" onclick="MM_RENAME_CAT()">✏️ Rename Category</button>
               <button class="btn btn-ghost btn-sm" style="color:#c0262d" onclick="MM_DEL_CAT()">🗑 Delete Category</button>
@@ -3605,6 +3631,7 @@ html,body,#admin-app{width:100%;min-width:0;}
               <thead><tr><th>#</th><th>Code</th><th>Material Name</th><th>HSN / SAC</th><th>Unit</th><th>GST %</th><th>Default Price (₹)</th><th title="Untick to hide this material from the invoice dropdown (rows already using it keep it)">Show on invoice</th><th></th></tr></thead>
               <tbody id="mm-tbody"></tbody>
             </table></div>
+            <div id="mm-pager" class="sa-pager"></div>
           </div>
           <datalist id="mm-units"><option value="Day"><option value="Cum"><option value="Sq.m"><option value="Nos"><option value="Kg"><option value="Qtl"><option value="MT"><option value="Rmt"><option value="Bag"><option value="Litre"><option value="Set"></datalist>
         </div>
@@ -3652,6 +3679,7 @@ html,body,#admin-app{width:100%;min-width:0;}
                 <tbody id="material-users-table"></tbody>
               </table>
             </div>
+            <div id="mu-pager" class="sa-pager"></div>
           </div>
         </div>
 
@@ -3669,7 +3697,8 @@ html,body,#admin-app{width:100%;min-width:0;}
           <div class="sa-card" style="margin-top:0">
             <h3>🏢 Company Profile <span style="font-size:11px;font-weight:600;opacity:.7">— saved &amp; locked per user</span></h3>
             <div style="max-width:520px;margin-bottom:10px"><label class="sa-lbl">Edit the profile of</label>
-              <select class="sa-in" id="dv-target" onchange="ISB.loadProfile()"></select></div>
+              <select class="sa-in" id="dv-target" onchange="ISB.loadProfile()"><option value="__default__">★ Default template (copied to users when they are mapped)</option></select>
+              <input class="sa-in" id="dv-find" list="dv-find-list" placeholder="…or type a Session B user to edit their profile" autocomplete="off" style="margin-top:6px" onchange="ISB.edit(this.value)"><datalist id="dv-find-list"></datalist></div>
             <div id="dv-hint" style="font-size:12px;opacity:.8;margin-bottom:8px"></div>
             <div class="sa-grid">
               <div><label class="sa-lbl">Company name</label><input class="sa-in" id="dv-name" maxlength="120" placeholder="e.g. DEV ENTERPRISES"></div>
@@ -3704,25 +3733,29 @@ html,body,#admin-app{width:100%;min-width:0;}
             <div id="dvc-msg" class="sa-msg"></div>
             <div id="dvc-editor" style="display:none">
               <div style="font-weight:800;margin:8px 0 4px">Master items — <span id="dvc-title"></span></div>
-              <div class="tbl-wrap" style="max-height:420px;overflow:auto"><table>
-                <thead><tr><th style="width:44px">#</th><th>Item name</th><th style="width:130px">Default unit / qty type</th><th style="width:110px">Default GST %</th><th style="width:48px"></th></tr></thead>
+              <div style="max-width:420px;margin-bottom:8px"><input class="sa-in" id="dvc-q" type="search" placeholder="🔍 Search items in this category…" oninput="DVC.search()" autocomplete="off"></div>
+              <div class="tbl-wrap"><table>
+                <thead><tr><th style="width:44px">#</th><th>Item name</th><th style="width:130px">Default unit / qty type</th><th style="width:110px">Default GST %</th><th style="width:96px"></th></tr></thead>
                 <tbody id="dvc-body"></tbody>
               </table></div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-                <button class="btn btn-ghost btn-sm" type="button" onclick="DVC.addRow()">＋ Add item row</button>
-                <button class="btn btn-gold btn-sm" type="button" onclick="DVC.save()">💾 Save catalog</button>
+              <div id="dvc-pager" class="sa-pager"></div>
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;margin-top:8px">
+                <div><label class="sa-lbl">New item name</label><input class="sa-in" id="dvc-n-name" maxlength="120" placeholder="e.g. Paracetamol 500mg"></div>
+                <div><label class="sa-lbl">Unit</label><input class="sa-in" id="dvc-n-unit" maxlength="20" value="Pcs" list="mm-units"></div>
+                <div><label class="sa-lbl">GST %</label><input class="sa-in" id="dvc-n-gst" type="number" min="0" max="100" step="0.01" value="0"></div>
+                <button class="btn btn-gold btn-sm" type="button" onclick="DVC.addItem()">＋ Add item</button>
               </div>
-              <div style="margin-top:10px"><label class="sa-lbl">Bulk add — one item per line: <code>Name, Unit, GST%</code> (unit and GST are optional)</label>
+              <div style="margin-top:10px"><label class="sa-lbl">Bulk add — one item per line: <code>Name, Unit, GST%</code> (unit and GST are optional; existing names are skipped)</label>
                 <textarea class="sa-in" id="dvc-bulk" rows="3" placeholder="Paracetamol 500mg, Strip, 12&#10;Notebook A4, Pcs, 12" style="resize:vertical"></textarea>
-                <button class="btn btn-ghost btn-sm" type="button" style="margin-top:6px" onclick="DVC.bulk()">⤓ Add these lines to the list</button></div>
-              <div style="font-size:11.5px;opacity:.75;margin-top:6px">Removing an item here also removes every user's saved rate for it. Users set their own Selling Price, GST % and default pieces from their Session B "Item Rate &amp; GST Settings" tab.</div>
+                <button class="btn btn-ghost btn-sm" type="button" style="margin-top:6px" onclick="DVC.bulk()">⤓ Add these lines to the category</button></div>
+              <div style="font-size:11.5px;opacity:.75;margin-top:6px">Each row saves on its own (💾) and shows 5 items per page. Removing an item also removes every user's saved rate for it. Users set their own Selling Price, GST % and default qty from their Session B "Item Rate &amp; GST Settings" tab.</div>
             </div>
           </div>
 
           <div class="sa-card">
             <h3>🔗 Map User IDs to Session B</h3>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-              <select class="sa-in" id="isb-pick" style="flex:1;min-width:240px"></select>
+              <input class="sa-in" id="isb-pick" list="isb-pick-list" placeholder="Type 2+ letters of a name / mobile / User ID to find a user…" autocomplete="off" style="flex:1;min-width:240px"><datalist id="isb-pick-list"></datalist>
               <button class="btn btn-ghost btn-sm" type="button" onclick="ISB.addPicked()">＋ Add selected user</button>
             </div>
             <div style="max-width:420px;margin-bottom:8px"><label class="sa-lbl">Business Category for these users</label><select class="sa-in" id="isb-cat"></select></div>
@@ -3735,16 +3768,19 @@ html,body,#admin-app{width:100%;min-width:0;}
           </div>
 
           <div class="card" style="margin-top:14px">
-            <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:800">Users on Session B (<span id="isb-b">0</span>)</div>
+            <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:800;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+              <span>Users on Session B (<span id="isb-b">0</span>)</span>
+              <input class="sa-in" id="isb-search" type="search" placeholder="🔍 Search User ID, name, mobile…" oninput="ISB.search()" style="max-width:300px" autocomplete="off"></div>
             <div class="tbl-wrap"><table>
               <thead><tr><th style="color:#c9a227">🪪 User ID</th><th>Name</th><th>Company profile</th><th>Business Category</th><th>Plan</th><th>Bills</th><th>Action</th></tr></thead>
               <tbody id="isb-body"></tbody>
             </table></div>
+            <div id="isb-pager" class="sa-pager"></div>
           </div>
 
           <div class="sa-card" style="margin-top:18px">
             <h3>📜 Plan History &amp; Status <span style="font-size:11px;font-weight:600;opacity:.7">— purchases and admin grants of one user</span></h3>
-            <div style="max-width:520px"><select class="sa-in" id="hist-user" onchange="PLN.history()"></select></div>
+            <div style="max-width:520px"><input class="sa-in" id="hist-user" list="hist-user-list" placeholder="Type a Session B user to see their plan history…" autocomplete="off" onchange="PLN.history()"><datalist id="hist-user-list"></datalist></div>
             <div id="hist-status" style="margin:8px 0;font-size:13px"></div>
             <div class="tbl-wrap"><table>
               <thead><tr><th>Date (IST)</th><th>Plan</th><th>By</th><th>Action</th><th>Days</th><th>Paid (₹)</th><th>Valid till</th></tr></thead>
@@ -10315,9 +10351,9 @@ function MAT_REFRESH(){
 //    again when you press ↻ Refresh / act on a request, and when you come back to this tab after at least a minute.
 var _matLastRefresh = 0;
 (function(){ var _r=MAT_REFRESH; MAT_REFRESH=function(){ _matLastRefresh=Date.now(); return _r.apply(this,arguments); }; })();
-document.addEventListener('visibilitychange', function(){ if(!document.hidden && Date.now()-_matLastRefresh>60000) MAT_REFRESH(); });
+document.addEventListener('visibilitychange', function(){ if(!document.hidden && _matLastRefresh && Date.now()-_matLastRefresh>60000) MAT_REFRESH(); });
 ['RENDER_MATERIAL_USERS','RENDER_MATERIAL_REQUESTS'].forEach(function(n){ var f=window[n]; if(typeof f!=='function') return; window[n]=function(){ var r=f.apply(this,arguments); setTimeout(MAT_LAZY_PHOTOS,0); return r; }; });
-setTimeout(MAT_REFRESH, 2500);
+// (no automatic download at login — the lists load when the Invoice Material List / Pending Registrations page is opened)
 
 function RENDER_MATERIAL_REQUESTS(){
   var card=document.getElementById('mu-pending-card');
@@ -10757,6 +10793,8 @@ function DELETE_MATERIAL_USER(docId){
 
 function SEARCH_MATERIAL_USERS(v){ RENDER_MATERIAL_USERS(v); }
 
+var MU_PAGE=1, MU_LASTF='';
+function MU_GOTO(n){ MU_PAGE=n; RENDER_MATERIAL_USERS(document.getElementById('mu-search')?document.getElementById('mu-search').value:''); }
 function RENDER_MATERIAL_USERS(filter){
   filter=(filter||'').toLowerCase();
   var all=materialUsersCache;
@@ -10771,6 +10809,10 @@ function RENDER_MATERIAL_USERS(filter){
   set('nb-material-users',all.length);
   var tbody=document.getElementById('material-users-table');
   if(!tbody) return;
+  if(filter!==MU_LASTF){ MU_PAGE=1; MU_LASTF=filter; }
+  var muPages=Math.max(1,Math.ceil(list.length/SA_PAGE)); if(MU_PAGE>muPages) MU_PAGE=muPages;
+  var muOff=(MU_PAGE-1)*SA_PAGE; list=list.slice(muOff,muOff+SA_PAGE);          // only 5 rows are drawn (and only their photos are requested)
+  var muPg=document.getElementById('mu-pager'); if(muPg) muPg.innerHTML=SA_PAGER(MU_PAGE,muPages,'MU_GOTO');
   if(!list.length){
     tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-muted)">No material users found</td></tr>';
     return;
@@ -10779,7 +10821,7 @@ function RENDER_MATERIAL_USERS(filter){
     var isBlocked=u.status==='blocked';
     var id=u._docId;
     return '<tr>'
-      +'<td>'+(i+1)+'</td>'
+      +'<td>'+(muOff+i+1)+'</td>'
       +'<td>'+MAT_PHOTO(u,34,'linear-gradient(135deg,#A32D2D,#e04444)')+'</td>'
       +'<td style="font-family:\'JetBrains Mono\',monospace;font-weight:800;color:#c9a227">'+MAT_ESC(u.userId||'—')+'</td>'
       +'<td>'+MAT_ESC(u.name||'—')+'</td>'
@@ -16999,24 +17041,26 @@ window.GLOBAL_SEARCH=function(value){
   window.GOTO=function(page){_G2(page);if(page==='settings')MU.load();};
 })();
 
-/* 🏷️ Invoice Session B — Business Categories, master item catalog and per-user category assignment */
+/* 🏷️ Invoice Session B — Business Categories, master item catalog (5 per page, loaded only for the selected category) */
 (function(){
   function $(i){return document.getElementById(i);}
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function say(t,ok){var m=$('dvc-msg');if(m){m.textContent=t||'';m.className='sa-msg '+(ok?'ok':'err');}}
-  var list=[],items=[],cur=0;
+  var list=[],cur=0,st={page:1,pages:1,total:0,rows:[]},qTimer=null,seq=0;
   function selId(){var s=$('dvc-sel');return s?parseInt(s.value,10)||0:0;}
   function selName(){var c=list.filter(function(x){return x.id===selId();})[0];return c?c.name:'';}
   function renderItems(){
     var b=$('dvc-body'),ed=$('dvc-editor');if(!b||!ed)return;
     ed.style.display=cur?'':'none';if(!cur)return;
-    $('dvc-title').textContent=selName()+' ('+items.length+' item'+(items.length===1?'':'s')+')';
-    b.innerHTML=items.length?items.map(function(it,i){
-      return '<tr><td>'+(i+1)+'</td><td><input class="sa-in" data-i="'+i+'" data-f="name" maxlength="120" value="'+esc(it.name)+'"></td>'
-        +'<td><input class="sa-in" data-i="'+i+'" data-f="unit" maxlength="20" value="'+esc(it.unit)+'"></td>'
-        +'<td><input class="sa-in" data-i="'+i+'" data-f="gst" type="number" min="0" max="100" step="0.01" value="'+esc(it.gst)+'"></td>'
-        +'<td><button class="btn btn-sm btn-ghost" type="button" title="Remove" onclick="DVC.rm('+i+')">✕</button></td></tr>';
-    }).join(''):'<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">No items yet — add rows or use bulk add.</td></tr>';
+    $('dvc-title').textContent=selName()+' ('+st.total+' item'+(st.total===1?'':'s')+')';
+    var off=(st.page-1)*SA_PAGE;
+    b.innerHTML=st.rows.length?st.rows.map(function(it,i){
+      return '<tr data-id="'+it.id+'"><td>'+(off+i+1)+'</td><td><input class="sa-in" data-f="name" maxlength="120" value="'+esc(it.name)+'"></td>'
+        +'<td><input class="sa-in" data-f="unit" maxlength="20" list="mm-units" value="'+esc(it.unit)+'"></td>'
+        +'<td><input class="sa-in" data-f="gst" type="number" min="0" max="100" step="0.01" value="'+esc(it.gst)+'"></td>'
+        +'<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" type="button" title="Save this row" onclick="DVC.saveRow('+it.id+')">💾</button> <button class="btn btn-sm btn-ghost" type="button" title="Delete" onclick="DVC.delRow('+it.id+')">🗑️</button></td></tr>';
+    }).join(''):'<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--text-muted)">'+(($('dvc-q')||{}).value?'No matching item.':'No items yet — add one below or use bulk add.')+'</td></tr>';
+    $('dvc-pager').innerHTML=SA_PAGER(st.page,st.pages,'DVC.items');
   }
   window.DVC={
     opts:function(sel){return '<option value="">— Not assigned —</option>'+list.map(function(c){return '<option value="'+c.id+'"'+(String(sel||'')===String(c.id)?' selected':'')+'>'+esc(c.name)+'</option>';}).join('');},
@@ -17031,11 +17075,20 @@ window.GLOBAL_SEARCH=function(value){
         return DVC.pick(true);
       }).catch(function(e){say(e.message||'Unable to load categories.');});
     },
-    pick:function(quiet){
-      cur=selId();if(!quiet)say('');
-      if(!cur){items=[];renderItems();return Promise.resolve();}
-      return apiFetch('/admin/dv-categories/'+cur+'/items').then(function(r){items=r||[];renderItems();}).catch(function(e){say(e.message);});
+    pick:function(keepPage){
+      var id=selId(),changed=id!==cur;cur=id;if(!keepPage||changed){say('');if($('dvc-q'))$('dvc-q').value='';}
+      return DVC.items(changed||!keepPage?1:st.page);
     },
+    items:function(page){
+      if(!cur){st={page:1,pages:1,total:0,rows:[]};renderItems();return Promise.resolve();}
+      var my=++seq;
+      return apiFetch('/admin/dv-categories/'+cur+'/items?page='+(page||1)+'&pageSize='+SA_PAGE+'&q='+encodeURIComponent(($('dvc-q')||{}).value||'')).then(function(r){
+        if(my!==seq)return;
+        if(r.page>r.pages&&r.pages>0)return DVC.items(r.pages);
+        st=r;renderItems();
+      }).catch(function(e){say(e.message);});
+    },
+    search:function(){clearTimeout(qTimer);qTimer=setTimeout(function(){DVC.items(1);},300);},
     add:function(){
       var n=($('dvc-name').value||'').trim();if(!n){say('Enter a category name.');return;}
       apiFetch('/admin/dv-categories',{method:'PUT',body:JSON.stringify({name:n})}).then(function(r){$('dvc-name').value='';cur=r.id;say('Category "'+r.name+'" added — now add its master items.',true);return DVC.load();}).catch(function(e){say(e.message);});
@@ -17049,31 +17102,42 @@ window.GLOBAL_SEARCH=function(value){
       if(!confirm('Delete category "'+selName()+'" and all its master items? Users\' saved rates for these items are removed too.'))return;
       apiFetch('/admin/dv-categories/'+id,{method:'DELETE'}).then(function(){cur=0;say('Category deleted.',true);return DVC.load();}).catch(function(e){say(e.message);});
     },
-    addRow:function(){items.push({name:'',unit:'Pcs',gst:0});renderItems();var b=$('dvc-body');if(b&&b.lastElementChild){var i=b.lastElementChild.querySelector('input');if(i)i.focus();}},
-    rm:function(i){items.splice(i,1);renderItems();},
+    addItem:function(){
+      if(!cur){say('Select a category first.');return;}
+      var b={name:$('dvc-n-name').value,unit:$('dvc-n-unit').value,gst:$('dvc-n-gst').value};if(!String(b.name).trim()){say('Enter the item name.');return;}
+      apiFetch('/admin/dv-categories/'+cur+'/item',{method:'PUT',body:JSON.stringify(b)}).then(function(r){
+        $('dvc-n-name').value='';$('dvc-q').value='';say('Item "'+r.name+'" added.',true);return DVC.items(1).then(DVC.refreshCounts);
+      }).catch(function(e){say(e.message);});
+    },
+    saveRow:function(id){
+      var tr=$('dvc-body').querySelector('tr[data-id="'+id+'"]');if(!tr)return;
+      var b={id:id};tr.querySelectorAll('[data-f]').forEach(function(el){b[el.getAttribute('data-f')]=el.value;});
+      apiFetch('/admin/dv-categories/'+cur+'/item',{method:'PUT',body:JSON.stringify(b)}).then(function(){say('Saved.',true);SHOW_TOAST('✅ Item saved.');return DVC.items(st.page);}).catch(function(e){say(e.message);});
+    },
+    delRow:function(id){
+      var tr=$('dvc-body').querySelector('tr[data-id="'+id+'"]'),n=tr?tr.querySelector('[data-f="name"]').value:'this item';
+      if(!confirm('Delete "'+n+'"? Every user\'s saved rate for it is removed too.'))return;
+      apiFetch('/admin/dv-categories/'+cur+'/item/'+id,{method:'DELETE'}).then(function(){say('Item deleted.',true);return DVC.items(st.page).then(DVC.refreshCounts);}).catch(function(e){say(e.message);});
+    },
     bulk:function(){
-      var t=($('dvc-bulk').value||'').split(/\r?\n/),have={},added=0,skipped=0;items.forEach(function(x){have[String(x.name).trim().toLowerCase()]=1;});
-      t.forEach(function(line){
+      if(!cur){say('Select a category first.');return;}
+      var lines=[];($('dvc-bulk').value||'').split(/\r?\n/).forEach(function(line){
         var p=line.split(/\t|,/).map(function(x){return x.trim();});if(!p[0])return;
-        var k=p[0].toLowerCase();if(have[k]){skipped++;return;}have[k]=1;
-        var g=p[2]===undefined||p[2]===''?0:Number(p[2]);items.push({name:p[0],unit:p[1]||'Pcs',gst:isFinite(g)?g:0});added++;
+        var g=p[2]===undefined||p[2]===''?0:Number(p[2]);lines.push({name:p[0],unit:p[1]||'Pcs',gst:isFinite(g)?g:0});
       });
-      $('dvc-bulk').value='';renderItems();say(added+' item(s) added to the list'+(skipped?', '+skipped+' duplicate(s) skipped':'')+' — press "Save catalog" to store them.',true);
+      if(!lines.length){say('Type or paste at least one line.');return;}
+      apiFetch('/admin/dv-categories/'+cur+'/items/bulk',{method:'POST',body:JSON.stringify({lines:lines})}).then(function(r){
+        $('dvc-bulk').value='';say(r.added+' item(s) added'+(r.skipped?', '+r.skipped+' already existed':'')+'.',true);return DVC.items(1).then(DVC.refreshCounts);
+      }).catch(function(e){say(e.message);});
     },
-    save:function(){
-      if(!cur)return;
-      apiFetch('/admin/dv-categories/'+cur+'/items',{method:'PUT',body:JSON.stringify({items:items})}).then(function(r){items=r||[];renderItems();say('Catalog saved ('+items.length+' items).',true);SHOW_TOAST('✅ Catalog saved.');return DVC.load();}).catch(function(e){say(e.message);});
-    },
+    refreshCounts:function(){return apiFetch('/admin/dv-categories').then(function(r){list=r||[];var s=$('dvc-sel');if(!s)return;var k=s.value;
+      s.innerHTML=list.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+c.items+' item(s), '+c.users+' user(s)</option>';}).join('');s.value=k;$('dvc-title').textContent=selName()+' ('+st.total+' item'+(st.total===1?'':'s')+')';}).catch(function(){});},
     assign:function(userId,catId){
       apiFetch('/admin/dv-mapping',{method:'PUT',body:JSON.stringify({userIds:[userId],session:'B',categoryId:catId||''})})
-        .then(function(){SHOW_TOAST('✅ '+userId+' → '+(catId?(list.filter(function(c){return String(c.id)===String(catId);})[0]||{}).name:'no category'));ISB.load();DVC.load();})
+        .then(function(){SHOW_TOAST('✅ '+userId+' → '+(catId?(list.filter(function(c){return String(c.id)===String(catId);})[0]||{}).name:'no category'));ISB.load();DVC.refreshCounts();})
         .catch(function(e){SHOW_TOAST('❌ '+e.message);ISB.load();});
     }
   };
-  document.addEventListener('input',function(e){
-    var t=e.target;if(!t||!t.getAttribute||t.getAttribute('data-f')==null||!t.closest||!t.closest('#dvc-body'))return;
-    var it=items[parseInt(t.getAttribute('data-i'),10)];if(it)it[t.getAttribute('data-f')]=t.value;
-  });
 })();
 
 /* 🧾 Invoice Session B — per-user company profiles, mapping, plans (Invoice Session B page) */
@@ -17095,14 +17159,23 @@ window.GLOBAL_SEARCH=function(value){
     return '<div style="color:'+col+';font-weight:800">'+t+'</div><div style="font-size:11px;opacity:.7">'+esc(p.planName||'')+'</div>';
   }
   window.ISB={
-    load:function(){
-      return apiFetch('/admin/dv-mapping').then(function(r){rows=r||[];ISB.render();ISB.fillTargets();ISB.fillPick();PLN.fillSelect();PLN.fillHist();})
+    page:1,pages:1,total:0,b:0,q:'',_t:null,_init:false,
+    load:function(page){
+      if(page)ISB.page=page;
+      if(!ISB._init){ISB._init=true;SA_USER_TYPEAHEAD('isb-pick','isb-pick-list','&notSession=B');SA_USER_TYPEAHEAD('dv-find','dv-find-list','&session=B');SA_USER_TYPEAHEAD('hist-user','hist-user-list','&session=B');ISB.loadProfile();}
+      return apiFetch('/admin/dv-mapping?session=B&page='+ISB.page+'&pageSize='+SA_PAGE+'&q='+encodeURIComponent(ISB.q))
+        .then(function(r){rows=r.rows||[];ISB.page=r.page;ISB.pages=r.pages;ISB.total=r.total;ISB.b=r.counts.b;ISB.render();})
         .catch(function(e){var b=$('isb-body');if(b)b.innerHTML='<tr><td colspan="7" style="text-align:center;padding:24px;color:#f87171">⚠️ '+esc(e.message||'Unable to load users.')+'</td></tr>';});
     },
+    badge:function(){   // sidebar count only — a 1-row page, no list is downloaded
+      return apiFetch('/admin/dv-mapping?session=B&page=1&pageSize=1').then(function(r){var nb=$('nb-session-b');if(nb)nb.textContent=r.counts.b;}).catch(function(){});
+    },
+    search:function(){clearTimeout(ISB._t);ISB._t=setTimeout(function(){ISB.q=($('isb-search').value||'').trim();ISB.load(1);},300);},
     render:function(){
-      var list=rows.filter(function(u){return u.session==='B';}),b=$('isb-body');
-      var c=$('isb-b');if(c)c.textContent=list.length;
-      var nb=$('nb-session-b');if(nb)nb.textContent=list.length;
+      var list=rows,b=$('isb-body');
+      var c=$('isb-b');if(c)c.textContent=ISB.total;
+      var nb=$('nb-session-b');if(nb)nb.textContent=ISB.b;
+      var pg=$('isb-pager');if(pg)pg.innerHTML=SA_PAGER(ISB.page,ISB.pages,'ISB.load');
       if(!b)return;
       b.innerHTML=list.length?list.map(function(u){
         var id=esc(u.userId);
@@ -17114,27 +17187,17 @@ window.GLOBAL_SEARCH=function(value){
           +'<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" onclick="ISB.edit(\''+id+'\')">🏢 Profile</button> '
           +'<button class="btn btn-sm btn-ghost" onclick="PLN.pick(\''+id+'\')">💳 Plan</button> <button class="btn btn-sm btn-ghost" onclick="PLN.showHist(\''+id+'\')">📜 History</button> '
           +'<button class="btn btn-sm btn-ghost" onclick="ISB.one(\''+id+'\',\'A\')">↩ To A</button></td></tr>';
-      }).join(''):'<tr><td colspan="7" style="text-align:center;padding:26px;color:var(--text-muted)">No users are on Session B yet — add User IDs above.</td></tr>';
-    },
-    fillTargets:function(){
-      var sel=$('dv-target');if(!sel)return;var keep=sel.value||'__default__';
-      var opts='<option value="__default__">★ Default template (copied to users when they are mapped)</option>';
-      rows.filter(function(u){return u.session==='B';}).forEach(function(u){
-        opts+='<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+(u.profile?'  ✓ own profile':'  (default template)')+'</option>';});
-      sel.innerHTML=opts;
-      sel.value=Array.prototype.some.call(sel.options,function(o){return o.value===keep;})?keep:'__default__';
-      ISB.loadProfile();
-    },
-    fillPick:function(){
-      var s=$('isb-pick');if(!s)return;
-      s.innerHTML='<option value="">— Select a registered user —</option>'+rows.filter(function(u){return u.session!=='B';}).map(function(u){
-        return '<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+(u.village?' ('+esc(u.village)+')':'')+'</option>';}).join('');
+      }).join(''):'<tr><td colspan="7" style="text-align:center;padding:26px;color:var(--text-muted)">'+(ISB.q?'No matching user.':'No users are on Session B yet — add User IDs above.')+'</td></tr>';
     },
     addPicked:function(){
-      var v=$('isb-pick').value;if(!v)return;var t=$('isb-ids'),cur=(t.value||'').split(/[\s,;]+/).filter(Boolean);
+      var v=($('isb-pick').value||'').trim();if(!v)return;var t=$('isb-ids'),cur=(t.value||'').split(/[\s,;]+/).filter(Boolean);
       if(cur.indexOf(v)<0)cur.push(v);t.value=cur.join(', ');$('isb-pick').value='';
     },
-    edit:function(id){var sel=$('dv-target');sel.value=id;ISB.loadProfile();sel.scrollIntoView({behavior:'smooth',block:'center'});},
+    edit:function(id){
+      id=String(id||'').trim();var sel=$('dv-target');if(!id)return;
+      if(!Array.prototype.some.call(sel.options,function(o){return o.value===id;}))sel.insertAdjacentHTML('beforeend','<option value="'+esc(id)+'">'+esc(id)+'</option>');
+      sel.value=id;$('dv-find').value='';ISB.loadProfile();sel.scrollIntoView({behavior:'smooth',block:'center'});
+    },
     loadProfile:function(){
       var t=$('dv-target').value;say('dv-msg','');
       var isDef=t==='__default__';$('dv-reset').style.display=isDef?'none':'';
@@ -17189,14 +17252,9 @@ window.GLOBAL_SEARCH=function(value){
     },
     del:function(id){if(!confirm('Delete this plan? Users who already have it keep their expiry date.'))return;
       apiFetch('/admin/dv-plans/'+id,{method:'DELETE'}).then(PLN.load).catch(function(e){say('pln-msg',e.message);});},
-    fillHist:function(){
-      var s=$('hist-user');if(!s)return;var k=s.value;
-      s.innerHTML='<option value="">— Select a Session B user —</option>'+rows.filter(function(u){return u.session==='B';}).map(function(u){return '<option value="'+esc(u.userId)+'">'+esc(u.userId)+' — '+esc(u.name||'')+'</option>';}).join('');
-      s.value=k;
-    },
     showHist:function(id){var s=$('hist-user');s.value=id;PLN.history();s.scrollIntoView({behavior:'smooth',block:'center'});},
     history:function(){
-      var id=$('hist-user').value,b=$('hist-body'),st=$('hist-status');
+      var id=($('hist-user').value||'').trim(),b=$('hist-body'),st=$('hist-status');
       if(!id){b.innerHTML='';st.innerHTML='';return;}
       apiFetch('/admin/dv-history/'+encodeURIComponent(id)).then(function(r){
         st.innerHTML=planCell(r.sub);
@@ -17214,8 +17272,8 @@ window.GLOBAL_SEARCH=function(value){
     }
   };
   var _G=window.GOTO;
-  window.GOTO=function(page){var r=_G.apply(this,arguments);if(page==='invoice-session-b'){ISB.load();PLN.load();DVC.load();}return r;};
-  setTimeout(function(){if(typeof AUTH_TOKEN!=='undefined'&&AUTH_TOKEN){ISB.load();PLN.load();DVC.load();}},3000);   // fills the sidebar badge
+  window.GOTO=function(page){var r=_G.apply(this,arguments);if(page==='invoice-session-b'){ISB.load(1);PLN.load();DVC.load();}return r;};
+  setTimeout(function(){if(typeof AUTH_TOKEN!=='undefined'&&AUTH_TOKEN){ISB.badge();}},3000);   // sidebar badge only — the lists load when the page is opened
 })();
 
 /* Header & Announcement Settings (inside Settings → Website Notices & Navigation) */
@@ -17264,7 +17322,7 @@ window.GLOBAL_SEARCH=function(value){
 <script id="bills-master-js">
 /* ═══════════ MATERIAL MASTER  (blob 'material_categories' in Supabase — the invoice portal reads the same list) ═══════════ */
 var MM_DEFAULTS = {"material":[{"code":"0002","name":"Hire charges of Concrete Mixer 0.25 to 0.40 cum with Hopper","unit":"Day","gst":18,"price":0},{"code":"0012","name":"Vibrator (Needle type 40 mm)","unit":"Day","gst":18,"price":0},{"code":"0295","name":"Stone Aggregate(single size):20 mm nominal size","unit":"Cum","gst":5,"price":0},{"code":"0297","name":"Stone Aggregate(single size): 10 mm nominal size","unit":"Cum","gst":5,"price":0},{"code":"0367","name":"Portland Cement","unit":"Bag (50kg)","gst":28,"price":0},{"code":"0810","name":"Moorum","unit":"Cum","gst":5,"price":0},{"code":"0823","name":"Pink primer (for wood)","unit":"Litre","gst":18,"price":0},{"code":"0851","name":"Water proofing cement paint","unit":"Kg","gst":18,"price":0},{"code":"0982","name":"Coarse sand (zone III)","unit":"Cum","gst":5,"price":0},{"code":"1004","name":"Average rate of mild steel round bars for reinforcements","unit":"Quintal","gst":18,"price":0},{"code":"1007","name":"Structural steel such as tees, angles, channels and R.S. joists","unit":"Quintal","gst":18,"price":0},{"code":"1008","name":"Flats up to 10 mm in thickness","unit":"Quintal","gst":18,"price":0},{"code":"1013","name":"Mild steel sheets for tanks","unit":"Kg","gst":18,"price":0},{"code":"1019","name":"Mild steel hooks","unit":"Kg","gst":18,"price":0},{"code":"1036","name":"Iron pintels including weldded pin","unit":"Kg","gst":18,"price":0},{"code":"10","name":"Miscellaneous / Contingencies charges","unit":"LS","gst":18,"price":0},{"code":"1222","name":"Mild steel sheets with bolts and nuts to rest on pintels","unit":"Kg","gst":18,"price":0},{"code":"1648","name":"G.I. Union 80 mm nominal bore","unit":"Nos","gst":18,"price":0},{"code":"2205","name":"Steel","unit":"Quintal","gst":18,"price":0},{"code":"2602","name":"Common burnt clay F.P.S. (non modular) bricks class designation 7.5","unit":"Nos (1000)","gst":12,"price":0},{"code":"","name":"3-Display Board / CIB","unit":"Nos","gst":18,"price":0},{"code":"4202","name":"Red oxide Zinc chromate primer","unit":"Litre","gst":18,"price":0},{"code":"","name":"4-Conveyance","unit":"LS","gst":0,"price":0},{"code":"","name":"5-GST","unit":"LS","gst":0,"price":0},{"code":"6501","name":"Sand zone V (Jamuna)","unit":"Cum","gst":5,"price":0},{"code":"7331","name":"Wall form panel 1250x450xmm","unit":"Nos","gst":18,"price":0},{"code":"7332","name":"Corner angle 45x45x5 mm 2.50 long","unit":"Nos","gst":18,"price":0},{"code":"7333","name":"Column clamp 450x1070 mm","unit":"Nos","gst":18,"price":0},{"code":"7334","name":"Prop 2 m (2-3.5m)","unit":"Nos","gst":18,"price":0},{"code":"7335","name":"Binding wire","unit":"Kg","gst":18,"price":0},{"code":"9999","name":"Sundries","unit":"LS","gst":0,"price":0},{"code":"","name":"MR2403-Ready mix paint for steel work","unit":"Litre","gst":18,"price":0},{"code":"","name":"MR2407-TMTC 500 8 MM","unit":"Quintal","gst":18,"price":0},{"code":"","name":"MR2408-TMTC 500 10 MM","unit":"Quintal","gst":18,"price":0},{"code":"","name":"MR2409-TMTC 500 12 MM","unit":"Quintal","gst":18,"price":0},{"code":"","name":"Other (Specify Manually)","unit":"","gst":18,"price":0}],"plantation":[{"code":"0002","name":"Hire charges of Concrete Mixer 0.25 to 0.40 cum with Hopper","unit":"Day","gst":18,"price":0},{"code":"0012","name":"Vibrator (Needle type 40 mm)","unit":"Day","gst":18,"price":0},{"code":"0295","name":"Stone Aggregate(single size):20 mm nominal size","unit":"Cum","gst":5,"price":0},{"code":"0297","name":"Stone Aggregate(single size): 10 mm nominal size","unit":"Cum","gst":5,"price":0},{"code":"0367","name":"Portland Cement","unit":"Bag (50kg)","gst":28,"price":0},{"code":"0982","name":"Coarse sand (zone III)","unit":"Cum","gst":5,"price":0},{"code":"1028","name":"Straining bolts","unit":"Nos","gst":18,"price":0},{"code":"1030","name":"Galvanised steel turn buckles","unit":"Nos","gst":18,"price":0},{"code":"10","name":"Miscellaneous / Contingencies charges","unit":"LS","gst":18,"price":0},{"code":"","name":"3-Display Board / CIB","unit":"Nos","gst":18,"price":0},{"code":"","name":"4-Conveyance","unit":"LS","gst":0,"price":0},{"code":"","name":"5-GST","unit":"LS","gst":0,"price":0},{"code":"7319","name":"Wall form panel 1250x500 mm","unit":"Nos","gst":18,"price":0},{"code":"7326","name":"Corner angle 45x45x5 mm 1.50 m long","unit":"Nos","gst":18,"price":0},{"code":"7327","name":"100 mm channel shoulder 2.5 m long","unit":"Nos","gst":18,"price":0},{"code":"7328","name":"Double clip (bridge clip)","unit":"Nos","gst":18,"price":0},{"code":"7329","name":"Single clip","unit":"Nos","gst":18,"price":0},{"code":"7330","name":"M.S. Tube 40 mm dia","unit":"Metre","gst":18,"price":0},{"code":"7335","name":"Binding wire","unit":"Kg","gst":18,"price":0},{"code":"9977","name":"Carriage","unit":"LS","gst":0,"price":0},{"code":"9999","name":"Sundries","unit":"LS","gst":0,"price":0},{"code":"","name":"MR2417-Mild steel wire road 6 MM","unit":"Kg","gst":18,"price":0},{"code":"","name":"MR2420-Plantation - Gabion","unit":"Nos","gst":5,"price":0},{"code":"","name":"MR2421-Plantation - cost of large plant","unit":"Nos","gst":5,"price":0},{"code":"","name":"MR2423-Cost of pesticide","unit":"Litre","gst":18,"price":0},{"code":"","name":"MR2424-Hand pump comp job","unit":"Nos","gst":18,"price":0},{"code":"","name":"MR2430-Cost of plants from forest department","unit":"Nos","gst":5,"price":0},{"code":"","name":"MR2431-Cost of carriage of plants from forest dept. nursery upto 30 km","unit":"Trip","gst":18,"price":0},{"code":"","name":"MR2443-Supply of GI Barbed Wire","unit":"Kg","gst":18,"price":0},{"code":"","name":"Other (Specify Manually)","unit":"","gst":18,"price":0}]};
-var MM_CATS = null, MM_SEL = '';
+var MM_CATS = null, MM_SEL = '', MM_PAGE = 1;
 function MM_MSG(t,ok){ var e=document.getElementById('mm-msg'); if(!e) return; e.textContent=t||''; e.style.display=t?'block':'none'; e.className='sa-msg '+(ok?'ok':'err'); }
 function MM_CLONE(o){ return JSON.parse(JSON.stringify(o)); }
 function MM_SEED(){ return [{id:'material',name:'Material Supply',items:MM_CLONE(MM_DEFAULTS.material)},{id:'plantation',name:'Plantation',items:MM_CLONE(MM_DEFAULTS.plantation)}]; }
@@ -17331,9 +17389,11 @@ function MM_RENDER(){
     +'<button class="btn btn-sm btn-ghost" onclick="MM_ADD_CAT()">+ New Category</button>';
   var cat=MM_CUR(); if(!cat){ tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">Create a category to begin.</td></tr>'; return; }
   var q=(document.getElementById('mm-search').value||'').toLowerCase();
-  var rows=''; var shown=0;
-  cat.items.forEach(function(it,i){
-    if(q && (it.name+' '+it.code).toLowerCase().indexOf(q)<0) return; shown++;
+  var idx=[]; cat.items.forEach(function(it,i){ if(!q || (it.name+' '+it.code).toLowerCase().indexOf(q)>=0) idx.push(i); });
+  var pages=Math.max(1,Math.ceil(idx.length/SA_PAGE)); if(MM_PAGE>pages) MM_PAGE=pages; if(MM_PAGE<1) MM_PAGE=1;
+  var pg=document.getElementById('mm-pager'); if(pg) pg.innerHTML=SA_PAGER(MM_PAGE,pages,'MM_GOTO');
+  var rows='';
+  idx.slice((MM_PAGE-1)*SA_PAGE,MM_PAGE*SA_PAGE).forEach(function(i){ var it=cat.items[i];
     rows+='<tr><td>'+(i+1)+'</td>'
      +'<td><input class="sa-in" style="width:80px" value="'+MAT_ESC(it.code)+'" oninput="MM_SET('+i+',\'code\',this.value)"></td>'
      +'<td><input class="sa-in" style="min-width:260px" value="'+MAT_ESC(it.name)+'" oninput="MM_SET('+i+',\'name\',this.value)" onchange="MM_NAME_AUTO('+i+',this)"></td>'
@@ -17346,7 +17406,8 @@ function MM_RENDER(){
   });
   tb.innerHTML=rows||'<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">'+(cat.items.length?'No match.':'No materials yet — click "+ Add Material".')+'</td></tr>';
 }
-function MM_PICK(id){ MM_SEL=id; MM_RENDER(); }
+function MM_PICK(id){ MM_SEL=id; MM_PAGE=1; MM_RENDER(); }
+function MM_GOTO(n){ MM_PAGE=n; MM_RENDER(); }
 var MM_EDITED=[];   // ids of materials whose Unit / GST % / HSN the admin changed by hand (in order) — propagated to same-name materials on Save
 function MM_KEY(n){ return String(n||'').toLowerCase().replace(/\s+/g,' ').trim(); }
 function MM_SET(i,f,v){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; cat.items[i][f]=(f==='gst'||f==='price')?(Number(v)||0):v;
@@ -17372,7 +17433,7 @@ function MM_PROPAGATE(){
   });
   MM_EDITED=[]; return n;
 }
-function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',hsn:'',unit:'Nos',gst:18,price:0,show:true}); document.getElementById('mm-search').value=''; MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
+function MM_ADD_ITEM(){ var cat=MM_CUR(); if(!cat) return; cat.items.push({id:MM_UID(),code:'',name:'',hsn:'',unit:'Nos',gst:18,price:0,show:true}); document.getElementById('mm-search').value=''; MM_PAGE=Math.ceil(cat.items.length/SA_PAGE); MM_RENDER(); var ins=document.querySelectorAll('#mm-tbody tr:last-child input'); if(ins[1]) ins[1].focus(); }
 function MM_DEL_ITEM(i){ var cat=MM_CUR(); if(!cat||!cat.items[i]) return; if(!confirm('Delete "'+(cat.items[i].name||'this material')+'" from '+cat.name+'?')) return; cat.items.splice(i,1); MM_RENDER(); MM_MSG('Deleted — click "Save All" to apply.',true); }
 function MM_ADD_CAT(){
   var n=(prompt('New category name (for example: Plantation, Road Work):')||'').trim(); if(!n) return;

@@ -673,7 +673,6 @@
         <input id="itemSearch" class="inp" type="search" autocomplete="off" placeholder="Type item name…" oninput="itemSearchInput()" onfocus="itemSearchInput()" onkeydown="itemSearchKey(event)">
         <div id="itemDrop" class="item-drop hidden"></div>
       </div>
-      <datalist id="catNames"></datalist>
     </div>
     <div class="p-3 overflow-x-auto">
       <table class="mat-table w-full text-sm border-collapse min-w-[1040px]">
@@ -724,16 +723,19 @@
 <div id="tab-rates" class="hidden space-y-4">
   <section class="gov-card bg-white rounded-sm overflow-hidden">
     <div class="section-title px-4 py-2 flex items-center justify-between flex-wrap gap-2"><span>Item Rate &amp; GST Settings <span id="ratesCat" class="font-normal text-[11px] opacity-80"></span></span>
-      <button type="button" id="ratesSaveBtn" onclick="saveRates()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-3 py-1 rounded hover:bg-blue-50">💾 SAVE ALL RATES</button></div>
+      <span class="flex gap-2"><button type="button" onclick="addMyItem()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-3 py-1 rounded hover:bg-blue-50">➕ ADD MY ITEM</button>
+      <button type="button" id="ratesSaveBtn" onclick="saveRates()" class="bg-white text-[var(--gov-navy)] text-[11px] font-bold px-3 py-1 rounded hover:bg-blue-50">💾 SAVE ALL RATES</button></span></div>
     <div class="p-3 space-y-3">
       <div id="ratesMsg" class="text-xs"></div>
       <input id="ratesFilter" class="inp max-w-md" type="search" placeholder="🔍 Filter items…" oninput="filterRates()" autocomplete="off">
-      <div class="overflow-x-auto"><table class="mat-table rt-tbl w-full text-sm border-collapse min-w-[760px]">
-        <thead><tr><th class="w-10">#</th><th>Item (from your category)</th><th class="w-24">Unit</th><th class="w-32">Selling Price (₹)</th><th class="w-24">GST %</th><th class="w-36">Default Unit / Pieces</th></tr></thead>
+      <div class="overflow-x-auto"><table class="mat-table rt-tbl w-full text-sm border-collapse min-w-[900px]">
+        <thead><tr><th class="w-10">#</th><th>Item Name</th><th class="w-28">Unit</th><th class="w-32">Selling Price (₹)</th><th class="w-24">GST %</th><th class="w-32">Default Qty</th><th class="w-16"></th></tr></thead>
         <tbody id="ratesBody"></tbody>
       </table></div>
+      <div id="ratesPager" class="sb-pager"></div>
       <datalist id="qtyPresets"><option value="1"><option value="10"><option value="50"><option value="100"></datalist>
-      <p class="text-[11px] text-gray-600">Leave the price blank to remove your saved rate. Master item names and the item list are managed by the administrator for your category.</p>
+      <datalist id="unitPresets"><option value="Pcs"><option value="Strip"><option value="Bottle"><option value="Box"><option value="Pack"><option value="Packet"><option value="Kg"><option value="Gm"><option value="Litre"><option value="Ream"><option value="Dozen"><option value="Sachet"><option value="Tube"><option value="Roll"><option value="Set"></datalist>
+      <p class="text-[11px] text-gray-600">Edit any name, unit, price, GST % or qty — changes apply to <b>your</b> account only. Use ➕ Add My Item for products not in the list; items you add can be deleted with ✕ (category items can be renamed, but not deleted).</p>
     </div>
   </section>
 </div>
@@ -753,8 +755,8 @@
       <div id="walletMsg" class="text-xs"></div>
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-3" id="walletCards"></div>
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Items / Qty Sold</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Item</th><th class="w-24">Qty</th><th class="w-28">Amount (₹)</th></tr></thead><tbody id="walletItems"></tbody></table></div></div>
-        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Transaction History</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Bill</th><th>Date / Time</th><th>Customer</th><th>Mode</th><th class="w-24">Total (₹)</th></tr></thead><tbody id="walletTx"></tbody></table></div></div>
+        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Items / Qty Sold</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Item</th><th class="w-24">Qty</th><th class="w-28">Amount (₹)</th></tr></thead><tbody id="walletItems"></tbody></table></div><div id="walletItemsPager" class="sb-pager"></div></div>
+        <div><h3 class="font-bold text-sm text-[var(--gov-navy)] mb-1">Transaction History</h3><div class="overflow-x-auto" style="max-height:340px;overflow-y:auto"><table class="mat-table w-full text-sm border-collapse"><thead><tr><th>Bill</th><th>Date / Time</th><th>Customer</th><th>Mode</th><th class="w-24">Total (₹)</th></tr></thead><tbody id="walletTx"></tbody></table></div><div id="walletTxPager" class="sb-pager"></div></div>
       </div>
     </div>
   </section>
@@ -996,7 +998,7 @@ function words(amount){
 /* ───────── form ───────── */
 function rowHtml(){
   return '<tr><td class="text-center sn"></td>'
-    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" autocomplete="off" list="catNames" onchange="rowNamePicked(this)"><input type="hidden" class="r-hsn"></td>'
+    + '<td><input class="inp r-name" maxlength="200" placeholder="Material name" autocomplete="off"><input type="hidden" class="r-hsn"></td>'
     + '<td><input class="inp r-qty text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
     + '<td><input class="inp r-unit" maxlength="20" placeholder="Pcs" autocomplete="off"></td>'
     + '<td><input class="inp r-rate text-right" type="number" min="0" step="any" inputmode="decimal" oninput="recalc()"></td>'
@@ -1277,7 +1279,7 @@ function applyPlanLock(on){
     // close anything that shows saved data and wipe it from the screen (it stays safe in the database)
     try { var sb = $('savedSidebar'); if (sb) sb.classList.add('translate-x-full'); var so = $('sidebarOverlay'); if (so) so.classList.add('hidden'); } catch (e) {}
     try { closeInvoiceViewer(); } catch (e) {}
-    try { ['ratesBody','walletItems','walletTx','walletCards'].forEach(function(i){ var n = $(i); if (n) n.innerHTML = ''; }); } catch (e) {}
+    try { ['ratesBody','ratesPager','walletItems','walletTx','walletCards','walletItemsPager','walletTxPager'].forEach(function(i){ var n = $(i); if (n) n.innerHTML = ''; }); } catch (e) {}
     try { var sl = $('savedList'); if (sl) sl.innerHTML = ''; var sc = $('savedCount'); if (sc) sc.textContent = '–'; } catch (e) {}
     var m = $('planLockMsg'); if (m && SUB) m.textContent = 'Your ' + (SUB.planName || 'Invoice Plan') + ' expired on ' + fmtDate(SUB.expires) + '. All your saved bills and data are safe and will reappear instantly once you activate a plan.';
   } else if (_wasLocked) { try { loadSaved(); } catch (e) {} }
@@ -1403,8 +1405,8 @@ function pdfBill(id){ if (planBlocked()) return; (LOADED[id] ? Promise.resolve(L
 function showTab(name){
   ['invoice', 'rates', 'wallet'].forEach(function(t){ $('tab-' + t).classList.toggle('hidden', t !== name); $('tabBtn-' + t).classList.toggle('on', t === name); });
   if (name !== 'invoice') { closeInvoiceViewer(); hideItemDrop(); }
-  if (name === 'rates') loadCatalog();
-  if (name === 'wallet') { if (!$('wFrom').value) walletRange('today'); else loadWallet(); }
+  if (name === 'rates' && !RT.loaded) loadRates(1);
+  if (name === 'wallet') { if (!$('wFrom').value) walletRange('today'); else loadWallet(WAL.ip, WAL.tp); }
 }
 
 /* ───────── automatic Bill No. (server keeps the sequence: 1, 2, 3 … or INV-009 → INV-010) ───────── */
@@ -1413,29 +1415,36 @@ function fillNextBillNo(){
   api('/dv/next-bill-no').then(function(r){ if (!editingId && !$('billNo').value && r && r.billNo) $('billNo').value = r.billNo; }).catch(function(){});
 }
 
-/* ───────── category catalog (master items of MY category + MY saved rates) ───────── */
-var CAT = { category: null, items: [], byId: {} }, dropIdx = -1, dropList = [];
-function loadCatalog(){
-  return api('/dv/catalog').then(function(r){
-    CAT.category = r.category; CAT.items = r.items || []; CAT.byId = {}; CAT.items.forEach(function(i){ CAT.byId[i.id] = i; });
-    var pill = $('catPill'); pill.style.display = CAT.category ? '' : 'none'; pill.textContent = CAT.category ? '🏷️ Category: ' + CAT.category.name : '';
-    $('catNames').innerHTML = CAT.items.filter(function(i){ return i.saved; }).map(function(i){ return '<option value="' + esc(i.name) + '">'; }).join('');
-    $('itemSearch').placeholder = CAT.category ? 'Type item name… (' + CAT.items.length + ' items in ' + CAT.category.name + ')' : 'No Business Category assigned yet — type materials manually';
-    renderRates();
-  }).catch(function(e){ if (!e || e.code !== 'PLAN_EXPIRED') $('ratesMsg').textContent = e && e.message || ''; });
+/* ───────── small numbered pager (Prev · 1 2 3 … · Next) used by the rate list and the wallet lists ───────── */
+function pagerHtml(cur, last, fn){
+  if (last <= 1) return '';
+  var set = {}; [1, last, cur - 2, cur - 1, cur, cur + 1, cur + 2].forEach(function(n){ if (n >= 1 && n <= last) set[n] = 1; });
+  var nums = Object.keys(set).map(Number).sort(function(x, y){ return x - y; });
+  function bt(l, n, on, dis){ return '<button type="button" ' + (dis ? 'disabled ' : '') + 'onclick="' + fn + '(' + n + ')" class="sb-pg' + (on ? ' on' : '') + '">' + l + '</button>'; }
+  var h = bt('‹ Prev', cur - 1, false, cur <= 1), prev = 0;
+  nums.forEach(function(n){ if (prev && n - prev > 1) h += '<span class="sb-pg-gap">…</span>'; h += bt(n, n, n === cur, false); prev = n; });
+  return h + bt('Next ›', cur + 1, false, cur >= last);
 }
-function itemMatches(q){
-  q = String(q || '').toLowerCase().trim();
-  return CAT.items.filter(function(i){ return !q || i.name.toLowerCase().indexOf(q) >= 0; }).sort(function(a, b){ return (b.saved ? 1 : 0) - (a.saved ? 1 : 0) || a.name.localeCompare(b.name); }).slice(0, 40);
+function setCategory(cat){
+  var pill = $('catPill'); if (!pill) return;
+  pill.style.display = cat ? '' : 'none'; pill.textContent = cat ? '🏷️ Category: ' + cat.name : '';
 }
-function itemSearchInput(){
-  var d = $('itemDrop'); dropList = itemMatches($('itemSearch').value); dropIdx = dropList.length ? 0 : -1;
-  if (!CAT.category) { d.innerHTML = '<div class="p-3 text-xs text-gray-600">No Business Category is assigned to your account yet.</div>'; d.classList.remove('hidden'); return; }
-  if (!dropList.length) { d.innerHTML = '<div class="p-3 text-xs text-gray-600">No matching item.</div>'; d.classList.remove('hidden'); return; }
-  d.innerHTML = dropList.map(function(i, k){
-    return '<button type="button" class="' + (k === dropIdx ? 'act' : '') + '" onmousedown="event.preventDefault()" onclick="pickItem(' + i.id + ')"><span>' + esc(i.name) + '</span><small>' + (i.saved ? '₹' + money(i.price) + ' • GST ' + i.gst + '% • ' + esc(i.qty) + ' ' + esc(i.unit) : 'rate not set') + '</small></button>';
-  }).join('');
-  d.classList.remove('hidden');
+
+/* ───────── Invoice Item Search — the server searches; only the 12 best matches are ever downloaded ───────── */
+var CAT = { byId: {} }, dropIdx = -1, dropList = [], _dropTimer = null, _dropSeq = 0;
+function itemSearchInput(){ clearTimeout(_dropTimer); _dropTimer = setTimeout(runItemSearch, 200); }
+function runItemSearch(){
+  var q = $('itemSearch').value.trim(), seq = ++_dropSeq, d = $('itemDrop');
+  d.innerHTML = '<div class="p-3 text-xs text-gray-600">Searching…</div>'; d.classList.remove('hidden');
+  api('/dv/catalog?q=' + encodeURIComponent(q) + '&pageSize=12&nototal=1').then(function(r){
+    if (seq !== _dropSeq) return;
+    setCategory(r.category); dropList = r.rows || []; dropIdx = dropList.length ? 0 : -1;
+    dropList.forEach(function(i){ CAT.byId[i.key] = i; });
+    if (!dropList.length) { d.innerHTML = '<div class="p-3 text-xs text-gray-600">' + (q ? 'No matching item.' : 'No items yet — add them in the Item Rate &amp; GST Settings tab.') + '</div>'; return; }
+    d.innerHTML = dropList.map(function(i, k){
+      return '<button type="button" class="' + (k === dropIdx ? 'act' : '') + '" onmousedown="event.preventDefault()" onclick="pickItem(\'' + i.key + '\')"><span>' + esc(i.name) + '</span><small>' + (i.saved ? '₹' + money(i.price) + ' • GST ' + i.gst + '% • ' + esc(i.qty) + ' ' + esc(i.unit) : 'rate not set') + '</small></button>';
+    }).join('');
+  }).catch(function(e){ if (seq === _dropSeq) d.innerHTML = '<div class="p-3 text-xs text-red-600">' + esc(e.message) + '</div>'; });
 }
 function hideItemDrop(){ var d = $('itemDrop'); if (d) d.classList.add('hidden'); }
 function itemSearchKey(e){
@@ -1444,95 +1453,135 @@ function itemSearchKey(e){
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault(); dropIdx = (dropIdx + (e.key === 'ArrowDown' ? 1 : -1) + dropList.length) % dropList.length;
     Array.prototype.forEach.call($('itemDrop').children, function(b, k){ b.classList.toggle('act', k === dropIdx); if (k === dropIdx && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); });
-  } else if (e.key === 'Enter') { e.preventDefault(); if (dropIdx >= 0) pickItem(dropList[dropIdx].id); }
+  } else if (e.key === 'Enter') { e.preventDefault(); if (dropIdx >= 0) pickItem(dropList[dropIdx].key); }
 }
 document.addEventListener('click', function(e){ if (!e.target.closest || !e.target.closest('#itemSearch, #itemDrop')) hideItemDrop(); });
-/* picking an item adds a row pre-filled with MY saved Rate, GST % and Unit / default pieces — every cell stays editable */
-function pickItem(id){
-  var it = CAT.byId[id]; if (!it) return;
+/* picking an item adds a row pre-filled with MY saved Rate, GST % and Unit / default qty — every cell stays editable */
+function pickItem(key){
+  var it = CAT.byId[key]; if (!it) return;
   var last = $('rows').lastElementChild, reuse = last && !last.querySelector('.r-name').value.trim() && last.querySelector('.r-qty').value === '' && last.querySelector('.r-rate').value === '';
   if (reuse) last.parentNode.removeChild(last);
   addRow({ name: it.name, unit: it.unit, qty: it.qty, rate: it.saved ? it.price : '', gst: it.gst });
   $('itemSearch').value = ''; hideItemDrop(); $('itemSearch').focus();
   if (!it.saved) toast('"' + it.name + '": set its rate in Item Rate & GST Settings — or type the rate on the bill.');
 }
-function rowNamePicked(inp){
-  var v = inp.value.trim().toLowerCase(), it = CAT.items.filter(function(i){ return i.name.toLowerCase() === v; })[0];
-  if (!it) return;
-  var tr = inp.closest('tr');
-  if (tr.querySelector('.r-rate').value === '' && tr.querySelector('.r-qty').value === '') {
-    inp.value = it.name; tr.querySelector('.r-unit').value = it.unit; tr.querySelector('.r-qty').value = it.qty;
-    if (it.saved) tr.querySelector('.r-rate').value = it.price; tr.querySelector('.r-gst').value = it.gst; recalc();
-  }
-}
 
-/* ───────── Item Rate & GST Settings tab ───────── */
-function renderRates(){
-  var b = $('ratesBody'); if (!b) return;
-  $('ratesCat').textContent = CAT.category ? '— ' + CAT.category.name : '';
-  if (!CAT.category) { b.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-600">No Business Category is assigned to your account yet. Please contact the administrator.</td></tr>'; $('ratesSaveBtn').disabled = true; return; }
-  $('ratesSaveBtn').disabled = false;
-  b.innerHTML = CAT.items.length ? CAT.items.map(function(i, k){
-    return '<tr data-id="' + i.id + '" data-n="' + esc(i.name.toLowerCase()) + '"><td class="text-center">' + (k + 1) + '</td><td class="font-semibold">' + esc(i.name) + (i.saved ? '' : ' <span class="text-[10px] text-amber-700">(not set)</span>') + '</td>'
-      + '<td><input class="inp rt-unit" maxlength="20" value="' + esc(i.unit) + '"></td>'
-      + '<td><input class="inp rt-price text-right" type="number" min="0" step="any" inputmode="decimal" value="' + (i.saved ? esc(i.price) : '') + '" placeholder="0.00"></td>'
-      + '<td><input class="inp rt-gst text-right" type="number" min="0" max="100" step="any" inputmode="decimal" value="' + esc(i.gst) + '"></td>'
-      + '<td><input class="inp rt-qty text-right" type="number" min="0" step="any" inputmode="decimal" list="qtyPresets" value="' + esc(i.qty) + '"></td></tr>';
-  }).join('') : '<tr><td colspan="6" class="text-center p-4 text-gray-600">The administrator has not added any items to your category yet.</td></tr>';
-  filterRates();
+/* ───────── Item Rate & GST Settings — 5 items per page, searched and paged by the server.
+   Edits are kept in memory across pages (RT.dirty / RT.fresh) and sent together when "Save All Rates" is pressed. ───────── */
+var RT = { page: 1, pages: 1, total: 0, q: '', rows: [], dirty: {}, fresh: [], seq: 0, loaded: false, nseq: 0 }, _rtTimer = null;
+function loadRates(page){
+  RT.page = Math.max(1, page || RT.page || 1); var seq = ++RT.seq, m = $('ratesMsg');
+  $('ratesBody').innerHTML = '<tr><td colspan="7" class="text-center p-4 text-gray-500">Loading…</td></tr>';
+  return api('/dv/catalog?q=' + encodeURIComponent(RT.q) + '&page=' + RT.page + '&pageSize=5').then(function(r){
+    if (seq !== RT.seq) return;
+    setCategory(r.category); RT.loaded = true; RT.rows = r.rows || []; RT.total = r.total || 0; RT.pages = r.pages || 1;
+    $('ratesCat').textContent = r.category ? '— ' + r.category.name : '';
+    if (RT.page > RT.pages) return loadRates(RT.pages);
+    renderRates();
+  }).catch(function(e){ if (seq === RT.seq) { $('ratesBody').innerHTML = ''; m.style.color = '#b42318'; m.textContent = e.message; } });
 }
-function filterRates(){
-  var q = $('ratesFilter').value.toLowerCase().trim();
-  Array.prototype.forEach.call($('ratesBody').children, function(tr){ tr.style.display = !q || (tr.getAttribute('data-n') || '').indexOf(q) >= 0 ? '' : 'none'; });
+function rateRowHtml(i, num){
+  var c = i.custom, price = i.price == null ? '' : i.price;
+  return '<tr data-key="' + esc(i.key) + '" data-id="' + esc(i.id || '') + '" data-custom="' + (c ? '1' : '0') + '"><td class="text-center">' + esc(num) + '</td>'
+    + '<td><input class="inp rt-in rt-name" maxlength="120" value="' + esc(i.name || '') + '" placeholder="' + esc(c ? 'Item name' : (i.masterName || 'Item name')) + '">' + (!c && !i.saved ? '<span class="text-[10px] text-amber-700">(rate not set)</span>' : '') + (c ? '<span class="text-[10px] text-blue-700"> my item</span>' : '') + '</td>'
+    + '<td><input class="inp rt-in rt-unit" maxlength="20" list="unitPresets" value="' + esc(i.unit || 'Pcs') + '"></td>'
+    + '<td><input class="inp rt-in rt-price text-right" type="number" min="0" step="any" inputmode="decimal" value="' + esc(price) + '" placeholder="0.00"></td>'
+    + '<td><input class="inp rt-in rt-gst text-right" type="number" min="0" max="100" step="any" inputmode="decimal" value="' + esc(i.gst == null ? 0 : i.gst) + '"></td>'
+    + '<td><input class="inp rt-in rt-qty text-right" type="number" min="0" step="any" inputmode="decimal" list="qtyPresets" value="' + esc(i.qty == null ? 1 : i.qty) + '"></td>'
+    + '<td class="text-center">' + (c ? '<button type="button" class="text-red-600 font-bold" title="Delete this item" onclick="delMyItem(this)">✕</button>' : '') + '</td></tr>';
+}
+function renderRates(){
+  var b = $('ratesBody'), html = '', base = (RT.page - 1) * 5;
+  RT.fresh.forEach(function(f){ html += rateRowHtml(f, '＋'); });
+  RT.rows.forEach(function(r, k){ html += rateRowHtml(RT.dirty[r.key] ? Object.assign({}, r, RT.dirty[r.key]) : r, base + k + 1); });
+  b.innerHTML = html || '<tr><td colspan="7" class="text-center p-4 text-gray-600">' + (RT.q ? 'No matching item.' : 'No items yet.') + ' Use ➕ Add My Item to create your own items.</td></tr>';
+  $('ratesPager').innerHTML = pagerHtml(RT.page, RT.pages, 'loadRates');
+  var n = Object.keys(RT.dirty).length + RT.fresh.length, m = $('ratesMsg');
+  if (n) { m.style.color = '#92400e'; m.textContent = '✏️ ' + n + ' unsaved change' + (n === 1 ? '' : 's') + ' — press SAVE ALL RATES.'; }
+}
+document.addEventListener('input', function(e){
+  var t = e.target; if (!t || !t.classList || !t.classList.contains('rt-in')) return;
+  var tr = t.closest('tr'); if (!tr || !tr.closest('#ratesBody')) return;
+  var key = tr.getAttribute('data-key'), o = { key: key, id: tr.getAttribute('data-id'), custom: tr.getAttribute('data-custom') === '1',
+    name: tr.querySelector('.rt-name').value, unit: tr.querySelector('.rt-unit').value, price: tr.querySelector('.rt-price').value, gst: tr.querySelector('.rt-gst').value, qty: tr.querySelector('.rt-qty').value };
+  if (key.charAt(0) === 'n') RT.fresh = RT.fresh.map(function(f){ return f.key === key ? o : f; }); else RT.dirty[key] = o;
+  var n = Object.keys(RT.dirty).length + RT.fresh.length, m = $('ratesMsg'); m.style.color = '#92400e'; m.textContent = '✏️ ' + n + ' unsaved change' + (n === 1 ? '' : 's') + ' — press SAVE ALL RATES.';
+});
+function filterRates(){ clearTimeout(_rtTimer); _rtTimer = setTimeout(function(){ RT.q = $('ratesFilter').value.trim(); loadRates(1); }, 300); }
+function addMyItem(){
+  RT.fresh.unshift({ key: 'n' + (++RT.nseq), id: '', custom: true, name: '', unit: 'Pcs', price: '', gst: 0, qty: 1, saved: false });
+  renderRates(); var n = $('ratesBody').querySelector('.rt-name'); if (n) { n.focus(); if (n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }
+}
+function delMyItem(btn){
+  var tr = btn.closest('tr'), key = tr.getAttribute('data-key'), id = tr.getAttribute('data-id'), nm = tr.querySelector('.rt-name').value.trim() || 'this item';
+  if (key.charAt(0) === 'n') { RT.fresh = RT.fresh.filter(function(f){ return f.key !== key; }); renderRates(); return; }
+  if (planBlocked() || !confirm('Delete "' + nm + '" from your items? Saved bills are not affected.')) return;
+  api('/dv/catalog/items/' + encodeURIComponent(id), { method: 'DELETE' }).then(function(){ delete RT.dirty[key]; toast('🗑️ Item deleted.'); return loadRates(RT.page); })
+    .catch(function(e){ $('ratesMsg').style.color = '#b42318'; $('ratesMsg').textContent = e.message; });
 }
 function saveRates(){
   if (planBlocked()) return;
-  var rates = [], bad = '';
-  Array.prototype.forEach.call($('ratesBody').children, function(tr){
-    if (!tr.getAttribute('data-id')) return;
-    var price = tr.querySelector('.rt-price').value, name = tr.children[1].textContent.replace(/\(not set\)/, '').trim();
-    if (price !== '' && !(Number(price) >= 0)) bad = bad || '"' + name + '": enter a valid selling price.';
-    rates.push({ itemId: Number(tr.getAttribute('data-id')), price: price, gst: tr.querySelector('.rt-gst').value, unit: tr.querySelector('.rt-unit').value, qty: tr.querySelector('.rt-qty').value });
+  var rates = [], custom = [], bad = '', m = $('ratesMsg'); m.style.color = '#b42318';
+  function chk(o){ if (o.price !== '' && !(Number(o.price) >= 0)) bad = bad || '"' + (o.name || 'item') + '": enter a valid selling price.'; }
+  Object.keys(RT.dirty).forEach(function(k){
+    var o = RT.dirty[k]; chk(o);
+    if (o.custom) custom.push({ id: Number(o.id), name: o.name, unit: o.unit, price: o.price, gst: o.gst, qty: o.qty });
+    else rates.push({ itemId: Number(o.id), name: o.name, unit: o.unit, price: o.price, gst: o.gst, qty: o.qty });
   });
-  var m = $('ratesMsg'); m.style.color = '#b42318';
+  RT.fresh.forEach(function(o){
+    if (!o.name.trim() && o.price === '') return;                          // an untouched blank new row is ignored
+    if (!o.name.trim()) bad = bad || 'Every item you add needs an item name.';
+    chk(o); custom.push({ id: 0, name: o.name, unit: o.unit, price: o.price, gst: o.gst, qty: o.qty });
+  });
   if (bad) { m.textContent = bad; return; }
+  if (!rates.length && !custom.length) { m.style.color = '#166534'; m.textContent = 'Nothing to save — no changes were made.'; return; }
   var btn = $('ratesSaveBtn'); btn.disabled = true; m.textContent = '';
-  api('/dv/catalog/rates', { method: 'PUT', body: JSON.stringify({ rates: rates }) }).then(function(r){
-    CAT.category = r.category; CAT.items = r.items || []; CAT.byId = {}; CAT.items.forEach(function(i){ CAT.byId[i.id] = i; });
-    $('catNames').innerHTML = CAT.items.filter(function(i){ return i.saved; }).map(function(i){ return '<option value="' + esc(i.name) + '">'; }).join('');
-    renderRates(); m.style.color = '#166534'; m.textContent = '✅ Rates saved. They will auto-fill on your bills.'; toast('✅ Rates saved.');
+  api('/dv/catalog/rates', { method: 'PUT', body: JSON.stringify({ rates: rates, custom: custom }) }).then(function(){
+    RT.dirty = {}; RT.fresh = [];
+    return loadRates(RT.page).then(function(){ m.style.color = '#166534'; m.textContent = '✅ Saved. Your items and rates now appear in Item Search on the Invoice Generator.'; toast('✅ Saved.'); });
   }).catch(function(e){ m.textContent = e.message; if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); }).then(function(){ btn.disabled = false; });
 }
 
-/* ───────── Daily Wallet & Stock Sales ───────── */
-var WAL = null;
+/* ───────── Daily Wallet & Stock Sales — totals + 5 items / 5 bills per page; the full list is fetched only for the PDF ───────── */
+var WAL = { ip: 1, tp: 1 };
 function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function walletRange(k){
   var n = new Date(), a = new Date(n.getFullYear(), n.getMonth(), n.getDate()), b = a;
   if (k === 'yesterday') { a = b = new Date(a.getFullYear(), a.getMonth(), a.getDate() - 1); }
   else if (k === 'month') a = new Date(a.getFullYear(), a.getMonth(), 1);
-  $('wFrom').value = ymd(a); $('wTo').value = ymd(b); loadWallet();
+  $('wFrom').value = ymd(a); $('wTo').value = ymd(b); loadWallet(1, 1);
 }
 function qtyFmt(n){ return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 }); }
-function loadWallet(){
+function walletItemsPage(n){ loadWallet(n, WAL.tp); }
+function walletTxPage(n){ loadWallet(WAL.ip, n); }
+function loadWallet(ip, tp){
   if (planBlocked()) return;
+  WAL.ip = ip || 1; WAL.tp = tp || 1;
   var f = $('wFrom').value, t = $('wTo').value, m = $('walletMsg'); m.style.color = '#b42318'; m.textContent = '';
-  return api('/dv/wallet?from=' + encodeURIComponent(f || t) + '&to=' + encodeURIComponent(t || f)).then(function(w){
-    WAL = w; $('wFrom').value = w.from; $('wTo').value = w.to;
+  return api('/dv/wallet?from=' + encodeURIComponent(f || t) + '&to=' + encodeURIComponent(t || f) + '&ip=' + WAL.ip + '&tp=' + WAL.tp + '&size=5').then(function(w){
+    WAL.ip = w.items.page; WAL.tp = w.transactions.page; WAL.ready = true; $('wFrom').value = w.from; $('wTo').value = w.to;
     var T = w.totals;
     $('walletCards').innerHTML = [['TOTAL SALES', '₹' + money(T.sales)], ['ONLINE / PHONEPE', '₹' + money(T.online)], ['CASH', '₹' + money(T.cash)], ['BILLS', T.bills], ['ITEMS / QTY SOLD', T.itemKinds + ' items / ' + qtyFmt(T.qty)]]
       .map(function(c){ return '<div class="w-card"><span>' + c[0] + '</span><b>' + esc(c[1]) + '</b></div>'; }).join('');
-    $('walletItems').innerHTML = w.items.length ? w.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td class="text-right">' + qtyFmt(i.qty) + (i.unit ? ' ' + esc(i.unit) : '') + '</td><td class="text-right">' + money(i.amount) + '</td></tr>'; }).join('') : '<tr><td colspan="3" class="text-center p-3 text-gray-500">No sales in this period.</td></tr>';
-    $('walletTx').innerHTML = w.transactions.length ? w.transactions.map(function(x){
+    $('walletItems').innerHTML = w.items.rows.length ? w.items.rows.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td class="text-right">' + qtyFmt(i.qty) + (i.unit ? ' ' + esc(i.unit) : '') + '</td><td class="text-right">' + money(i.amount) + '</td></tr>'; }).join('') : '<tr><td colspan="3" class="text-center p-3 text-gray-500">No sales in this period.</td></tr>';
+    $('walletTx').innerHTML = w.transactions.rows.length ? w.transactions.rows.map(function(x){
       return '<tr><td>' + esc(x.billNo) + '</td><td>' + fmtDate(x.date) + ' ' + esc(x.time) + '</td><td>' + esc(x.customer) + '</td><td><span class="pm-badge ' + (x.mode === 'online' ? 'pm-online">Online' : 'pm-cash">Cash') + '</span></td><td class="text-right">' + money(x.total) + '</td></tr>';
     }).join('') : '<tr><td colspan="5" class="text-center p-3 text-gray-500">No transactions in this period.</td></tr>';
-    if (w.truncated) { m.textContent = 'Showing the latest 5000 bills of this period — choose a shorter period for the complete list.'; }
+    $('walletItemsPager').innerHTML = pagerHtml(w.items.page, w.items.pages, 'walletItemsPage');
+    $('walletTxPager').innerHTML = pagerHtml(w.transactions.page, w.transactions.pages, 'walletTxPage');
   }).catch(function(e){ m.textContent = e.message; if (e && e.code === 'PLAN_EXPIRED') refreshMe().then(openPlans); });
 }
-/* 1-click Daily Hisab PDF: the report is drawn in blocks (so any number of bills works) and placed on A4 pages */
+/* 1-click Daily Hisab PDF: the complete lists are downloaded only now, then drawn in blocks on A4 pages */
 function exportHisab(btn){
-  if (planBlocked() || !WAL) return;
-  var w = WAL, T = w.totals, co = (SETTINGS && SETTINGS.companyName) || '', old = btn.textContent;
+  if (planBlocked() || !WAL.ready) return;
+  var old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Preparing PDF…';
+  api('/dv/wallet?from=' + encodeURIComponent($('wFrom').value) + '&to=' + encodeURIComponent($('wTo').value) + '&full=1')
+    .then(function(w){ return hisabPdf(w); })
+    .catch(function(e){ alert('❌ PDF could not be created: ' + (e && e.message ? e.message : e)); })
+    .then(function(){ btn.disabled = false; btn.textContent = old; });
+}
+function hisabPdf(w){
+  var T = w.totals, co = (SETTINGS && SETTINGS.companyName) || '', itemsAll = w.items.rows, txAll = w.transactions.rows;
   var period = w.from === w.to ? fmtDate(w.from) : fmtDate(w.from) + ' to ' + fmtDate(w.to);
   var CSS = 'font-family:Arial,Helvetica,sans-serif;color:#0b2545;font-size:12px;width:760px;background:#fff;padding:6px 10px;box-sizing:border-box';
   var th = 'border:1px solid #94a3b8;background:#e8eef7;padding:4px 6px;text-align:left', td = 'border:1px solid #cbd5e1;padding:3px 6px';
@@ -1543,35 +1592,31 @@ function exportHisab(btn){
     + '<tr><td style="' + td + '">Cash</td><td style="' + td + ';text-align:right">₹' + money(T.cash) + '</td></tr>'
     + '<tr><td style="' + td + '">Bills / Items sold (qty)</td><td style="' + td + ';text-align:right">' + T.bills + ' / ' + T.itemKinds + ' items (' + qtyFmt(T.qty) + ')</td></tr></table></div>');
   function chunk(rows, size){ var o = []; for (var i = 0; i < rows.length; i += size) o.push(rows.slice(i, i + size)); return o; }
-  chunk(w.items, 40).forEach(function(part, k){
+  chunk(itemsAll, 40).forEach(function(part, k){
     blocks.push('<div style="' + CSS + '">' + (k ? '' : '<div style="font-weight:800;margin:6px 0 3px">Items / Qty Sold</div>') + '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">Item</th><th style="' + th + ';text-align:right">Qty</th><th style="' + th + ';text-align:right">Amount (₹)</th></tr></thead><tbody>'
       + part.map(function(i){ return '<tr><td style="' + td + '">' + esc(i.name) + '</td><td style="' + td + ';text-align:right">' + qtyFmt(i.qty) + (i.unit ? ' ' + esc(i.unit) : '') + '</td><td style="' + td + ';text-align:right">' + money(i.amount) + '</td></tr>'; }).join('') + '</tbody></table></div>');
   });
-  chunk(w.transactions, 40).forEach(function(part, k){
+  chunk(txAll, 40).forEach(function(part, k){
     blocks.push('<div style="' + CSS + '">' + (k ? '' : '<div style="font-weight:800;margin:8px 0 3px">Transaction History</div>') + '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">Bill</th><th style="' + th + '">Date / Time</th><th style="' + th + '">Customer</th><th style="' + th + '">Mode</th><th style="' + th + ';text-align:right">Total (₹)</th></tr></thead><tbody>'
       + part.map(function(x){ return '<tr><td style="' + td + '">' + esc(x.billNo) + '</td><td style="' + td + '">' + fmtDate(x.date) + ' ' + esc(x.time) + '</td><td style="' + td + '">' + esc(x.customer) + '</td><td style="' + td + '">' + (x.mode === 'online' ? 'Online/PhonePe' : 'Cash') + '</td><td style="' + td + ';text-align:right">' + money(x.total) + '</td></tr>'; }).join('') + '</tbody></table></div>');
   });
-  btn.disabled = true; btn.textContent = '⏳ Preparing PDF…';
   var host = document.createElement('div'); host.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff'; document.body.appendChild(host);
-  loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', function(){ return !!window.html2canvas; })
+  return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', function(){ return !!window.html2canvas; })
     .then(function(){ return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', function(){ return !!(window.jspdf && window.jspdf.jsPDF); }); })
     .then(function(){
       var pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true }), PW = 210, PH = 297, M = 10, y = M, chain = Promise.resolve();
       pdf.setProperties({ title: 'Daily Hisab ' + period, subject: 'Daily Wallet & Sales', creator: 'Anmol LibMatrix' });
       blocks.forEach(function(html){
-        chain = chain.then(function(){
-          host.innerHTML = html;
-          return window.html2canvas(host.firstChild, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-        }).then(function(cv){
-          var bw = PW - 2 * M, h = bw * cv.height / cv.width;
-          if (y + h > PH - M && y > M) { pdf.addPage(); y = M; }
-          pdf.addImage(cv.toDataURL('image/jpeg', 0.95), 'JPEG', M, y, bw, Math.min(h, PH - 2 * M)); y += h + 2;
-        });
+        chain = chain.then(function(){ host.innerHTML = html; return window.html2canvas(host.firstChild, { scale: 2, backgroundColor: '#ffffff', useCORS: true }); })
+          .then(function(cv){
+            var bw = PW - 2 * M, h = bw * cv.height / cv.width;
+            if (y + h > PH - M && y > M) { pdf.addPage(); y = M; }
+            pdf.addImage(cv.toDataURL('image/jpeg', 0.95), 'JPEG', M, y, bw, Math.min(h, PH - 2 * M)); y += h + 2;
+          });
       });
       return chain.then(function(){ pdf.save('Daily_Hisab_' + (w.from === w.to ? w.from : w.from + '_to_' + w.to) + '.pdf'); });
     })
-    .catch(function(e){ alert('❌ PDF could not be created: ' + (e && e.message ? e.message : e)); })
-    .then(function(){ host.remove(); btn.disabled = false; btn.textContent = old; });
+    .then(function(){ host.remove(); }, function(e){ host.remove(); throw e; });
 }
 
 /* ───────── start ───────── */
@@ -1583,7 +1628,7 @@ function exportHisab(btn){
     $('liuName').textContent = ME.name || ME.userId;
     if (ME.village) { var v = $('liuVillage'); v.textContent = '🏡 ' + ME.village; v.style.display = ''; }
     setAvatars(ME.photo);
-    newBill(); loadSaved(); renderPlan(); loadCatalog();
+    setCategory(me.category); newBill(); loadSaved(); renderPlan();
   }).catch(function(e){ if (e && !/expired/i.test(e.message)) showErr(e.message); });
 })();
 

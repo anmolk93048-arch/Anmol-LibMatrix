@@ -137,7 +137,52 @@ const SCHEMA_SQL = [
              (VALUES ('Paracetamol 500mg Tablet','Strip',5),('Paracetamol 650mg Tablet','Strip',5),('Ibuprofen 400mg Tablet','Strip',5),('Diclofenac 50mg Tablet','Strip',5),('Aceclofenac + Paracetamol Tablet','Strip',5),('Cetirizine 10mg Tablet','Strip',5),('Levocetirizine 5mg Tablet','Strip',5),('Montelukast + Levocetirizine Tablet','Strip',5),('Azithromycin 500mg Tablet','Strip',5),('Amoxicillin + Clavulanic Acid Tablet','Strip',5),('Cefixime 200mg Tablet','Strip',5),('Ciprofloxacin 500mg Tablet','Strip',5),('Metronidazole 400mg Tablet','Strip',5),('Ofloxacin + Ornidazole Tablet','Strip',5),('Pantoprazole 40mg Tablet','Strip',5),('Rabeprazole 20mg Tablet','Strip',5),('Domperidone 10mg Tablet','Strip',5),('Ondansetron 4mg Tablet','Strip',5),('Metformin 500mg Tablet','Strip',5),('Amlodipine 5mg Tablet','Strip',5),('Atenolol 50mg Tablet','Strip',5),('Telmisartan 40mg Tablet','Strip',5),('Atorvastatin 10mg Tablet','Strip',5),('Aspirin 75mg Tablet','Strip',5),('Loperamide 2mg Tablet','Strip',5),('Dicyclomine + Paracetamol Tablet','Strip',5),('Albendazole 400mg Tablet','Strip',5),('Folic Acid 5mg Tablet','Strip',5),('Calcium + Vitamin D3 Tablet','Strip',5),('Vitamin B-Complex Tablet','Strip',5),('Vitamin C 500mg Tablet','Strip',5),('Zinc 50mg Tablet','Strip',5),('Multivitamin Tablet','Strip',5),('Iron + Folic Acid Tablet','Strip',5),('Antacid Chewable Tablet','Strip',5),('Pantoprazole + Domperidone Capsule','Strip',5),('Omeprazole 20mg Capsule','Strip',5),('Amoxicillin 500mg Capsule','Strip',5),('Doxycycline 100mg Capsule','Strip',5),('Vitamin B12 Capsule','Strip',5),('Vitamin E 400mg Capsule','Strip',5),('Omega-3 Fish Oil Capsule','Strip',5),('Probiotic Capsule','Strip',5),('Itraconazole 100mg Capsule','Strip',5),('Fluconazole 150mg Tablet','Strip',5),('Paracetamol Syrup 60ml','Bottle',5),('Paracetamol Suspension 125mg/5ml','Bottle',5),('Cough Syrup (Dry) 100ml','Bottle',5),('Cough Syrup (Expectorant) 100ml','Bottle',5),('Cetirizine Syrup 60ml','Bottle',5),('Amoxicillin Dry Syrup','Bottle',5),('Azithromycin Dry Syrup','Bottle',5),('Antacid Liquid 170ml','Bottle',5),('Antacid Gel Suspension 200ml','Bottle',5),('Lactulose Solution 200ml','Bottle',5),('Digestive Enzyme Syrup 200ml','Bottle',5),('Multivitamin Syrup 200ml','Bottle',5),('Iron Syrup 200ml','Bottle',5),('Calcium Syrup 200ml','Bottle',5),('Ondansetron Syrup 30ml','Bottle',5),('Ambroxol Syrup 100ml','Bottle',5),('Zinc Syrup 100ml','Bottle',5),('Nasal Drops 10ml','Bottle',5),('Eye Drops 10ml','Bottle',5),('Ear Drops 10ml','Bottle',5),('Glycerin 100ml','Bottle',5),('Povidone Iodine Solution 100ml','Bottle',5),('Dettol Type Antiseptic Liquid 250ml','Bottle',5),('Surgical Spirit 100ml','Bottle',5),('Hydrogen Peroxide 100ml','Bottle',5),('ORS Powder Sachet (WHO) 21g','Sachet',5),('ORS Electrolyte Powder Sachet','Sachet',5),('Glucose Powder Sachet','Sachet',5),('Antacid Powder Sachet','Sachet',5),('Povidone Iodine Ointment 15g','Tube',5),('Antiseptic Cream 20g','Tube',5),('Antifungal Cream 15g','Tube',5),('Diclofenac Pain Relief Gel 30g','Tube',5),('Burn Cream 20g','Tube',5),('Antibiotic Ointment 10g','Tube',5),('Petroleum Jelly 25g','Tube',5),('Moisturising Cream 50g','Tube',5),('Adhesive Bandage (Band-Aid)','Pcs',5),('Crepe Bandage 6cm','Pcs',5),('Crepe Bandage 10cm','Pcs',5),('Roller Bandage 10cm','Pcs',5),('Elastic Knee Support','Pcs',5),('Surgical Tape 1 inch','Pcs',5),('Digital Thermometer','Pcs',5),('Mercury-free Thermometer','Pcs',5),('Syringe 2ml','Pcs',5),('Syringe 5ml','Pcs',5),('Syringe 10ml','Pcs',5),('Disposable Needle','Pcs',5),('IV Cannula 20G','Pcs',5),('Hot Water Bag','Pcs',5),('Nebulizer Mask','Pcs',5),('Blood Glucose Test Strip (50)','Pcs',5),('BP Monitor Digital','Pcs',5),('Pulse Oximeter','Pcs',5),('Cotton Roll 100g','Pcs',5),('Cotton Roll 500g','Pcs',5),('Gauze Swab Pack','Pcs',5),('Sterile Gauze Roll','Pcs',5),('Disposable Gloves (100 pcs)','Box',5),('Surgical Gloves (Sterile) Pair','Box',5),('Face Mask 3-Ply (50 pcs)','Box',5),('First Aid Kit','Box',5),('Pregnancy Test Kit','Box',5),('Cotton Buds Box','Box',5),('Hand Sanitizer 100ml','Pcs',18),('Hand Sanitizer 500ml','Pcs',18),('N95 Mask','Pcs',18),('Glucometer','Pcs',18)) AS v(name, unit, gst)
         WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_medical_v1')
         ON CONFLICT DO NOTHING`,
-    `INSERT INTO dv_settings (skey, data) VALUES ('seed_medical_v1', 'done') ON CONFLICT (skey) DO NOTHING`
+    `INSERT INTO dv_settings (skey, data) VALUES ('seed_medical_v1', 'done') ON CONFLICT (skey) DO NOTHING`,
+    // (9) Per-user catalog: own renames / units on master items, and the user's own custom items
+    "ALTER TABLE dv_user_rates ADD COLUMN IF NOT EXISTS name VARCHAR(120)",
+    "ALTER TABLE dv_user_rates ALTER COLUMN price DROP NOT NULL",
+    `CREATE TABLE IF NOT EXISTS dv_user_items (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(50) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        unit VARCHAR(20) NOT NULL DEFAULT 'Pcs',
+        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
+        price NUMERIC(12,2),
+        qty NUMERIC(12,3) NOT NULL DEFAULT 1,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_dv_user_item_name ON dv_user_items (LOWER(user_id), LOWER(name))",
+    // (10) One-time starter catalogs for Computer Shop, Book & Stationery Store and Kirana / Grocery Store (same marker rule as Medical)
+    `INSERT INTO dv_categories (name)
+        SELECT 'Computer Shop' WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_computer_v1')
+          AND NOT EXISTS (SELECT 1 FROM dv_categories WHERE LOWER(name) IN ('computer shop', 'computer store', 'computers', 'computer'))`,
+    `INSERT INTO dv_cat_items (category_id, name, unit, gst)
+        SELECT c.id, v.name, v.unit, v.gst
+        FROM (SELECT id FROM dv_categories WHERE LOWER(name) IN ('computer shop', 'computer store', 'computers', 'computer') ORDER BY id LIMIT 1) c,
+             (VALUES ('HP 88A Black Toner Cartridge','Pcs',18),('HP 12A Toner Cartridge','Pcs',18),('Canon 337 Toner Cartridge','Pcs',18),('Brother TN-2365 Toner','Pcs',18),('Samsung MLT-D101S Toner','Pcs',18),('Inkjet Cartridge Black','Pcs',18),('Inkjet Cartridge Colour','Pcs',18),('Printer Ink Bottle Black 70ml','Pcs',18),('Printer Ink Bottle Cyan 70ml','Pcs',18),('Printer Ink Bottle Magenta 70ml','Pcs',18),('Printer Ink Bottle Yellow 70ml','Pcs',18),('Printer Drum Unit','Pcs',18),('Ribbon Cartridge','Pcs',18),('USB Keyboard','Pcs',18),('Wireless Keyboard','Pcs',18),('Keyboard + Mouse Combo','Pcs',18),('USB Optical Mouse','Pcs',18),('Wireless Mouse','Pcs',18),('Mouse Pad','Pcs',18),('Gaming Mouse','Pcs',18),('HDMI Cable 1.5m','Pcs',18),('HDMI Cable 3m','Pcs',18),('VGA Cable 1.5m','Pcs',18),('DisplayPort Cable','Pcs',18),('USB Printer Cable','Pcs',18),('USB Extension Cable','Pcs',18),('Type-C Cable','Pcs',18),('LAN Cable Cat6 (Metre)','Pcs',18),('LAN Cable Cat6 Box 305m','Pcs',18),('RJ45 Connector (Pack of 100)','Pcs',18),('Power Cable 3-Pin','Pcs',18),('Extension Board 4 Socket','Pcs',18),('DDR3 4GB RAM','Pcs',18),('DDR4 4GB RAM','Pcs',18),('DDR4 8GB RAM','Pcs',18),('DDR4 16GB RAM','Pcs',18),('Laptop RAM DDR4 8GB','Pcs',18),('SSD 120GB SATA','Pcs',18),('SSD 240GB SATA','Pcs',18),('SSD 480GB SATA','Pcs',18),('SSD 512GB NVMe','Pcs',18),('SSD 1TB SATA','Pcs',18),('Hard Disk 1TB Internal','Pcs',18),('Hard Disk 1TB External','Pcs',18),('Pen Drive 16GB','Pcs',18),('Pen Drive 32GB','Pcs',18),('Pen Drive 64GB','Pcs',18),('Memory Card 32GB','Pcs',18),('Memory Card 64GB','Pcs',18),('Card Reader USB','Pcs',18),('Webcam HD','Pcs',18),('Headphone with Mic','Pcs',18),('Bluetooth Speaker','Pcs',18),('Laptop Charger Universal','Pcs',18),('Laptop Battery','Pcs',18),('Laptop Bag','Pcs',18),('Wi-Fi Router','Pcs',18),('Wi-Fi USB Adapter','Pcs',18),('Network Switch 8 Port','Pcs',18),('UPS 600VA','Pcs',18),('CMOS Battery CR2032','Pcs',18),('SMPS Power Supply 450W','Pcs',18),('Cabinet Fan','Pcs',18),('Thermal Paste','Pcs',18),('Monitor 19 inch','Pcs',18),('Monitor 22 inch','Pcs',18),('Screen Guard Cleaner Kit','Pcs',18),('CD/DVD Writer Internal','Pcs',18),('Antivirus 1 Year License','Pcs',18),('Windows Installation Service','Pcs',18),('Laptop Service Charge','Pcs',18),('Printer Service Charge','Pcs',18),('A4 Paper Ream 70 GSM (500 sheets)','Ream',12),('A4 Paper Ream 75 GSM (500 sheets)','Ream',12),('A4 Paper Ream 80 GSM (500 sheets)','Ream',12),('A3 Paper Ream 75 GSM','Ream',12),('Legal Size Paper Ream','Ream',12),('Photo Paper A4 (20 sheets)','Ream',12),('Thermal Paper Roll','Ream',12),('CD-R (Pack of 50)','Box',18),('DVD-R (Pack of 50)','Box',18),('Printer Label Sheets Box','Box',18)) AS v(name, unit, gst)
+        WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_computer_v1')
+        ON CONFLICT DO NOTHING`,
+    `INSERT INTO dv_settings (skey, data) VALUES ('seed_computer_v1', 'done') ON CONFLICT (skey) DO NOTHING`,
+    `INSERT INTO dv_categories (name)
+        SELECT 'Book & Stationery Store' WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_books_v1')
+          AND NOT EXISTS (SELECT 1 FROM dv_categories WHERE LOWER(name) IN ('book & stationery store', 'book and stationery store', 'book store', 'books & stationery', 'book & stationery', 'stationery store', 'stationery'))`,
+    `INSERT INTO dv_cat_items (category_id, name, unit, gst)
+        SELECT c.id, v.name, v.unit, v.gst
+        FROM (SELECT id FROM dv_categories WHERE LOWER(name) IN ('book & stationery store', 'book and stationery store', 'book store', 'books & stationery', 'book & stationery', 'stationery store', 'stationery') ORDER BY id LIMIT 1) c,
+             (VALUES ('Notebook 100 Pages','Pcs',0),('Notebook 200 Pages','Pcs',0),('Notebook 300 Pages','Pcs',0),('Single Line Copy 120 Pages','Pcs',0),('Double Line Copy 120 Pages','Pcs',0),('Four Line Copy 120 Pages','Pcs',0),('Square Line Copy','Pcs',0),('Maths Copy','Pcs',0),('Drawing Copy','Pcs',0),('Practical File Copy','Pcs',0),('Long Notebook 172 Pages','Pcs',0),('Long Notebook 288 Pages','Pcs',0),('Register 100 Pages','Pcs',0),('Register 200 Pages','Pcs',0),('Register 300 Pages','Pcs',0),('Register 500 Pages','Pcs',0),('Ledger Register','Pcs',0),('Cash Book Register','Pcs',0),('Attendance Register','Pcs',0),('Diary 2026','Pcs',0),('Pocket Diary','Pcs',0),('Graph Book','Pcs',0),('Spiral Notebook A4','Pcs',0),('Pencil HB','Pcs',0),('Pencil Box 10 pcs','Pcs',0),('Colour Pencil Set 12','Pcs',0),('Eraser','Pcs',0),('Sharpener','Pcs',0),('Pencil Sharpener Metal','Pcs',0),('Ball Pen Blue','Pcs',12),('Ball Pen Black','Pcs',12),('Ball Pen Red','Pcs',12),('Gel Pen Blue','Pcs',12),('Gel Pen Black','Pcs',12),('Fountain Pen','Pcs',12),('Ink Pen Refill','Pcs',12),('Marker Pen Black','Pcs',12),('Marker Pen Permanent','Pcs',12),('Whiteboard Marker','Pcs',12),('Highlighter','Pcs',12),('Sketch Pen Set 12','Pcs',12),('Geometry Box','Pcs',12),('Scale 30cm','Pcs',12),('Scissors','Pcs',12),('Glue Stick','Pcs',12),('Fevicol 50g','Pcs',12),('Stapler Small','Pcs',12),('Stapler Pins No.10','Pcs',12),('Punching Machine','Pcs',12),('Paper Clips Box','Pcs',12),('Gem Clips Box','Pcs',12),('Rubber Band Pack','Pcs',12),('Calculator Basic','Pcs',12),('Calculator Scientific','Pcs',12),('Slate Board','Pcs',12),('Chalk Box','Pcs',12),('Duster','Pcs',12),('Sticky Notes','Pcs',12),('Cello Tape Small','Pcs',12),('Cello Tape Big','Pcs',12),('Brown Tape','Pcs',12),('Double Sided Tape','Pcs',12),('Ink Bottle Blue','Pcs',12),('Stamp Pad','Pcs',12),('Carbon Paper','Pcs',12),('Envelope White','Pcs',12),('Envelope Brown Large','Pcs',12),('Plastic Folder','Pcs',12),('Display Book 20 Pockets','Pcs',12),('Zip File','Pcs',12),('Box File','Pcs',12),('Clip File','Pcs',12),('Spring File','Pcs',12),('Lever Arch File','Pcs',12),('Folder Plastic L-Type','Pcs',12),('School Bag','Pcs',12),('Pencil Pouch','Pcs',12),('Water Bottle','Pcs',12),('Lunch Box','Pcs',12),('Art Paper Sheet','Pcs',12),('Chart Paper','Pcs',12),('Poster Colour Set','Pcs',12),('Water Colour Box','Pcs',12),('Paint Brush Set','Pcs',12),('Crayons 24 Shades','Pcs',12),('Oil Pastel 25 Shades','Pcs',12),('Clay Pack','Pcs',12),('Cardboard Sheet','Pcs',12),('Thermocol Sheet','Pcs',12),('Lamination Pouch A4','Pcs',12),('Cover Paper Roll','Pcs',12),('Plastic Book Cover Roll','Pcs',12),('Name Slip Sticker Pack','Pcs',12),('Receipt Book','Pcs',12),('Bill Book 100 Leaves','Pcs',12),('Voucher Book','Pcs',12),('Visiting Card Holder','Pcs',12),('ID Card Holder with Lanyard','Pcs',12),('Notice Board Pins Box','Pcs',12),('Whiteboard 2x3 ft','Pcs',12),('Whiteboard Duster','Pcs',12),('A4 Paper Ream 75 GSM (500 sheets)','Ream',12),('Photocopy Paper Ream A4','Ream',12),('NCERT Textbook','Pcs',5),('Reference Book','Pcs',5),('Story Book','Pcs',5),('Guide Book','Pcs',5),('Dictionary English-Hindi','Pcs',5),('Atlas','Pcs',5),('Competition Exam Book','Pcs',5),('Sample Paper Book','Pcs',5)) AS v(name, unit, gst)
+        WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_books_v1')
+        ON CONFLICT DO NOTHING`,
+    `INSERT INTO dv_settings (skey, data) VALUES ('seed_books_v1', 'done') ON CONFLICT (skey) DO NOTHING`,
+    `INSERT INTO dv_categories (name)
+        SELECT 'Kirana / Grocery Store' WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_kirana_v1')
+          AND NOT EXISTS (SELECT 1 FROM dv_categories WHERE LOWER(name) IN ('kirana / grocery store', 'kirana/grocery store', 'kirana store', 'kirana', 'grocery store', 'grocery'))`,
+    `INSERT INTO dv_cat_items (category_id, name, unit, gst)
+        SELECT c.id, v.name, v.unit, v.gst
+        FROM (SELECT id FROM dv_categories WHERE LOWER(name) IN ('kirana / grocery store', 'kirana/grocery store', 'kirana store', 'kirana', 'grocery store', 'grocery') ORDER BY id LIMIT 1) c,
+             (VALUES ('Sugar','Kg',5),('Rice Sona Masoori','Kg',5),('Rice Basmati','Kg',5),('Rice Parboiled','Kg',5),('Wheat Flour (Atta)','Kg',5),('Maida','Kg',5),('Suji (Semolina)','Kg',5),('Besan','Kg',5),('Rice Flour','Kg',5),('Poha','Kg',5),('Sabudana','Kg',5),('Toor Dal','Kg',5),('Moong Dal','Kg',5),('Moong Dal Washed','Kg',5),('Masoor Dal','Kg',5),('Chana Dal','Kg',5),('Urad Dal','Kg',5),('Rajma','Kg',5),('Kabuli Chana','Kg',5),('Kala Chana','Kg',5),('Green Peas Dried','Kg',5),('Soya Chunks','Kg',5),('Peanuts','Kg',5),('Jaggery (Gud)','Kg',5),('Salt Loose','Kg',5),('Tea Loose','Kg',5),('Mustard Seeds','Kg',5),('Cumin Seeds (Jeera)','Kg',5),('Coriander Seeds','Kg',5),('Fennel Seeds (Saunf)','Kg',5),('Fenugreek Seeds','Kg',5),('Dry Red Chilli','Kg',5),('Turmeric Whole','Kg',5),('Black Pepper','Kg',5),('Cloves','Kg',5),('Cardamom','Kg',5),('Cinnamon','Kg',5),('Cashew','Kg',5),('Almonds','Kg',5),('Raisins','Kg',5),('Dates','Kg',5),('Coconut Dry','Kg',5),('Mustard Oil','Litre',5),('Sunflower Oil','Litre',5),('Soybean Oil','Litre',5),('Refined Oil','Litre',5),('Groundnut Oil','Litre',5),('Vanaspati Dalda Tin','Litre',5),('Tea Packet 250g','Pack',5),('Tea Packet 500g','Pack',5),('Tea Packet 1kg','Pack',5),('Coffee Powder Small','Pack',5),('Instant Coffee Jar','Pack',5),('Turmeric Powder Packet','Pack',5),('Red Chilli Powder Packet','Pack',5),('Coriander Powder Packet','Pack',5),('Cumin Powder Packet','Pack',5),('Garam Masala Packet','Pack',5),('Sabji Masala Packet','Pack',5),('Meat Masala Packet','Pack',5),('Chaat Masala Packet','Pack',5),('Iodised Salt 1kg Packet','Pack',5),('Rock Salt Packet','Pack',5),('Noodles Pack','Pack',5),('Pasta Pack','Pack',5),('Corn Flakes Pack','Pack',5),('Oats Pack','Pack',5),('Bread','Pack',5),('Rusk Pack','Pack',5),('Namkeen Pack','Pack',5),('Papad Pack','Pack',5),('Pickle Jar','Pack',5),('Tomato Ketchup Bottle','Pack',5),('Jam Bottle','Pack',5),('Honey Bottle','Pack',5),('Ghee 1L Pack','Pack',5),('Ghee 500ml Pack','Pack',5),('Butter 100g','Pack',5),('Paneer 200g','Pack',5),('Curd Pack','Pack',5),('Milk Packet 500ml','Pack',5),('Milk Powder Pack','Pack',5),('Custard Powder','Pack',5),('Baking Soda','Pack',5),('Vinegar Bottle','Pack',5),('Soya Sauce Bottle','Pack',5),('Biscuit Pack','Pack',5),('Cream Biscuit Pack','Pack',5),('Chocolate Bar','Pack',5),('Toffee Pack','Pack',5),('Chips Pack','Pack',5),('Cold Drink 600ml','Pack',5),('Cold Drink 2L','Pack',5),('Packaged Water 1L','Pack',5),('Juice Pack','Pack',5),('Bath Soap','Pcs',18),('Detergent Powder 1kg','Pcs',18),('Detergent Bar','Pcs',18),('Dishwash Bar','Pcs',18),('Dishwash Liquid','Pcs',18),('Shampoo Sachet','Pcs',18),('Shampoo Bottle','Pcs',18),('Toothpaste','Pcs',18),('Toothbrush','Pcs',18),('Hair Oil Bottle','Pcs',18),('Face Wash','Pcs',18),('Body Lotion','Pcs',18),('Talcum Powder','Pcs',18),('Deodorant','Pcs',18),('Sanitary Pad Pack','Pcs',18),('Razor Blade Pack','Pcs',18),('Agarbatti Packet','Pcs',18),('Candle Packet','Pcs',18),('Matchbox Pack of 10','Pcs',18),('Phenyl Bottle','Pcs',18),('Toilet Cleaner Bottle','Pcs',18),('Floor Cleaner Bottle','Pcs',18),('Garbage Bags Pack','Pcs',18),('Tissue Paper Box','Pcs',18),('Mosquito Coil Pack','Pcs',18),('Mosquito Repellent Refill','Pcs',18),('Cooking Gas Lighter','Pcs',18),('Aluminium Foil Roll','Pcs',18),('Plastic Carry Bags Pack','Pcs',18),('Eggs (Dozen)','Dozen',0),('Egg (Single)','Pcs',0)) AS v(name, unit, gst)
+        WHERE NOT EXISTS (SELECT 1 FROM dv_settings WHERE skey = 'seed_kirana_v1')
+        ON CONFLICT DO NOTHING`,
+    `INSERT INTO dv_settings (skey, data) VALUES ('seed_kirana_v1', 'done') ON CONFLICT (skey) DO NOTHING`
 ];
 
 /* ───────── plan / expiry date helpers (all in IST, whole days; a plan is valid THROUGH its expiry date) ───────── */
@@ -344,7 +389,9 @@ function install(app, ctx) {
     // ── HSN / SAC sync from the Super-Admin Material Master (blob 'material_categories') ──
     // ONLY the HSN/SAC code is read from the Master. Prices, units, names, GST % and tax maths are never touched.
     const hsnKey = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    let _hsnCache = null;
     async function loadMasterHsn() {
+        if (_hsnCache && Date.now() - _hsnCache.at < 300000) return _hsnCache.v;
         const map = {}, list = [];
         try {
             const rows = await dbq('SELECT value FROM kv_blob WHERE "key" = ?', ['material_categories']);
@@ -356,6 +403,7 @@ function install(app, ctx) {
                 list.push({ name: name, code: code, hsn: hsn });
                 [name, code ? code + '-' + name : '', code ? code + ' - ' + name : ''].forEach((k) => { k = hsnKey(k); if (k && !map[k]) map[k] = hsn; });
             }));
+            _hsnCache = { at: Date.now(), v: { map: map, list: list } };
         } catch (e) { /* master unavailable → rows simply keep whatever HSN they already have */ }
         return { map: map, list: list };
     }
@@ -646,20 +694,44 @@ function install(app, ctx) {
     }));
 
     // ── Super Admin: Session A / Session B mapping (list + bulk map by User ID)
+    const inList = (arr) => arr.map(() => '?').join(',');
+    // GET ?session=B|A &q=text &page=1 &pageSize=5  → one page of users (+ per-page extras). counts.b = users on Session B (for the badge).
     app.get('/api/admin/dv-mapping', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-        const users = await dbq("SELECT userid, name, village, mobile, status, invoice_version, dv_category_id FROM material_users ORDER BY id DESC", []);
-        const counts = await dbq("SELECT owner_user_id, COUNT(*) AS n FROM dv_invoices GROUP BY owner_user_id", []);
-        const cnt = {}; counts.forEach(r => { cnt[String(r.owner_user_id).toLowerCase()] = Number(r.n); });
-        const profs = {}; (await dbq('SELECT user_id, data FROM dv_profiles', [])).forEach(r => { let d = {}; try { d = JSON.parse(r.data) || {}; } catch (e) {} profs[String(r.user_id).toLowerCase()] = d.companyName || '(saved)'; });
-        const subs = {}; (await dbq("SELECT user_id, plan_name, to_char(expires_at,'YYYY-MM-DD') AS expires FROM dv_subscriptions", [])).forEach(r => { subs[String(r.user_id).toLowerCase()] = subState(r); });
-        res.json(users.map(u => {
-            const k = String(u.userid).toLowerCase();
-            return {
+        const sess = String(req.query.session || '').toUpperCase();
+        const size = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 5, 1), 20), page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const where = [], params = [];
+        if (sess === 'B') where.push("COALESCE(invoice_version,'A') = 'B'"); else if (sess === 'A') where.push("COALESCE(invoice_version,'A') <> 'B'");
+        cleanText(req.query.q, 60).toLowerCase().split(' ').filter(Boolean).slice(0, 4).forEach(t => {
+            where.push("lower(concat_ws(' | ', userid, name, village, mobile)) LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%');
+        });
+        const W = where.length ? ' WHERE ' + where.join(' AND ') : '';
+        const users = await dbq('SELECT userid, name, village, mobile, status, invoice_version, dv_category_id FROM material_users' + W + ' ORDER BY id DESC LIMIT ' + size + ' OFFSET ' + ((page - 1) * size), params);
+        const total = Number(((await dbq('SELECT COUNT(*) AS n FROM material_users' + W, params))[0] || {}).n) || 0;
+        const b = Number(((await dbq("SELECT COUNT(*) AS n FROM material_users WHERE COALESCE(invoice_version,'A') = 'B'", []))[0] || {}).n) || 0;
+        const ids = users.map(u => String(u.userid).toLowerCase()), cnt = {}, profs = {}, subs = {};
+        if (ids.length) {
+            (await dbq('SELECT LOWER(owner_user_id) AS k, COUNT(*) AS n FROM dv_invoices WHERE LOWER(owner_user_id) IN (' + inList(ids) + ') GROUP BY LOWER(owner_user_id)', ids)).forEach(r => { cnt[r.k] = Number(r.n); });
+            (await dbq('SELECT user_id, data FROM dv_profiles WHERE LOWER(user_id) IN (' + inList(ids) + ')', ids)).forEach(r => { let d = {}; try { d = JSON.parse(r.data) || {}; } catch (e) {} profs[String(r.user_id).toLowerCase()] = d.companyName || '(saved)'; });
+            (await dbq("SELECT user_id, plan_name, to_char(expires_at,'YYYY-MM-DD') AS expires FROM dv_subscriptions WHERE LOWER(user_id) IN (" + inList(ids) + ')', ids)).forEach(r => { subs[String(r.user_id).toLowerCase()] = subState(r); });
+        }
+        res.json({
+            rows: users.map(u => { const k = String(u.userid).toLowerCase(); return {
                 userId: u.userid, name: u.name || '', village: u.village || '', mobile: u.mobile || '', status: u.status || 'active',
                 session: normVersion(u.invoice_version), categoryId: u.dv_category_id || null, invoices: cnt[k] || 0,
-                profile: profs[k] || '', plan: subs[k] || subState(null)
-            };
-        }));
+                profile: profs[k] || '', plan: subs[k] || subState(null) }; }),
+            total: total, page: page, pageSize: size, pages: Math.max(1, Math.ceil(total / size)), counts: { b: b }
+        });
+    }));
+    // Type-ahead for the admin pickers: at most 10 users, 3 columns, only when the admin types (?q=, ?session=B or ?notSession=B)
+    app.get('/api/admin/dv-users', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
+        const where = [], params = [];
+        if (String(req.query.session || '').toUpperCase() === 'B') where.push("COALESCE(invoice_version,'A') = 'B'");
+        if (String(req.query.notSession || '').toUpperCase() === 'B') where.push("COALESCE(invoice_version,'A') <> 'B'");
+        const q = cleanText(req.query.q, 60).toLowerCase();
+        if (q.length < 2) return res.json([]);
+        q.split(' ').filter(Boolean).slice(0, 4).forEach(t => { where.push("lower(concat_ws(' | ', userid, name, village, mobile)) LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%'); });
+        const rows = await dbq('SELECT userid, name, village FROM material_users WHERE ' + where.join(' AND ') + ' ORDER BY id DESC LIMIT 10', params);
+        res.json(rows.map(r => ({ userId: r.userid, name: r.name || '', village: r.village || '' })));
     }));
     // body: { userIds: ['MAT001', ...], session: 'A' | 'B' }  → { updated: [...], notFound: [...] }
     app.put('/api/admin/dv-mapping', requireRole('admin'), asyncRoute(async (req, res) => {
@@ -834,85 +906,166 @@ function install(app, ctx) {
         res.json({ success: true });
     }));
     const itemOut = (i) => ({ id: i.id, name: i.name, unit: i.unit, gst: Number(i.gst) });
+    const pageArgs = (q, size0) => ({ size: Math.min(Math.max(parseInt(q.pageSize, 10) || size0, 1), 20), page: Math.max(parseInt(q.page, 10) || 1, 1) });
+    // GET ?q=text &page=1 &pageSize=5  → { rows, total, page, pages }   (only the 4 columns shown on screen)
     app.get('/api/admin/dv-categories/:id/items', noStore, requireRole('admin'), asyncRoute(async (req, res) => {
-        const id = parseInt(req.params.id, 10) || 0;
-        res.json((await dbq('SELECT id, name, unit, gst FROM dv_cat_items WHERE category_id = ? ORDER BY LOWER(name)', [id])).map(itemOut));
+        const cid = parseInt(req.params.id, 10) || 0, pa = pageArgs(req.query, 5);
+        const where = ['category_id = ?'], params = [cid];
+        cleanText(req.query.q, 60).toLowerCase().split(' ').filter(Boolean).slice(0, 4).forEach(t => { where.push("LOWER(name) LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%'); });
+        const W = ' WHERE ' + where.join(' AND ');
+        const rows = await dbq('SELECT id, name, unit, gst FROM dv_cat_items' + W + ' ORDER BY LOWER(name) LIMIT ' + pa.size + ' OFFSET ' + ((pa.page - 1) * pa.size), params);
+        const total = Number(((await dbq('SELECT COUNT(*) AS n FROM dv_cat_items' + W, params))[0] || {}).n) || 0;
+        res.json({ rows: rows.map(itemOut), total: total, page: pa.page, pages: Math.max(1, Math.ceil(total / pa.size)) });
     }));
-    // body: { items: [{ id?, name, unit, gst }] } — rows with an id are updated, rows without one are added, saved rows missing from the list are removed
-    app.put('/api/admin/dv-categories/:id/items', requireRole('admin'), asyncRoute(async (req, res) => {
-        const cid = parseInt(req.params.id, 10) || 0;
+    function cleanItem(r) {
+        r = r || {}; const name = cleanText(r.name, 120), gst = r.gst === '' || r.gst == null ? 0 : Number(r.gst);
+        if (!name) return { error: 'Item name is required.' };
+        if (!isFinite(gst) || gst < 0 || gst > 100) return { error: 'Item "' + name + '": GST % must be between 0 and 100.' };
+        return { value: { name: name, unit: cleanText(r.unit, 20) || 'Pcs', gst: money2(gst) } };
+    }
+    // body: { id?, name, unit, gst } → adds (no id) or updates (id) ONE item
+    app.put('/api/admin/dv-categories/:id/item', requireRole('admin'), asyncRoute(async (req, res) => {
+        const cid = parseInt(req.params.id, 10) || 0, id = parseInt(req.body && req.body.id, 10) || 0, c = cleanItem(req.body);
+        if (c.error) return res.status(400).json({ error: c.error });
         if (!(await dbq('SELECT 1 FROM dv_categories WHERE id = ?', [cid])).length) return res.status(404).json({ error: 'Category not found.' });
-        const list = Array.isArray(req.body && req.body.items) ? req.body.items : null;
-        if (!list) return res.status(400).json({ error: 'Item list is required.' });
-        if (list.length > 2000) return res.status(400).json({ error: 'A category can hold at most 2000 items.' });
-        const clean = [], seen = {};
-        for (let i = 0; i < list.length; i++) {
-            const r = list[i] || {}, name = cleanText(r.name, 120);
-            if (!name) continue;
-            const gst = r.gst === '' || r.gst == null ? 0 : Number(r.gst);
-            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: 'Item "' + name + '": GST % must be between 0 and 100.' });
-            if (seen[name.toLowerCase()]) return res.status(400).json({ error: 'Item "' + name + '" is listed twice.' });
-            seen[name.toLowerCase()] = 1;
-            clean.push({ id: parseInt(r.id, 10) || 0, name: name, unit: cleanText(r.unit, 20) || 'Pcs', gst: money2(gst) });
-        }
-        const have = (await dbq('SELECT id FROM dv_cat_items WHERE category_id = ?', [cid])).map(r => r.id);
-        const keep = {}; clean.forEach(c => { if (c.id && have.indexOf(c.id) >= 0) keep[c.id] = 1; });
         try {
-            for (const id of have) if (!keep[id]) await dbq('DELETE FROM dv_cat_items WHERE id = ? AND category_id = ?', [id, cid]);
-            for (const c of clean) {
-                if (c.id && keep[c.id]) await dbq('UPDATE dv_cat_items SET name = ?, unit = ?, gst = ? WHERE id = ? AND category_id = ?', [c.name, c.unit, c.gst, c.id, cid]);
-                else await dbq('INSERT INTO dv_cat_items (category_id, name, unit, gst) VALUES (?,?,?,?)', [cid, c.name, c.unit, c.gst]);
-            }
+            const r = id ? await dbq('UPDATE dv_cat_items SET name = ?, unit = ?, gst = ? WHERE id = ? AND category_id = ? RETURNING id, name, unit, gst', [c.value.name, c.value.unit, c.value.gst, id, cid])
+                         : await dbq('INSERT INTO dv_cat_items (category_id, name, unit, gst) VALUES (?,?,?,?) RETURNING id, name, unit, gst', [cid, c.value.name, c.value.unit, c.value.gst]);
+            if (!r.length) return res.status(404).json({ error: 'Item not found.' });
+            audit(req, 'dv_catalog_item_set', 'dv_categories', 'category=' + cid + ' item=' + c.value.name);
+            res.json(itemOut(r[0]));
         } catch (e) {
-            if (isDup(e)) return res.status(409).json({ error: 'Two items ended up with the same name. Please make every item name unique.' });
+            if (isDup(e)) return res.status(409).json({ error: 'An item named "' + c.value.name + '" already exists in this category.' });
             throw e;
         }
-        audit(req, 'dv_catalog_set', 'dv_categories', 'category=' + cid + ' items=' + clean.length);
-        res.json((await dbq('SELECT id, name, unit, gst FROM dv_cat_items WHERE category_id = ? ORDER BY LOWER(name)', [cid])).map(itemOut));
+    }));
+    app.delete('/api/admin/dv-categories/:id/item/:itemId', requireRole('admin'), asyncRoute(async (req, res) => {
+        const r = await dbq('DELETE FROM dv_cat_items WHERE id = ? AND category_id = ? RETURNING id', [parseInt(req.params.itemId, 10) || 0, parseInt(req.params.id, 10) || 0]);
+        if (!r.length) return res.status(404).json({ error: 'Item not found.' });
+        audit(req, 'dv_catalog_item_delete', 'dv_categories', 'category=' + req.params.id + ' item=' + req.params.itemId);
+        res.json({ success: true });
+    }));
+    // body: { lines: [{ name, unit, gst }] } → adds new items, silently skipping names that already exist (max 500 per call)
+    app.post('/api/admin/dv-categories/:id/items/bulk', requireRole('admin'), asyncRoute(async (req, res) => {
+        const cid = parseInt(req.params.id, 10) || 0, list = Array.isArray(req.body && req.body.lines) ? req.body.lines : [];
+        if (!list.length) return res.status(400).json({ error: 'Nothing to add.' });
+        if (list.length > 500) return res.status(400).json({ error: 'Add at most 500 items at a time.' });
+        if (!(await dbq('SELECT 1 FROM dv_categories WHERE id = ?', [cid])).length) return res.status(404).json({ error: 'Category not found.' });
+        const clean = [], seen = {};
+        for (const r of list) { const c = cleanItem(r); if (c.error) return res.status(400).json({ error: c.error }); const k = c.value.name.toLowerCase(); if (!seen[k]) { seen[k] = 1; clean.push(c.value); } }
+        const ph = clean.map(() => '(?,?,?,?)').join(','), params = [];
+        clean.forEach(c => params.push(cid, c.name, c.unit, c.gst));
+        const added = await dbq('INSERT INTO dv_cat_items (category_id, name, unit, gst) VALUES ' + ph + ' ON CONFLICT DO NOTHING RETURNING id', params);
+        audit(req, 'dv_catalog_bulk', 'dv_categories', 'category=' + cid + ' added=' + added.length);
+        res.json({ added: added.length, skipped: clean.length - added.length });
     }));
 
-    // ── Session B user: the master items of MY category merged with MY saved rates
-    async function myCatalog(uid) {
-        const u = (await dbq('SELECT dv_category_id FROM material_users WHERE userid = ?', [uid]))[0];
-        if (!u || !u.dv_category_id) return { category: null, items: [] };
-        const cat = (await dbq('SELECT id, name FROM dv_categories WHERE id = ?', [u.dv_category_id]))[0];
-        if (!cat) return { category: null, items: [] };
-        const rows = await dbq(`SELECT i.id, i.name, i.unit, i.gst, r.price, r.gst AS ugst, r.unit AS uunit, r.qty AS uqty
-            FROM dv_cat_items i LEFT JOIN dv_user_rates r ON r.item_id = i.id AND LOWER(r.user_id) = LOWER(?)
-            WHERE i.category_id = ? ORDER BY LOWER(i.name)`, [uid, cat.id]);
-        return { category: { id: cat.id, name: cat.name }, items: rows.map(r => ({
-            id: r.id, name: r.name, masterUnit: r.unit, masterGst: Number(r.gst),
-            saved: r.price != null, price: r.price != null ? Number(r.price) : null,
-            gst: r.ugst != null ? Number(r.ugst) : Number(r.gst), unit: r.uunit || r.unit, qty: r.uqty != null ? Number(r.uqty) : 1
-        })) };
+    // ── Session B user: master items of MY category (my renames / units / rates) + my own custom items.
+    //    Never loaded in full: GET ?q=text &page=1 &pageSize=5 returns ONE page, saved-rate items first, only the needed columns.
+    async function myCategory(uid) {
+        const r = (await dbq('SELECT c.id, c.name FROM material_users u JOIN dv_categories c ON c.id = u.dv_category_id WHERE u.userid = ?', [uid]))[0];
+        return r ? { id: r.id, name: r.name } : null;
     }
-    app.get('/api/dv/catalog', noStore, dvUser, dvActive, asyncRoute(async (req, res) => { res.json(await myCatalog(req.dvUser.userId)); }));
-    // body: { rates: [{ itemId, price, gst, unit, qty }] } — a blank price removes the user's saved rate for that item
+    const MASTER_SQL = `SELECT 'm' || i.id AS key, i.id AS id, FALSE AS custom, COALESCE(r.name, i.name) AS name, i.name AS master_name, i.unit AS master_unit, i.gst AS master_gst,
+                r.price AS price, COALESCE(r.gst, i.gst) AS gst, COALESCE(r.unit, i.unit) AS unit, COALESCE(r.qty, 1) AS qty
+            FROM dv_cat_items i LEFT JOIN dv_user_rates r ON r.item_id = i.id AND LOWER(r.user_id) = LOWER(?) WHERE i.category_id = ?`;
+    const CUSTOM_SQL = `SELECT 'c' || id AS key, id AS id, TRUE AS custom, name AS name, ''::varchar AS master_name, unit AS master_unit, gst AS master_gst,
+                price AS price, gst AS gst, unit AS unit, qty AS qty FROM dv_user_items WHERE LOWER(user_id) = LOWER(?)`;
+    function unionSql(uid, cat) {
+        const parts = [], params = [];
+        if (cat) { parts.push(MASTER_SQL); params.push(uid, cat.id); }
+        parts.push(CUSTOM_SQL); params.push(uid);
+        return { sql: parts.join(' UNION ALL '), params: params };
+    }
+    const catItemOut = (r) => ({
+        key: r.key, id: r.id, custom: !!r.custom, name: r.name, masterName: r.master_name || '', masterUnit: r.master_unit, masterGst: Number(r.master_gst),
+        saved: r.price != null, price: r.price != null ? Number(r.price) : null, gst: Number(r.gst), unit: r.unit, qty: Number(r.qty)
+    });
+    app.get('/api/dv/catalog', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
+        const uid = req.dvUser.userId, pa = pageArgs(req.query, 5), cat = await myCategory(uid), u = unionSql(uid, cat);
+        const params = u.params.slice(), where = [];
+        cleanText(req.query.q, 60).toLowerCase().split(' ').filter(Boolean).slice(0, 4).forEach(t => { where.push("LOWER(t.name) LIKE ? ESCAPE '\\'"); params.push('%' + escapeLike(t) + '%'); });
+        const W = where.length ? ' WHERE ' + where.join(' AND ') : '';
+        const rows = await dbq('SELECT t.* FROM (' + u.sql + ') t' + W + ' ORDER BY (t.price IS NULL), LOWER(t.name) LIMIT ' + pa.size + ' OFFSET ' + ((pa.page - 1) * pa.size), params);
+        let total = rows.length;
+        if (req.query.nototal !== '1' && (pa.page > 1 || rows.length === pa.size)) total = Number(((await dbq('SELECT COUNT(*) AS n FROM (' + u.sql + ') t' + W, params))[0] || {}).n) || 0;
+        res.json({ category: cat, rows: rows.map(catItemOut), total: total, page: pa.page, pages: Math.max(1, Math.ceil(total / pa.size)) });
+    }));
+    // body: { rates: [{ itemId, name, unit, price, gst, qty }] (master items of my category — only the ones the user edited),
+    //         custom: [{ id?, name, unit, price, gst, qty }]  (my own items; no id = new item) }
+    // Everything is stored under MY user id only — other users' catalogs are never touched.
     app.put('/api/dv/catalog/rates', dvUser, dvActive, asyncRoute(async (req, res) => {
-        const uid = req.dvUser.userId, list = Array.isArray(req.body && req.body.rates) ? req.body.rates : null;
-        if (!list) return res.status(400).json({ error: 'Nothing to save.' });
-        if (list.length > 2000) return res.status(400).json({ error: 'Too many items in one save.' });
-        const cat = await myCatalog(uid);
-        if (!cat.category) return res.status(403).json({ error: 'No Business Category is assigned to your account yet. Please contact the administrator.' });
-        const ok = {}; cat.items.forEach(i => { ok[i.id] = i; });
-        const todo = [];
-        for (const r0 of list) {
-            const r = r0 || {}, id = parseInt(r.itemId, 10) || 0, m = ok[id];
+        const uid = req.dvUser.userId, b = req.body || {};
+        const rates = Array.isArray(b.rates) ? b.rates : [], customs = Array.isArray(b.custom) ? b.custom : [];
+        if (rates.length > 200 || customs.length > 200) return res.status(400).json({ error: 'Too many items in one save.' });
+        const cat = await myCategory(uid);
+        const mIds = Array.from(new Set(rates.map(r => parseInt(r && r.itemId, 10) || 0))), cIds = Array.from(new Set(customs.map(r => parseInt(r && r.id, 10) || 0).filter(Boolean)));
+        const masters = {};
+        if (mIds.length) {
+            if (!cat) return res.status(403).json({ error: 'No Business Category is assigned to your account.' });
+            (await dbq('SELECT id, name, unit, gst FROM dv_cat_items WHERE category_id = ? AND id IN (' + inList(mIds) + ')', [cat.id].concat(mIds))).forEach(r => { masters[r.id] = { masterName: r.name, masterUnit: r.unit, masterGst: Number(r.gst) }; });
+        }
+        if (cIds.length) {
+            const have = (await dbq('SELECT id FROM dv_user_items WHERE LOWER(user_id) = LOWER(?) AND id IN (' + inList(cIds) + ')', [uid].concat(cIds))).map(r => r.id);
+            if (have.length !== cIds.length) return res.status(400).json({ error: 'One of your items no longer exists. Please reload the page.' });
+        }
+        const optNum = (v) => (v === '' || v == null) ? null : Number(v);
+        const names = {}, claim = (n) => { const k = n.toLowerCase(); if (names[k]) return false; names[k] = 1; return true; };
+        const mTodo = [], cTodo = [];
+        for (const r0 of rates) {
+            const r = r0 || {}, id = parseInt(r.itemId, 10) || 0, m = masters[id];
             if (!m) return res.status(400).json({ error: 'An item in your list does not belong to your category. Please reload the page.' });
-            if (r.price === '' || r.price == null) { todo.push({ id: id, del: true }); continue; }
-            const price = Number(r.price), gst = r.gst === '' || r.gst == null ? m.masterGst : Number(r.gst), qty = r.qty === '' || r.qty == null ? 1 : Number(r.qty);
-            if (!isFinite(price) || price < 0 || price > 1e8) return res.status(400).json({ error: '"' + m.name + '": selling price must be 0 or more.' });
-            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: '"' + m.name + '": GST % must be between 0 and 100.' });
-            if (!isFinite(qty) || qty <= 0 || qty > 1e7) return res.status(400).json({ error: '"' + m.name + '": default pieces must be greater than 0.' });
-            todo.push({ id: id, price: money2(price), gst: money2(gst), qty: Math.round(qty * 1000) / 1000, unit: cleanText(r.unit, 20) || m.masterUnit });
+            const name = cleanText(r.name, 120) || m.masterName, unit = cleanText(r.unit, 20) || m.masterUnit;
+            const price = optNum(r.price), gst = optNum(r.gst) == null ? m.masterGst : Number(r.gst), qty = optNum(r.qty) == null ? 1 : Number(r.qty);
+            if (price != null && (!isFinite(price) || price < 0 || price > 1e8)) return res.status(400).json({ error: '"' + name + '": selling price must be 0 or more.' });
+            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: '"' + name + '": GST % must be between 0 and 100.' });
+            if (!isFinite(qty) || qty <= 0 || qty > 1e7) return res.status(400).json({ error: '"' + name + '": default qty must be greater than 0.' });
+            if (!claim(name)) return res.status(400).json({ error: 'The item name "' + name + '" is used twice in your list. Please make every name unique.' });
+            mTodo.push({ id: id, m: m, name: name === m.masterName ? null : name, unit: unit, price: price == null ? null : money2(price), gst: money2(gst), qty: Math.round(qty * 1000) / 1000 });
         }
-        for (const t of todo) {
-            if (t.del) await dbq('DELETE FROM dv_user_rates WHERE LOWER(user_id) = LOWER(?) AND item_id = ?', [uid, t.id]);
-            else await dbq(`INSERT INTO dv_user_rates (user_id, item_id, price, gst, unit, qty, updated_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, item_id) DO UPDATE SET price = EXCLUDED.price, gst = EXCLUDED.gst, unit = EXCLUDED.unit, qty = EXCLUDED.qty, updated_at = CURRENT_TIMESTAMP`,
-                [uid, t.id, t.price, t.gst, t.unit, t.qty]);
+        for (const r0 of customs) {
+            const r = r0 || {}, id = parseInt(r.id, 10) || 0, name = cleanText(r.name, 120), unit = cleanText(r.unit, 20) || 'Pcs';
+            if (!name) return res.status(400).json({ error: 'Every item you add needs an item name.' });
+            const price = optNum(r.price), gst = optNum(r.gst) == null ? 0 : Number(r.gst), qty = optNum(r.qty) == null ? 1 : Number(r.qty);
+            if (price != null && (!isFinite(price) || price < 0 || price > 1e8)) return res.status(400).json({ error: '"' + name + '": selling price must be 0 or more.' });
+            if (!isFinite(gst) || gst < 0 || gst > 100) return res.status(400).json({ error: '"' + name + '": GST % must be between 0 and 100.' });
+            if (!isFinite(qty) || qty <= 0 || qty > 1e7) return res.status(400).json({ error: '"' + name + '": default qty must be greater than 0.' });
+            if (!claim(name)) return res.status(400).json({ error: 'The item name "' + name + '" is used twice in your list. Please make every name unique.' });
+            cTodo.push({ id: id, name: name, unit: unit, price: price == null ? null : money2(price), gst: money2(gst), qty: Math.round(qty * 1000) / 1000 });
         }
-        res.json(await myCatalog(uid));
+        // a submitted name must not collide with any item that is NOT part of this save (checked in the database, only conflicts come back)
+        const nk = Object.keys(names);
+        if (nk.length) {
+            const u = unionSql(uid, cat), sent = mIds.filter(Boolean).map(i => 'm' + i).concat(cIds.map(i => 'c' + i));
+            const clash = await dbq('SELECT t.name FROM (' + u.sql + ') t WHERE LOWER(t.name) IN (' + inList(nk) + ') AND t.key NOT IN (' + inList(sent.length ? sent : ['-']) + ') LIMIT 1', u.params.concat(nk, sent.length ? sent : ['-']));
+            if (clash.length) return res.status(400).json({ error: 'You already have an item named "' + clash[0].name + '". Please use a different name.' });
+        }
+        const fresh = cTodo.filter(c => !c.id).length;
+        if (fresh) {
+            const have = Number(((await dbq('SELECT COUNT(*) AS n FROM dv_user_items WHERE LOWER(user_id) = LOWER(?)', [uid]))[0] || {}).n) || 0;
+            if (have + fresh > 1000) return res.status(400).json({ error: 'You can keep at most 1000 custom items.' });
+        }
+        try {
+            for (const t of mTodo) {
+                if (t.price == null && t.name == null && t.unit === t.m.masterUnit && t.qty === 1 && t.gst === t.m.masterGst) await dbq('DELETE FROM dv_user_rates WHERE LOWER(user_id) = LOWER(?) AND item_id = ?', [uid, t.id]);
+                else await dbq(`INSERT INTO dv_user_rates (user_id, item_id, name, price, gst, unit, qty, updated_at) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, item_id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price, gst = EXCLUDED.gst, unit = EXCLUDED.unit, qty = EXCLUDED.qty, updated_at = CURRENT_TIMESTAMP`,
+                    [uid, t.id, t.name, t.price, t.gst, t.unit, t.qty]);
+            }
+            for (const c of cTodo) {
+                if (c.id) await dbq('UPDATE dv_user_items SET name = ?, unit = ?, gst = ?, price = ?, qty = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND LOWER(user_id) = LOWER(?)', [c.name, c.unit, c.gst, c.price, c.qty, c.id, uid]);
+                else await dbq('INSERT INTO dv_user_items (user_id, name, unit, gst, price, qty) VALUES (?,?,?,?,?,?)', [uid, c.name, c.unit, c.gst, c.price, c.qty]);
+            }
+        } catch (e) {
+            if (isDup(e)) return res.status(409).json({ error: 'Two of your items ended up with the same name. Please make every name unique.' });
+            throw e;
+        }
+        res.json({ success: true, saved: mTodo.length + cTodo.length });
+    }));
+    app.delete('/api/dv/catalog/items/:id', dvUser, dvActive, asyncRoute(async (req, res) => {
+        const r = await dbq('DELETE FROM dv_user_items WHERE id = ? AND LOWER(user_id) = LOWER(?) RETURNING id', [parseInt(req.params.id, 10) || 0, req.dvUser.userId]);
+        if (!r.length) return res.status(404).json({ error: 'Item not found.' });
+        res.json({ success: true });
     }));
 
     // ── Next sequential Bill No. (keeps a text prefix and zero-padding:  1, 2, 3 …  or  INV-009 → INV-010)
@@ -932,7 +1085,9 @@ function install(app, ctx) {
         res.json({ billNo: no });
     }));
 
-    // ── Daily Wallet & stock-sales summary for a date range (default: today, IST). Everything is summed in integer paise.
+    // ── Daily Wallet & stock-sales summary for a date range (default: today, IST).
+    //    Totals are summed by the database; the Items list and the Transaction list come ONE PAGE at a time (?ip= / ?tp= / ?size=5).
+    //    ?full=1 (used only by the "Daily Hisab PDF" button) returns the complete lists (max 5000 bills).
     app.get('/api/dv/wallet', noStore, dvUser, dvActive, asyncRoute(async (req, res) => {
         const okDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
         let from = String(req.query.from || '').slice(0, 10), to = String(req.query.to || '').slice(0, 10);
@@ -940,28 +1095,24 @@ function install(app, ctx) {
         else if (!okDate(from)) from = to; else if (!okDate(to)) to = from;
         if (from > to) { const t = from; from = to; to = t; }
         if (dayNum(to) - dayNum(from) > 366) return res.status(400).json({ error: 'Please choose a period of at most one year.' });
-        const rows = await dbq(`SELECT id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS d, to_char(created_at AT TIME ZONE 'Asia/Kolkata','HH24:MI') AS t,
-                customer_name, payment_mode, grand_total, items
-            FROM dv_invoices WHERE owner_user_id = ? AND invoice_date BETWEEN ? AND ? ORDER BY invoice_date DESC, id DESC LIMIT 5001`, [req.dvUser.userId, from, to]);
-        const truncated = rows.length > 5000; if (truncated) rows.length = 5000;
-        let totP = 0, onP = 0, caP = 0, qty = 0;
-        const agg = {}, tx = [];
-        rows.forEach(r => {
-            const gp = toPaise(Number(r.grand_total)), online = r.payment_mode === 'online';
-            totP += gp; if (online) onP += gp; else caP += gp;
-            let its = []; try { its = JSON.parse(r.items) || []; } catch (e) { its = []; }
-            its.forEach(it => {
-                const key = String(it.name || '').toLowerCase() + '|' + String(it.unit || '').toLowerCase();
-                const a = agg[key] || (agg[key] = { name: it.name || '', unit: it.unit || '', qty: 0, amountP: 0 });
-                a.qty += Number(it.qty) || 0; a.amountP += toPaise(Number(it.total) || 0); qty += Number(it.qty) || 0;
-            });
-            tx.push({ id: r.id, billNo: r.bill_no, date: r.d, time: r.t, customer: r.customer_name || '', mode: online ? 'online' : 'cash', total: Number(r.grand_total), lines: its.length });
-        });
+        const uid = req.dvUser.userId, full = req.query.full === '1', size = Math.min(Math.max(parseInt(req.query.size, 10) || 5, 1), 20);
+        const ip = Math.max(parseInt(req.query.ip, 10) || 1, 1), tp = Math.max(parseInt(req.query.tp, 10) || 1, 1);
+        const P = [uid, from, to], BASE = ' FROM dv_invoices WHERE owner_user_id = ? AND invoice_date BETWEEN ? AND ?';
+        const T = (await dbq("SELECT COUNT(*) AS bills, COALESCE(SUM(grand_total),0) AS sales, COALESCE(SUM(grand_total) FILTER (WHERE payment_mode = 'online'),0) AS online" + BASE, P))[0] || {};
+        const bills = Number(T.bills) || 0, sales = toPaise(Number(T.sales)), online = toPaise(Number(T.online));
+        const ITEMS = `SELECT MIN(e->>'name') AS name, MIN(COALESCE(e->>'unit','')) AS unit, SUM(COALESCE((e->>'qty')::numeric,0)) AS qty, SUM(COALESCE((e->>'total')::numeric,0)) AS amount
+            FROM dv_invoices d CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(d.items::jsonb) = 'array' THEN d.items::jsonb ELSE '[]'::jsonb END) e
+            WHERE d.owner_user_id = ? AND d.invoice_date BETWEEN ? AND ? GROUP BY LOWER(e->>'name'), LOWER(COALESCE(e->>'unit',''))`;
+        const A = (await dbq('SELECT COUNT(*) AS kinds, COALESCE(SUM(qty),0) AS qty FROM (' + ITEMS + ') x', P))[0] || {};
+        const kinds = Number(A.kinds) || 0;
+        const itemRows = await dbq('SELECT name, unit, qty, amount FROM (' + ITEMS + ') x ORDER BY amount DESC, name' + (full ? '' : ' LIMIT ' + size + ' OFFSET ' + ((ip - 1) * size)), P);
+        const TX = "SELECT id, bill_no, to_char(invoice_date,'YYYY-MM-DD') AS d, to_char(created_at AT TIME ZONE 'Asia/Kolkata','HH24:MI') AS t, customer_name, payment_mode, grand_total" + BASE + ' ORDER BY invoice_date DESC, id DESC';
+        const txRows = await dbq(TX + (full ? ' LIMIT 5000' : ' LIMIT ' + size + ' OFFSET ' + ((tp - 1) * size)), P);
         res.json({
-            from: from, to: to, truncated: truncated,
-            totals: { sales: fromPaise(totP), online: fromPaise(onP), cash: fromPaise(caP), bills: rows.length, qty: Math.round(qty * 1000) / 1000, itemKinds: Object.keys(agg).length },
-            items: Object.keys(agg).map(k => ({ name: agg[k].name, unit: agg[k].unit, qty: Math.round(agg[k].qty * 1000) / 1000, amount: fromPaise(agg[k].amountP) })).sort((a, b) => b.amount - a.amount),
-            transactions: tx
+            from: from, to: to, truncated: full && bills > 5000,
+            totals: { sales: fromPaise(sales), online: fromPaise(online), cash: fromPaise(sales - online), bills: bills, qty: Math.round(Number(A.qty) * 1000) / 1000, itemKinds: kinds },
+            items: { rows: itemRows.map(r => ({ name: r.name || '', unit: r.unit || '', qty: Math.round(Number(r.qty) * 1000) / 1000, amount: Number(r.amount) })), total: kinds, page: full ? 1 : ip, pages: full ? 1 : Math.max(1, Math.ceil(kinds / size)) },
+            transactions: { rows: txRows.map(r => ({ id: r.id, billNo: r.bill_no, date: r.d, time: r.t, customer: r.customer_name || '', mode: r.payment_mode === 'online' ? 'online' : 'cash', total: Number(r.grand_total) })), total: bills, page: full ? 1 : tp, pages: full ? 1 : Math.max(1, Math.ceil(bills / size)) }
         });
     }));
 }
